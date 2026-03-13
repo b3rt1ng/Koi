@@ -40,7 +40,7 @@ pipx install .
 pipx install git+https://github.com/b3rt1ng/Koi
 
 # For the lazy ones
-pipx install koi
+pipx install koi-handler
 ```
 
 ---
