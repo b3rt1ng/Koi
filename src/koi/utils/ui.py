@@ -4,7 +4,6 @@ import threading
 import time
 from random import choice
 
-# ── Palette ───────────────────────────────────────────────────────────────────
 PUMPKIN     = (255, 116,   0)
 WHITE       = (255, 255, 255)
 SILVER      = (169, 169, 169)

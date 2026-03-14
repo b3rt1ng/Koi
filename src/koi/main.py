@@ -17,14 +17,31 @@ import readline
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, Optional
+from koi.utils.ui import (
+    gradient_text, colored_text, display_art, print_report_box, print_status_line, breaker, notify, Spinner,
+    PUMPKIN, WHITE, SILVER, CORAL, UMBER,
+    _b, _d, _r, _g, _c, _p, _y, _o, _gr
+)
+from koi.utils.payloads import PayloadGenerator, _get_interfaces
 
 readline.set_history_length(200)
 readline.parse_and_bind("tab: complete")
 
-COMMANDS = ["ls", "go", "upgrade", "kill", "help", "exit", "quit", "list", "interact"]
+COMMANDS = ["list", "go", "upgrade", "kill", "help", "exit", "quit", "interact", "payload"]
 
 def completer(text, state):
-    options = [cmd for cmd in COMMANDS if cmd.startswith(text)]
+    line = readline.get_line_buffer()
+    parts = line.strip().split()
+    # If completing the first word (the command)
+    if len(parts) == 0 or (len(parts) == 1 and not line.endswith(" ")):
+        options = [cmd for cmd in COMMANDS if cmd.startswith(text)]
+    # If completing the argument for 'payload', we're expecting an interface name
+    elif parts[0] in ("payload", "p") and (len(parts) == 1 or (len(parts) == 2 and not line.endswith(" "))):
+        interfaces = list(_get_interfaces().keys())
+        arg = text
+        options = [iface for iface in interfaces if iface.startswith(arg)]
+    else:
+        options = []
     if state < len(options):
         return options[state] + " "
     return None
@@ -32,12 +49,6 @@ def completer(text, state):
 readline.set_completer(completer)
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from koi.ui import (
-    gradient_text, colored_text, display_art, print_report_box, print_status_line, breaker, notify, Spinner,
-    PUMPKIN, WHITE, SILVER, CORAL, UMBER,
-    _b, _d, _r, _g, _c, _p, _y, _o, _gr
-)
 
 LOCALUSER = os.getenv("USER") or os.getenv("USERNAME") or "user"
 
@@ -99,6 +110,7 @@ def print_help():
         f"{_g('go')} {_p('<id>')}": "Enter a session interactively",
         f"{_g('upgrade')} {_p('<id>')}": "Upgrade session to a full PTY",
         f"{_g('kill')} {_p('<id>')}": "Terminate and remove a session",
+        f"{_g('payload')} {_p('[iface]')}": "Show reverse shell payloads",
         f"{_g('help')}": "Show this message",
         f"{_g('exit')}": "Shut down the listener",
     }
@@ -191,7 +203,6 @@ class Listener:
                     time.sleep(0.5)
                 s.close()
         print()
-        notify('info', "Goodbye :)")
 
     def _prompt(self) -> str:
         alive = sum(1 for s in self._sessions.values() if s.alive)
@@ -262,6 +273,10 @@ class Listener:
                         self._cmd_kill(int(parts[1]))
                     except ValueError:
                         notify('error', "Session id must be an integer.")
+                        
+            elif cmd in ("payload", "p"):
+                iface = parts[1] if len(parts) > 1 else None
+                self._cmd_payload(iface)
 
             else:
                 notify('error', f"Unknown command: {_p(cmd)}  — type {_b('help')}")
@@ -394,6 +409,26 @@ class Listener:
             sess.upgraded = True
  
         notify('success', f"Shell {_p(f'#{sid}')} upgraded successfully.")
+    
+    def _cmd_payload(self, iface: Optional[str] = None) -> None:
+        gen = PayloadGenerator(port=self.port)
+
+        if iface:
+            payloads = gen.for_interface(iface)
+            if payloads is None:
+                interfaces = gen.get_interfaces()
+                notify('error', f"Interface {_p(iface)} not found.")
+                notify('status', _gr("Available: " + ", ".join(interfaces.keys())))
+                return
+            print_report_box(f"Payloads — {iface} ({gen.get_interfaces()[iface]})", payloads)
+        else:
+            all_payloads = gen.for_all()
+            if not all_payloads:
+                notify('error', "No network interfaces found.")
+                return
+            for iface_name, payloads in all_payloads.items():
+                ip = gen.get_interfaces()[iface_name]
+                print_report_box(f"Payloads — {iface_name} ({ip})", payloads)
 
     def _interact(self, sess: Session) -> str:
         """
