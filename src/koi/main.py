@@ -13,14 +13,28 @@ import termios
 import threading
 import time
 import tty
+import readline
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, Optional
 
+readline.set_history_length(200)
+readline.parse_and_bind("tab: complete")
+
+COMMANDS = ["ls", "go", "upgrade", "kill", "help", "exit", "quit", "list", "interact"]
+
+def completer(text, state):
+    options = [cmd for cmd in COMMANDS if cmd.startswith(text)]
+    if state < len(options):
+        return options[state] + " "
+    return None
+
+readline.set_completer(completer)
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from koi.ui import (
-    gradient_text, colored_text, display_art, print_report_box, print_status_line, breaker, notify,
+    gradient_text, colored_text, display_art, print_report_box, print_status_line, breaker, notify, Spinner,
     PUMPKIN, WHITE, SILVER, CORAL, UMBER,
     _b, _d, _r, _g, _c, _p, _y, _o, _gr
 )
@@ -170,12 +184,14 @@ class Listener:
                 self._server_sock.close()
             except OSError:
                 pass
-        for s in list(self._sessions.values()):
-            if s.upgraded:
-                s.send(b"exit\n")
-                time.sleep(0.5)
-            s.close()
-        print("\n" + gradient_text("  Shutting down. Goodbye.\n", PUMPKIN, UMBER))
+        with Spinner("Closing sessions…"):
+            for s in list(self._sessions.values()):
+                if s.upgraded:
+                    s.send(b"exit\n")
+                    time.sleep(0.5)
+                s.close()
+        print()
+        notify('info', "Goodbye :)")
 
     def _prompt(self) -> str:
         alive = sum(1 for s in self._sessions.values() if s.alive)
@@ -310,10 +326,11 @@ class Listener:
         if sess is None:
             notify('error', f"Session {_p(f'#{sid}')} not found.")
             return
-        if sess.upgraded:
-            sess.send(b"exit\n")
-            time.sleep(0.5)
-        self._remove(sid)
+        with Spinner(f"Terminating session #{sid}…"):
+            if sess.upgraded:
+                sess.send(b"exit\n")
+                time.sleep(0.5)
+            self._remove(sid)
         notify('success', f"Session {_p(f'#{sid}')} terminated.")
 
     def _drain(self, sess: Session, duration: float = 0.5) -> None:
@@ -356,25 +373,8 @@ class Listener:
         if sess.upgraded:
             notify('warning', f"Session {_p(f'#{sid}')} is already upgraded.")
             return
-
-        frames = ["⣾","⣽","⣻","⢿","⡿","⣟","⣯","⣷"]
-        stop_spin = threading.Event()
-
-        def _spin():
-            i = 0
-            while not stop_spin.is_set():
-                frame = colored_text(frames[i % len(frames)], PUMPKIN)
-                sys.stdout.write(f"\r  {frame}  {colored_text('Upgrading shell…', SILVER)}")
-                sys.stdout.flush()
-                time.sleep(0.08)
-                i += 1
-            sys.stdout.write("\r\033[K")
-            sys.stdout.flush()
-
-        spin_thread = threading.Thread(target=_spin, daemon=True)
-        spin_thread.start()
-
-        try:
+ 
+        with Spinner("Upgrading shell…"):
             spawn = (
                 "python3 -c 'import pty; pty.spawn(\"/bin/bash\")' 2>/dev/null || "
                 "python -c 'import pty; pty.spawn(\"/bin/bash\")' 2>/dev/null || "
@@ -382,25 +382,17 @@ class Listener:
             )
             sess.send(spawn.encode())
             self._drain(sess, 0.8)
-
+ 
             if not sess.alive:
-                stop_spin.set()
-                spin_thread.join()
                 notify('error', f"Session {_p(f'#{sid}')} died during upgrade.")
                 return
-
+ 
             sess.send(b"export TERM=xterm-256color HISTFILE=/dev/null\n")
             self._drain(sess, 0.3)
-
             self._sync_winsize(sess)
             self._drain(sess, 0.3)
-
             sess.upgraded = True
-
-        finally:
-            stop_spin.set()
-            spin_thread.join()
-
+ 
         notify('success', f"Shell {_p(f'#{sid}')} upgraded successfully.")
 
     def _interact(self, sess: Session) -> str:

@@ -1,5 +1,7 @@
 import shutil
 import sys
+import threading
+import time
 from random import choice
 
 # ── Palette ───────────────────────────────────────────────────────────────────
@@ -208,6 +210,42 @@ def notify(msg_type, text):
     else:
         print(f"{prefix}{text}")
 
+class Spinner:
+    _FRAMES = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"]
+
+    def __init__(self, message: str = "Loading…"):
+        self.message   = message
+        self._stop_ev  = threading.Event()
+        self._thread   = None
+
+    def start(self):
+        self._stop_ev.clear()
+        self._thread = threading.Thread(target=self._spin, daemon=True)
+        self._thread.start()
+        return self
+
+    def stop(self):
+        self._stop_ev.set()
+        if self._thread:
+            self._thread.join()
+        sys.stdout.write("\r\033[K")
+        sys.stdout.flush()
+
+    def _spin(self):
+        i = 0
+        while not self._stop_ev.is_set():
+            frame = colored_text(self._FRAMES[i % len(self._FRAMES)], PUMPKIN)
+            sys.stdout.write(f"\r  {frame}  {colored_text(self.message, SILVER)}")
+            sys.stdout.flush()
+            time.sleep(0.08)
+            i += 1
+
+    def __enter__(self):
+        return self.start()
+
+    def __exit__(self, *_):
+        self.stop()
+        
 def breaker():
     print(gradient_text(whole_line("─"), PUMPKIN, SILVER))
 
