@@ -135,6 +135,9 @@ class Listener:
         self._running = False
         self._server_sock: Optional[socket.socket] = None
         self._notify_r, self._notify_w = os.pipe()
+        self._in_session = False
+        self._pending_notifications: list = []
+        self._notif_lock = threading.Lock()
 
     def _add(self, conn, addr) -> Session:
         with self._id_lock:
@@ -168,10 +171,15 @@ class Listener:
 
             sess = self._add(conn, addr)
             os.write(self._notify_w, b"1\n")
-            sys.stdout.write(f"\r\033[K")
-            notify('new', f"{_b(_c(f'#{sess.id}'))}  {_c(addr[0])}{_gr(f':{addr[1]}')}")
-            sys.stdout.write(self._prompt())
-            sys.stdout.flush()
+            msg = f"{_b(_c(f'#{sess.id}'))}  {_c(addr[0])}{_gr(f':{addr[1]}')}"
+            if self._in_session:
+                with self._notif_lock:
+                    self._pending_notifications.append(('new', msg))
+            else:
+                sys.stdout.write(f"\r\033[K")
+                notify('new', msg)
+                sys.stdout.write(self._prompt())
+                sys.stdout.flush()
 
     def start(self):
         self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -281,6 +289,13 @@ class Listener:
             else:
                 notify('error', f"Unknown command: {_p(cmd)}  — type {_b('help')}")
 
+    def _flush_pending_notifications(self) -> None:
+        with self._notif_lock:
+            pending = self._pending_notifications[:]
+            self._pending_notifications.clear()
+        for msg_type, text in pending:
+            notify(msg_type, text)
+
     def _cmd_ls(self):
         self._prune()
         if not self._sessions:
@@ -320,7 +335,9 @@ class Listener:
 
         breaker()
 
+        self._in_session = True
         reason = self._interact(sess)
+        self._in_session = False
 
         signal.signal(signal.SIGWINCH, signal.SIG_DFL)
         print()
@@ -335,6 +352,8 @@ class Listener:
             notify('error', f"Session {_b(_c(f'#{sid}'))} disconnected.")
             print()
             self._remove(sid)
+
+        self._flush_pending_notifications()
 
     def _cmd_kill(self, sid: int):
         sess = self._get(sid)
