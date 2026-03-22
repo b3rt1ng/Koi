@@ -32,10 +32,8 @@ COMMANDS = ["list", "go", "upgrade", "kill", "help", "exit", "quit", "interact",
 def completer(text, state):
     line = readline.get_line_buffer()
     parts = line.strip().split()
-    # If completing the first word (the command)
     if len(parts) == 0 or (len(parts) == 1 and not line.endswith(" ")):
         options = [cmd for cmd in COMMANDS if cmd.startswith(text)]
-    # If completing the argument for 'payload', we're expecting an interface name
     elif parts[0] in ("payload", "p") and (len(parts) == 1 or (len(parts) == 2 and not line.endswith(" "))):
         interfaces = list(_get_interfaces().keys())
         arg = text
@@ -368,7 +366,6 @@ class Listener:
         notify('success', f"Session {_p(f'#{sid}')} terminated.")
 
     def _drain(self, sess: Session, duration: float = 0.5) -> None:
-        """Read and discard incoming data for `duration` seconds."""
         deadline = time.monotonic() + duration
         while True:
             remaining = deadline - time.monotonic()
@@ -382,7 +379,6 @@ class Listener:
                 break
 
     def _sync_winsize(self, sess: Session) -> None:
-        """Send stty rows/cols — caller must drain the echo afterwards."""
         try:
             cols, rows = shutil.get_terminal_size()
         except Exception:
@@ -390,7 +386,6 @@ class Listener:
         sess.send(f"stty rows {rows} cols {cols} 2>/dev/null\n".encode())
 
     def _winch(self, sess: Session) -> None:
-        """SIGWINCH handler: sync size and silently drain echo."""
         self._sync_winsize(sess)
         self._drain(sess, 0.15)
 
@@ -450,13 +445,6 @@ class Listener:
                 print_report_box(f"Payloads — {iface_name} ({ip})", payloads)
 
     def _interact(self, sess: Session) -> str:
-        """
-        Full-duplex pass-through between local stdin/stdout and the remote socket.
-
-        Returns:
-            "backgrounded"  – Ctrl+Z pressed
-            "disconnected"  – remote closed the connection
-        """
         stop_event = threading.Event()
         result = ["backgrounded"]
 

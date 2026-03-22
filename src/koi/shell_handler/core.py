@@ -281,7 +281,7 @@ class ShellHandler:
                 sl = StreamLine(text=text, source=source, line_number=line_count["n"])
                 line_count["n"] += 1
                 q.put(sl)
-            q.put(None)  # sentinel
+            q.put(None)
 
         threads = [threading.Thread(target=_reader, args=(proc.stdout, "stdout"), daemon=True)]
         if include_stderr and proc.stderr:
