@@ -4,7 +4,7 @@ from koi.modules.blueprint import KoiModule
 class GetUsersModule(KoiModule):
     name = "get_users"
     description = "List local users by reading /etc/passwd on the target."
-    usage = "run get_users <id>"
+    usage = "get_users <id>"
 
     def run(self) -> None:
         result = self.exec("cat /etc/passwd")

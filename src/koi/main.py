@@ -33,15 +33,12 @@ COMMANDS = ["list", "go", "upgrade", "kill", "help", "exit", "quit", "interact",
 def completer(text, state):
     line = readline.get_line_buffer()
     parts = line.strip().split()
-    # If completing the first word (the command)
     if len(parts) == 0 or (len(parts) == 1 and not line.endswith(" ")):
         options = [cmd for cmd in COMMANDS if cmd.startswith(text)]
-    # If completing the argument for 'payload', we're expecting an interface name
     elif parts[0] in ("payload", "p") and (len(parts) == 1 or (len(parts) == 2 and not line.endswith(" "))):
         interfaces = list(_get_interfaces().keys())
         arg = text
         options = [iface for iface in interfaces if iface.startswith(arg)]
-    # If completing the module name for 'run'
     elif parts[0] == "run" and (len(parts) == 1 or (len(parts) == 2 and not line.endswith(" "))):
         modules = load_modules()
         options = [name for name in modules if name.startswith(text)]
@@ -297,9 +294,17 @@ class Listener:
                 self._cmd_modules()
 
             elif cmd == "run":
-                # run <module> <session_id> [args…]
                 if len(parts) < 3:
-                    notify('error', f"Usage: run {_p('<module>')} {_p('<id>')} {_p('[args…]')}")
+                    if len(parts) == 2:
+                        mod_cls = get_module(parts[1])
+                        if mod_cls and mod_cls.usage:
+                            notify('error', f"Usage: run {_p(mod_cls.usage)}")
+                        elif mod_cls:
+                            notify('error', f"Usage: run {_p(mod_cls.name)} {_p('<id>')}")
+                        else:
+                            notify('error', f"Unknown module {_p(parts[1])}  — type {_b('modules')}")
+                    else:
+                        notify('error', f"Usage: run {_p('<module>')} {_p('<id>')} {_p('[args…]')}")
                 else:
                     mod_name = parts[1]
                     try:
@@ -462,7 +467,6 @@ class Listener:
         print_report_box("Modules", data)
 
     def _cmd_run(self, mod_name: str, sid: int, mod_args: list) -> None:
-        # Resolve session
         self._prune()
         sess = self._get(sid)
         if sess is None:
@@ -473,7 +477,6 @@ class Listener:
             self._remove(sid)
             return
 
-        # Resolve module
         mod_cls = get_module(mod_name)
         if mod_cls is None:
             available = ", ".join(sorted(load_modules().keys())) or "none"
@@ -481,7 +484,6 @@ class Listener:
             notify('status', _gr(f"Available: {available}"))
             return
 
-        # Instantiate and run
         notify('info', f"Running module {_p(mod_name)} on session {_p(f'#{sid}')}…")
         print()
         try:

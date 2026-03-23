@@ -19,7 +19,7 @@ _INTER_CHUNK_DELAY = 0.05
 class UploadLinpeas(KoiModule):
     name = "linpeas_upload"
     description = "Upload linpeas.sh to the target via base64 chunks over the existing session."
-    usage = "run linpeas_upload <id>"
+    usage = "linpeas_upload <id> <optional_path>"
 
     def run(self) -> None:
         _REMOTE_PATH = f"{self.args[0]}/linpeas.sh" if self.args else "/tmp/linpeas.sh"
