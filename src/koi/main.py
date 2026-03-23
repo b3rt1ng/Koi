@@ -23,21 +23,28 @@ from koi.utils.ui import (
     _b, _d, _r, _g, _c, _p, _y, _o, _gr
 )
 from koi.utils.payloads import PayloadGenerator, _get_interfaces
+from koi.modules.loader import load_modules, get_module
 
 readline.set_history_length(200)
 readline.parse_and_bind("tab: complete")
 
-COMMANDS = ["list", "go", "upgrade", "kill", "help", "exit", "quit", "interact", "payload"]
+COMMANDS = ["list", "go", "upgrade", "kill", "help", "exit", "quit", "interact", "payload", "run", "modules"]
 
 def completer(text, state):
     line = readline.get_line_buffer()
     parts = line.strip().split()
+    # If completing the first word (the command)
     if len(parts) == 0 or (len(parts) == 1 and not line.endswith(" ")):
         options = [cmd for cmd in COMMANDS if cmd.startswith(text)]
+    # If completing the argument for 'payload', we're expecting an interface name
     elif parts[0] in ("payload", "p") and (len(parts) == 1 or (len(parts) == 2 and not line.endswith(" "))):
         interfaces = list(_get_interfaces().keys())
         arg = text
         options = [iface for iface in interfaces if iface.startswith(arg)]
+    # If completing the module name for 'run'
+    elif parts[0] == "run" and (len(parts) == 1 or (len(parts) == 2 and not line.endswith(" "))):
+        modules = load_modules()
+        options = [name for name in modules if name.startswith(text)]
     else:
         options = []
     if state < len(options):
@@ -109,6 +116,8 @@ def print_help():
         f"{_g('upgrade')} {_p('<id>')}": "Upgrade session to a full PTY",
         f"{_g('kill')} {_p('<id>')}": "Terminate and remove a session",
         f"{_g('payload')} {_p('[iface]')}": "Show reverse shell payloads",
+        f"{_g('modules')}": "List available modules",
+        f"{_g('run')} {_p('<module>')} {_p('<id>')} {_p('[args…]')}": "Run a module against a session",
         f"{_g('help')}": "Show this message",
         f"{_g('exit')}": "Shut down the listener",
     }
@@ -284,6 +293,23 @@ class Listener:
                 iface = parts[1] if len(parts) > 1 else None
                 self._cmd_payload(iface)
 
+            elif cmd == "modules":
+                self._cmd_modules()
+
+            elif cmd == "run":
+                # run <module> <session_id> [args…]
+                if len(parts) < 3:
+                    notify('error', f"Usage: run {_p('<module>')} {_p('<id>')} {_p('[args…]')}")
+                else:
+                    mod_name = parts[1]
+                    try:
+                        sid = int(parts[2])
+                    except ValueError:
+                        notify('error', "Session id must be an integer.")
+                        continue
+                    mod_args = parts[3:]
+                    self._cmd_run(mod_name, sid, mod_args)
+
             else:
                 notify('error', f"Unknown command: {_p(cmd)}  — type {_b('help')}")
 
@@ -366,6 +392,7 @@ class Listener:
         notify('success', f"Session {_p(f'#{sid}')} terminated.")
 
     def _drain(self, sess: Session, duration: float = 0.5) -> None:
+        """Read and discard incoming data for `duration` seconds."""
         deadline = time.monotonic() + duration
         while True:
             remaining = deadline - time.monotonic()
@@ -379,6 +406,7 @@ class Listener:
                 break
 
     def _sync_winsize(self, sess: Session) -> None:
+        """Send stty rows/cols — caller must drain the echo afterwards."""
         try:
             cols, rows = shutil.get_terminal_size()
         except Exception:
@@ -386,6 +414,7 @@ class Listener:
         sess.send(f"stty rows {rows} cols {cols} 2>/dev/null\n".encode())
 
     def _winch(self, sess: Session) -> None:
+        """SIGWINCH handler: sync size and silently drain echo."""
         self._sync_winsize(sess)
         self._drain(sess, 0.15)
 
@@ -423,7 +452,48 @@ class Listener:
             sess.upgraded = True
  
         notify('success', f"Shell {_p(f'#{sid}')} upgraded successfully.")
-    
+
+    def _cmd_modules(self) -> None:
+        modules = load_modules()
+        if not modules:
+            notify('status', _gr("No modules found in src/koi/modules/."))
+            return
+        data = {_p(name): cls.description for name, cls in sorted(modules.items())}
+        print_report_box("Modules", data)
+
+    def _cmd_run(self, mod_name: str, sid: int, mod_args: list) -> None:
+        # Resolve session
+        self._prune()
+        sess = self._get(sid)
+        if sess is None:
+            notify('error', f"Session {_p(f'#{sid}')} not found.")
+            return
+        if not sess.alive:
+            notify('error', f"Session {_p(f'#{sid}')} is no longer alive.")
+            self._remove(sid)
+            return
+
+        # Resolve module
+        mod_cls = get_module(mod_name)
+        if mod_cls is None:
+            available = ", ".join(sorted(load_modules().keys())) or "none"
+            notify('error', f"Module {_p(mod_name)} not found.")
+            notify('status', _gr(f"Available: {available}"))
+            return
+
+        # Instantiate and run
+        notify('info', f"Running module {_p(mod_name)} on session {_p(f'#{sid}')}…")
+        print()
+        try:
+            mod = mod_cls(session=sess, args=mod_args)
+            mod.run()
+        except KeyboardInterrupt:
+            print()
+            notify('warning', "Module interrupted.")
+        except Exception as exc:
+            notify('error', f"Module raised an exception: {exc}")
+        print()
+
     def _cmd_payload(self, iface: Optional[str] = None) -> None:
         gen = PayloadGenerator(port=self.port)
 
@@ -445,6 +515,13 @@ class Listener:
                 print_report_box(f"Payloads — {iface_name} ({ip})", payloads)
 
     def _interact(self, sess: Session) -> str:
+        """
+        Full-duplex pass-through between local stdin/stdout and the remote socket.
+
+        Returns:
+            "backgrounded"  – Ctrl+Z pressed
+            "disconnected"  – remote closed the connection
+        """
         stop_event = threading.Event()
         result = ["backgrounded"]
 

