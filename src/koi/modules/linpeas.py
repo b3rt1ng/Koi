@@ -22,6 +22,8 @@ class UploadLinpeas(KoiModule):
     usage = "run linpeas_upload <id>"
 
     def run(self) -> None:
+        _REMOTE_PATH = f"{self.args[0]}/linpeas.sh" if self.args else "/tmp/linpeas.sh"
+        
         # 1. Download linpeas locally
         self.status(f"Downloading linpeas.sh from GitHub…")
         try:
