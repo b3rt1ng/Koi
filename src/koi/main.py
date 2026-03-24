@@ -486,6 +486,8 @@ class Listener:
 
         notify('info', f"Running module {_p(mod_name)} on session {_p(f'#{sid}')}…")
         print()
+        old_handler = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
         try:
             mod = mod_cls(session=sess, args=mod_args)
             mod.run()
@@ -494,6 +496,8 @@ class Listener:
             notify('warning', "Module interrupted.")
         except Exception as exc:
             notify('error', f"Module raised an exception: {exc}")
+        finally:
+            signal.signal(signal.SIGINT, old_handler)
         print()
 
     def _cmd_payload(self, iface: Optional[str] = None) -> None:
