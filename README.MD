@@ -4,7 +4,7 @@
 
 This project is my shot at making a fast, easy to use (yet feature rich) shell handler with a pretty interface.
 
-Disclaimer: please note that this is still under development, and I tam still working on some of the key features, wich is talked about in [this section](#-wip).
+Disclaimer: please note that this is still under development, and I am still working on some of the key features, wich is talked about in [this section](#-wip).
 
 ---
 
