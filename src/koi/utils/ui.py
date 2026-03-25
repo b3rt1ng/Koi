@@ -258,7 +258,7 @@ class ProgressBar:
         bar = ("─" * (pct // (100 // self.width))).ljust(self.width)
         suffix = f"{current}/{self.total} bytes" if self.total else f"{current} bytes"
         print_status_line(
-            f"  {colored_text(f'[{bar}]', PUMPKIN)} "
+            f"  [{colored_text(f'{bar}', PUMPKIN)}] "
             f"{colored_text(f'{pct:3d}%', WHITE)}  "
             f"{colored_text(suffix, SILVER)}"
             + (f"  {self.prefix}" if self.prefix else "")
