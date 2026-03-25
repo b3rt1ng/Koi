@@ -73,13 +73,16 @@ class KoiModule(ABC):
     def _parse_args(self):
         if not self.arguments:
             return argparse.Namespace()
-        
+
         parser = argparse.ArgumentParser(prog=self.name, add_help=False)
         for arg in self.arguments:
             arg = arg.copy()
             flags = arg.pop("flags")
-            parser.add_argument(*flags, **arg)
-        
+            if isinstance(flags, list) and not flags[0].startswith("-"):
+                parser.add_argument(flags[0], **arg)
+            else:
+                parser.add_argument(*flags, **arg)
+
         try:
             return parser.parse_args(self.raw_args)
         except SystemExit:

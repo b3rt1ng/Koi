@@ -61,31 +61,31 @@ class UploadLinpeas(KoiModule):
 
         # 4. Send each chunk
         self.status("Uploading…")
+        bar = self.ui.ProgressBar(total=total)
         try:
             for i, chunk in enumerate(chunks, start=1):
-                result = self.exec(f"printf '%s' '{chunk}' | base64 -d >> {remote_path}", timeout=10)
+                result = self.exec(
+                    f"printf '%s' '{chunk}' | base64 -d >> {remote_path}",
+                    timeout=10,
+                )
                 if not result.success:
+                    print()
                     self.err(f"Chunk {i}/{total} failed (rc={result.returncode})")
                     return
-
-                pct = int(i / total * 100)
-                bar = ("█" * (pct // 5)).ljust(20)
-                self.ui.print_status_line(
-                    f"  [{bar}] {pct:3d}%  chunk {i}/{total}"
-                )
-                time.sleep(delay)
+                bar.update(i)
+                if delay:
+                    time.sleep(delay)
 
         except KeyboardInterrupt:
             print()
             self.warn("Upload interrupted by user.")
             return
 
-        self.sendline("sync")
-        time.sleep(0.3)
-
-        print()
+        bar.done()
 
         # 5. Make it executable
+        self.sendline("sync")
+        time.sleep(0.3)
         self.sendline(f"chmod +x {remote_path}")
         time.sleep(0.1)
 

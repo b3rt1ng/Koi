@@ -245,6 +245,29 @@ class Spinner:
     def __exit__(self, *_):
         self.stop()
         
+class ProgressBar:
+    def __init__(self, total: int, width: int = 20, prefix: str = ""):
+        self.total = total
+        self.width = width
+        self.prefix = prefix
+        self._current = 0
+
+    def update(self, current: int):
+        self._current = current
+        pct = int(current / self.total * 100) if self.total else 0
+        bar = ("─" * (pct // (100 // self.width))).ljust(self.width)
+        suffix = f"{current}/{self.total} bytes" if self.total else f"{current} bytes"
+        print_status_line(
+            f"  {colored_text(f'[{bar}]', PUMPKIN)} "
+            f"{colored_text(f'{pct:3d}%', WHITE)}  "
+            f"{colored_text(suffix, SILVER)}"
+            + (f"  {self.prefix}" if self.prefix else "")
+        )
+
+    def done(self):
+        self.update(self.total if self.total else self._current)
+        print()
+        
 def breaker():
     print(gradient_text(whole_line("─"), PUMPKIN, SILVER))
 
