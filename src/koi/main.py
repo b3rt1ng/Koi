@@ -457,14 +457,26 @@ class Listener:
             sess.upgraded = True
  
         notify('success', f"Shell {_p(f'#{sid}')} upgraded successfully.")
-
+        
     def _cmd_modules(self) -> None:
         modules = load_modules()
         if not modules:
             notify('status', _gr("No modules found in src/koi/modules/."))
             return
-        data = {_p(name): cls.description for name, cls in sorted(modules.items())}
-        print_report_box("Modules", data)
+
+        has_categories = any(cls.category for cls in modules.values())
+
+        if has_categories:
+            grouped = {}
+            for name, cls in sorted(modules.items()):
+                cat = cls.category or "Other"
+                if cat not in grouped:
+                    grouped[cat] = {}
+                grouped[cat][_p(name)] = cls.description
+            print_report_box("Modules", grouped)
+        else:
+            data = {_p(name): cls.description for name, cls in sorted(modules.items())}
+            print_report_box("Modules", data)
 
     def _cmd_run(self, mod_name: str, sid: int, mod_args: list) -> None:
         self._prune()

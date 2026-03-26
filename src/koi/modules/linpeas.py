@@ -15,6 +15,7 @@ class UploadLinpeas(KoiModule):
     name = "linpeas_upload"
     description = "Upload linpeas.sh to the target via base64 chunks."
     usage = "linpeas_upload <id> [-p <path>] [-d <delay>] [-c <chunk_size>]"
+    category = "File transfer"
     arguments = [
         {"flags": ["-p", "--path"],  "default": "/tmp",  "help": "Remote directory"},
         {"flags": ["-d", "--delay"], "default": 0.05, "type": float, "help": "Delay between chunks"},

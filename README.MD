@@ -30,16 +30,13 @@ Disclaimer: please note that this is still under development, and I am still wor
 ## 🚀 Installation
 
 ```bash
-# From source
-git clone https://github.com/b3rt1ng/koi
-cd koi
-pipx install .
-
 # directly from the repo
 pipx install git+https://github.com/b3rt1ng/Koi
 
-# For the lazy ones (but often not on the latest versions)
-pipx install koi-handler
+# From source if you want to dev your own modules
+git clone https://github.com/b3rt1ng/koi
+cd koi
+pipx install --editable .
 ```
 
 ---

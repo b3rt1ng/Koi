@@ -44,6 +44,9 @@ class KoiModule(ABC):
     
     #: Optional list of argument specifications
     arguments: list[dict] = []
+    
+    #: Optional category for grouping modules in the UI
+    category: Optional[str] = None
 
     def __init__(
         self,

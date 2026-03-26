@@ -2,6 +2,7 @@ import shutil
 import sys
 import threading
 import time
+import re
 from random import choice
 
 PUMPKIN     = (255, 116,   0)
@@ -25,11 +26,12 @@ def _gr(t): return colored_text(t, SILVER)
 
 MOTD = ["The serene shell handler", 
         "This has to be legal, right?",
-        "La root est longue mais la voie est libre",
+        "La root est longue mais la voie est libre ;)",
         "Koi: Flowing through the network.",
         "Don't tell my mom I'm doing this.",
         "流れに逆らう鯉のように",
-        "¯＼(º_o)/¯"
+        "¯＼(º_o)/¯",
+        "Do not download and run random modules..."
 ]
 
 def whole_line(char=" "):
@@ -140,25 +142,32 @@ def print_report_box(title, data_dict, top_left_color=PUMPKIN, bottom_right_colo
     if not data_dict:
         return
 
-    import re
     _ansi = re.compile(r"\033\[[^m]*m")
     def _len(s): return len(_ansi.sub("", str(s)))
 
+    categorized = any(isinstance(v, dict) for v in data_dict.values())
+
+    if categorized:
+        all_items = [(k, v) for cat in data_dict.values() for k, v in cat.items()]
+    else:
+        all_items = list(data_dict.items())
+
     terminal_width = shutil.get_terminal_size().columns
-    max_key_len = max(_len(k) for k in data_dict.keys()) if data_dict else 0
-    
-    max_inner_width = 0
-    if data_dict:
-        max_inner_width = max(7 + max_key_len + _len(v) for v in data_dict.values())
-        
+    max_key_len    = max(_len(k) for k, _ in all_items) if all_items else 0
+
+    max_inner_width = max((7 + max_key_len + _len(str(v))) for _, v in all_items) if all_items else 0
+
     header_text = f" {title} "
     inner_width = max(len(header_text) + 4, max_inner_width)
-    
     if inner_width + 2 > terminal_width:
         inner_width = terminal_width - 2
 
-    total_rows = len(data_dict) + 2
     total_cols = inner_width + 2
+
+    if categorized:
+        total_rows = sum(len(items) for items in data_dict.values()) + len(data_dict) + 2
+    else:
+        total_rows = len(all_items) + 2
 
     def get_diag_color(row, col):
         ratio = (row + col) / max((total_rows + total_cols - 2), 1)
@@ -169,23 +178,56 @@ def print_report_box(title, data_dict, top_left_color=PUMPKIN, bottom_right_colo
 
     white_start = f"\033[38;2;{WHITE[0]};{WHITE[1]};{WHITE[2]}m"
 
-    top_border = "╭" + header_text.center(inner_width, "─") + "╮"
-    top_line = "".join(get_diag_color(0, c) + char for c, char in enumerate(top_border))
+    header_label   = f" {title} "
+    header_padding = inner_width - len(header_label)
+    left_dashes    = "─" * (header_padding // 2)
+    right_dashes   = "─" * (header_padding - header_padding // 2)
+    colored_left   = "".join(get_diag_color(0, c) + ch for c, ch in enumerate("╭" + left_dashes))
+    colored_right  = "".join(
+        get_diag_color(0, 1 + len(left_dashes) + len(header_label) + c) + ch
+        for c, ch in enumerate(right_dashes + "╮")
+    )
+    top_line = colored_left + gradient_text(header_label, PUMPKIN, WHITE) + colored_right
     print("\n" + top_line + RST)
 
-    for r_idx, (key, value) in enumerate(sorted(data_dict.items()), start=1):
-        left_char = get_diag_color(r_idx, 0) + "│" + RST
-        
-        pad_len = max_key_len - _len(key)
-        line_content = f"  {key}{' ' * pad_len} : {value}"
-        right_pad = " " * max(0, inner_width - _len(line_content))
-        
-        right_char = get_diag_color(r_idx, total_cols - 1) + "│" + RST
-        
-        print(f"{left_char}{white_start}{line_content}{right_pad}{RST}{right_char}")
+    r_idx = 0
 
+    def print_row(key, value):
+        nonlocal r_idx
+        r_idx += 1
+        left_char  = get_diag_color(r_idx, 0) + "│" + RST
+        right_char = get_diag_color(r_idx, total_cols - 1) + "│" + RST
+        pad_len      = max_key_len - _len(key)
+        line_content = f"  {key}{' ' * pad_len} : {value}"
+        right_pad    = " " * max(0, inner_width - _len(line_content))
+        print(f"{left_char}{white_start}{line_content}{right_pad}{RST}{right_char}")
+        
+    def print_separator(label: str):
+        nonlocal r_idx
+        r_idx += 1
+        left_char  = get_diag_color(r_idx, 0) + "├" + RST
+        right_char = get_diag_color(r_idx, total_cols - 1) + "┤" + RST
+        label_text    = f" {label} "
+        padding       = inner_width - len(label_text)
+        left_dashes   = "─" * (padding // 2)
+        right_dashes  = "─" * (padding - padding // 2)
+        colored_left  = "".join(get_diag_color(r_idx, c) + ch for c, ch in enumerate(left_dashes))
+        colored_right = "".join(get_diag_color(r_idx, len(left_dashes) + len(label_text) + c) + ch for c, ch in enumerate(right_dashes))
+        print(f"{left_char}{colored_left}{gradient_text(label_text, PUMPKIN, WHITE)}{colored_right}{RST}{right_char}")
+
+    if categorized:
+        categories = list(data_dict.items())
+        for cat_idx, (category, items) in enumerate(categories):
+            print_separator(category)
+            for key, value in sorted(items.items()):
+                print_row(key, value)
+    else:
+        for key, value in sorted(data_dict.items()):
+            print_row(key, value)
+
+    r_idx += 1
     bottom_border = "╰" + "─" * inner_width + "╯"
-    bottom_line = "".join(get_diag_color(total_rows - 1, c) + char for c, char in enumerate(bottom_border))
+    bottom_line   = "".join(get_diag_color(r_idx, c) + char for c, char in enumerate(bottom_border))
     print(bottom_line + RST)
 
 def notify(msg_type, text):

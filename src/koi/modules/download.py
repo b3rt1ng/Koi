@@ -10,6 +10,7 @@ class DownloadModule(KoiModule):
     name = "download"
     description = "Download a file from the target via a dedicated TCP connection."
     usage = "download <id> <remote_path> [-o <local_path>]"
+    category = "File transfer"
     arguments = [
         {"flags": ["remote_path"], "help": "Path of the file on the remote target"},
         {"flags": ["-o", "--output"], "default": None, "help": "Local output path"},
