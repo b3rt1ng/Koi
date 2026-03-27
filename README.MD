@@ -22,8 +22,8 @@ Disclaimer: please note that this is still under development, and I am still wor
 * **Koi fish themed UI**: Gradient prompt, status indicators, and session boxes, pentest tooling doesn't have to be ugly.
 
 ## 🚧 WIP
-
-* **Modules**: I'm working on a module section that would automate inforamtion gathering, uploading of files such as bloodhound collectors and so on. this part is still under WIP since i'm experimenting ways to make it reliable yet easy to implement for you guys.
+* **Tunneling**: Once you have your shell, a simple way to tunnel in that network would be very conveinient, this has yet to be done.
+* **Modules**: I consider this part is still under WIP since i'm experimenting ways to make it reliable yet easy to implement for you guys, as of now it is more than usable.
 * **Testings**: I've tried my tool on CTF and personal devices but it still needs more testing. As of now, this has been made for linux based shells but I want it to be able to work under windows powershell with all it's implications.
 ---
 

@@ -19,7 +19,7 @@ class UploadLinpeas(KoiModule):
     arguments = [
         {"flags": ["-p", "--path"],  "default": "/tmp",  "help": "Remote directory"},
         {"flags": ["-d", "--delay"], "default": 0.05, "type": float, "help": "Delay between chunks"},
-        {"flags": ["-c", "--chunk"], "default": 4096, "type": int, "help": "Chunk size in bytes"},
+        {"flags": ["-c", "--chunk"], "default": 8192, "type": int, "help": "Chunk size in bytes"},
     ]
 
     def run(self) -> None:

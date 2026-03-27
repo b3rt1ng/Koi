@@ -108,15 +108,15 @@ class RawTerminal:
 
 def print_help():
     data = {
-        f"{_g('ls')}": "List all active sessions",
-        f"{_g('go')} {_p('<id>')}": "Enter a session interactively",
-        f"{_g('upgrade')} {_p('<id>')}": "Upgrade session to a full PTY",
-        f"{_g('kill')} {_p('<id>')}": "Terminate and remove a session",
-        f"{_g('payload')} {_p('[iface]')}": "Show reverse shell payloads",
-        f"{_g('modules')}": "List available modules",
-        f"{_g('run')} {_p('<module>')} {_p('<id>')} {_p('[args…]')}": "Run a module against a session",
-        f"{_g('help')}": "Show this message",
-        f"{_g('exit')}": "Shut down the listener",
+        f"{_p('ls')}": "List all active sessions",
+        f"{_p('go')} {_b('<id>')}": "Enter a session interactively",
+        f"{_p('upgrade')} {_b('<id>')}": "Upgrade session to a full PTY",
+        f"{_p('kill')} {_b('<id>')}": "Terminate and remove a session",
+        f"{_p('payload')} {_b('[iface]')}": "Show reverse shell payloads",
+        f"{_p('modules')}": "List available modules",
+        f"{_p('run')} {_b('<module>')} {_b('<id>')} {_b('[args…]')}": "Run a module against a session",
+        f"{_p('help')}": "Show this message",
+        f"{_p('exit')}": "Shut down the listener",
     }
     print_report_box("Commands", data)
     data = {
@@ -290,7 +290,7 @@ class Listener:
                 iface = parts[1] if len(parts) > 1 else None
                 self._cmd_payload(iface)
 
-            elif cmd == "modules":
+            elif cmd in ("modules", "mdls", "mods"):
                 self._cmd_modules()
 
             elif cmd == "run":
@@ -528,9 +528,11 @@ class Listener:
             if not all_payloads:
                 notify('error', "No network interfaces found.")
                 return
+            grouped = {}
             for iface_name, payloads in all_payloads.items():
                 ip = gen.get_interfaces()[iface_name]
-                print_report_box(f"Payloads — {iface_name} ({ip})", payloads)
+                grouped[f"{iface_name} ({ip})"] = payloads
+            print_report_box("Payloads", grouped)
 
     def _interact(self, sess: Session) -> str:
         """
