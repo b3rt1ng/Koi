@@ -219,10 +219,10 @@ def print_report_box(title, data_dict, top_left_color=PUMPKIN, bottom_right_colo
         categories = list(data_dict.items())
         for cat_idx, (category, items) in enumerate(categories):
             print_separator(category)
-            for key, value in sorted(items.items()):
+            for key, value in items.items():
                 print_row(key, value)
     else:
-        for key, value in sorted(data_dict.items()):
+        for key, value in data_dict.items():
             print_row(key, value)
 
     r_idx += 1

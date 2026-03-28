@@ -468,14 +468,14 @@ class Listener:
 
         if has_categories:
             grouped = {}
-            for name, cls in sorted(modules.items()):
+            for name, cls in modules.items():
                 cat = cls.category or "Other"
                 if cat not in grouped:
                     grouped[cat] = {}
                 grouped[cat][_p(name)] = cls.description
             print_report_box("Modules", grouped)
         else:
-            data = {_p(name): cls.description for name, cls in sorted(modules.items())}
+            data = {_p(name): cls.description for name, cls in modules.items()}
             print_report_box("Modules", data)
 
     def _cmd_run(self, mod_name: str, sid: int, mod_args: list) -> None:
@@ -491,7 +491,7 @@ class Listener:
 
         mod_cls = get_module(mod_name)
         if mod_cls is None:
-            available = ", ".join(sorted(load_modules().keys())) or "none"
+            available = ", ".join(load_modules().keys()) or "none"
             notify('error', f"Module {_p(mod_name)} not found.")
             notify('status', _gr(f"Available: {available}"))
             return
