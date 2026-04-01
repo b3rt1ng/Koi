@@ -108,22 +108,24 @@ class RawTerminal:
 
 def print_help():
     data = {
-        f"{_p('ls')}": "List all active sessions",
-        f"{_p('go')} {_b('<id>')}": "Enter a session interactively",
-        f"{_p('upgrade')} {_b('<id>')}": "Upgrade session to a full PTY",
-        f"{_p('kill')} {_b('<id>')}": "Terminate and remove a session",
-        f"{_p('payload')} {_b('[iface]')}": "Show reverse shell payloads",
-        f"{_p('modules')}": "List available modules",
-        f"{_p('run')} {_b('<module>')} {_b('<id>')} {_b('[args…]')}": "Run a module against a session",
-        f"{_p('help')}": "Show this message",
-        f"{_p('exit')}": "Shut down the listener",
+        "Commands": {
+            f"{_p('ls')}": "List all active sessions",
+            f"{_p('go')} {_b('<id>')}": "Enter a session interactively",
+            f"{_p('upgrade')} {_b('<id>')}": "Upgrade session to a full PTY",
+            f"{_p('kill')} {_b('<id>')}": "Terminate and remove a session",
+            f"{_p('payload')} {_b('[iface]')}": "Show reverse shell payloads",
+            f"{_p('modules')}": "List available modules",
+            f"{_p('run')} {_b('<module>')} {_b('<id>')} {_b('[args…]')}": "Run a module against a session",
+            f"{_p('help')}": "Show this message",
+            f"{_p('exit')}": "Shut down the listener",
+        },
+        "Session Signals": {
+            f"{_y('Ctrl+Z')}": "Background → return to listener shell",
+            f"{_y('Ctrl+C')}": "Send SIGINT to remote (keeps session alive)",
+        },
     }
-    print_report_box("Commands", data)
-    data = {
-        f"{_y('Ctrl+Z')}": "Background → return to listener shell",
-        f"{_y('Ctrl+C')}": "Send SIGINT to remote (keeps session alive)",
-    }
-    print_report_box("Session Signals", data)
+    print_report_box("help", data)
+    
 
 
 class Listener:

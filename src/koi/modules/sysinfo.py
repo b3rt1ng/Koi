@@ -23,7 +23,6 @@ class SysInfoModule(KoiModule):
                     continue
                 if "_rc=$?" in clean:
                     continue
-                # Filtrer l'echo de la commande — contient des morceaux de la cmd
                 if any(fragment in clean for fragment in ["printf", "\\n", "_rc="]):
                     continue
                 lines.append(clean)
@@ -48,10 +47,7 @@ class SysInfoModule(KoiModule):
             "shell":       self._get("echo $SHELL"),
             "IP":          self._get("hostname -I 2>/dev/null || ip -4 addr show | grep inet | awk '{print $2}' | tr '\\n' ' '"),
         }
-        result = self.exec("who | awk '{print $1}' | sort -u", timeout=10)
-        self.ok(f"stdout: {repr(result.stdout)}")
-        self.ok(f"returncode: {result.returncode}")
-        self.ok(f"_get result: {repr(self._get('who | awk \"{print $1}\" | sort -u'))}")
+
         self.box(f"System Info — #{self.session.id}", {
             k: v for k, v in info.items() if v and v.strip()
         })
