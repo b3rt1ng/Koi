@@ -5,6 +5,7 @@ import importlib.util
 import inspect
 import logging
 import pkgutil
+import sys
 from pathlib import Path
 from typing import Dict, Optional, Type
 
@@ -33,7 +34,10 @@ def load_modules(reload: bool = False) -> Dict[str, Type]:
 
         full_name = f"koi.modules.{mod_name}"
         try:
-            module = importlib.import_module(full_name)
+            if full_name in sys.modules:
+                module = importlib.reload(sys.modules[full_name])
+            else:
+                module = importlib.import_module(full_name)
         except Exception as exc:
             logger.warning(f"Could not import module {full_name!r}: {exc}")
             continue

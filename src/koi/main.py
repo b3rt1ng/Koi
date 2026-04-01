@@ -28,7 +28,7 @@ from koi.modules.loader import load_modules, get_module
 readline.set_history_length(200)
 readline.parse_and_bind("tab: complete")
 
-COMMANDS = ["list", "go", "upgrade", "kill", "help", "exit", "quit", "interact", "payload", "run", "modules"]
+COMMANDS = ["list", "go", "upgrade", "kill", "help", "exit", "quit", "interact", "payload", "run", "modules", "reload"]
 
 def completer(text, state):
     line = readline.get_line_buffer()
@@ -115,6 +115,7 @@ def print_help():
             f"{_p('kill')} {_b('<id>')}": "Terminate and remove a session",
             f"{_p('payload')} {_b('[iface]')}": "Show reverse shell payloads",
             f"{_p('modules')}": "List available modules",
+            f"{_p('reload')}": "Reload modules from disk (useful during development)",
             f"{_p('run')} {_b('<module>')} {_b('<id>')} {_b('[args…]')}": "Run a module against a session",
             f"{_p('help')}": "Show this message",
             f"{_p('exit')}": "Shut down the listener",
@@ -294,6 +295,9 @@ class Listener:
 
             elif cmd in ("modules", "mdls", "mods"):
                 self._cmd_modules()
+                
+            elif cmd in ("reload", "refresh"):
+                self._cmd_reload()
 
             elif cmd == "run":
                 if len(parts) < 3:
@@ -327,7 +331,7 @@ class Listener:
         for msg_type, text in pending:
             notify(msg_type, text)
 
-    def _cmd_ls(self):
+    def _cmd_ls(self) -> None:
         self._prune()
         if not self._sessions:
             print()
@@ -339,8 +343,13 @@ class Listener:
             key = f"#{s.id}  {s.status_dot()}  {_c(s.addr[0])}{_gr(f':{s.addr[1]}')}"
             data[key] = s._uptime()
         print_report_box("Sessions", data)
+        
+    def _cmd_reload(self) -> None:
+        with Spinner("Reloading modules…"):
+            modules = load_modules(reload=True)
+        notify('info', f"Loaded {_p(str(len(modules)))} modules.")
 
-    def _cmd_go(self, sid: int):
+    def _cmd_go(self, sid: int) -> None:
         self._prune()
         sess = self._get(sid)
         if sess is None:
@@ -386,7 +395,7 @@ class Listener:
 
         self._flush_pending_notifications()
 
-    def _cmd_kill(self, sid: int):
+    def _cmd_kill(self, sid: int) -> None:
         sess = self._get(sid)
         if sess is None:
             notify('error', f"Session {_p(f'#{sid}')} not found.")
