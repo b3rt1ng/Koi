@@ -5,11 +5,17 @@ from typing import TYPE_CHECKING, List, Optional
 
 if TYPE_CHECKING:
     from koi.session import Session
-    from koi.shell_handler.core import ShellHandler
-    
+
+from koi.models import CommandResult, StreamLine
 from koi.utils import ui
 
 import argparse
+
+class CommandTimeout(Exception):
+    def __init__(self, command: str, timeout: float):
+        self.command = command
+        self.timeout = timeout
+        super().__init__(f"Command timed out after {timeout}s: {command}")
 
 
 class KoiModule(ABC):
@@ -112,7 +118,6 @@ class KoiModule(ABC):
         import select
         import time
         import uuid
-        from koi.shell_handler.result import CommandResult
 
         sentinel = uuid.uuid4().hex
         marker = f"__KOI_DONE_{sentinel}__"
@@ -129,7 +134,6 @@ class KoiModule(ABC):
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                from koi.shell_handler.exceptions import CommandTimeout
                 raise CommandTimeout(command, timeout)
 
             ready, _, _ = select.select([self.session.conn], [], [], min(remaining, 0.1))
@@ -157,7 +161,6 @@ class KoiModule(ABC):
                     )
                 output_lines.append(text)
 
-        from koi.shell_handler.result import CommandResult
         return CommandResult(
             command=command, returncode=1,
             stdout="\n".join(output_lines), stderr="",
@@ -177,7 +180,6 @@ class KoiModule(ABC):
         import select
         import time
         import uuid
-        from koi.shell_handler.result import StreamLine
 
         sentinel = uuid.uuid4().hex
         marker   = f"__KOI_DONE_{sentinel}__"
@@ -191,7 +193,6 @@ class KoiModule(ABC):
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                from koi.shell_handler.exceptions import CommandTimeout
                 raise CommandTimeout(command, timeout)
 
             ready, _, _ = select.select([self.session.conn], [], [], min(remaining, 0.1))
