@@ -1,7 +1,5 @@
 # koi 🎏
-[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://python.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
+![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54) ![GitHub last commit (branch)](https://img.shields.io/github/last-commit/b3rt1ng/Koi/main?style=for-the-badge&color=rgb(235%2C%20111%2C%20%2092)) ![GitHub Repo stars](https://img.shields.io/github/stars/b3rt1ng/Koi?style=for-the-badge&labelColor=(169%2C%20169%2C%20169)&color=rgb(255%2C%20116%2C%200))
 This project is my shot at making a fast, easy to use (yet feature rich) shell handler with a pretty interface.
 
 Disclaimer: please note that this is still under development, and I am still working on some of the key features, wich is talked about in [this section](#-wip).
@@ -22,6 +20,7 @@ Disclaimer: please note that this is still under development, and I am still wor
 * **Koi fish themed UI**: Gradient prompt, status indicators, and session boxes, pentest tooling doesn't have to be ugly.
 
 ## 🚧 WIP
+* **Windows**: Currently working on a reliable way to handle windows shell, i'm also thinking about how odules should handle different shells. Mhhhhhh decisions decisions...
 * **Tunneling**: Once you have your shell, a simple way to tunnel in that network would be very conveinient, this has yet to be done.
 * **Modules**: I consider this part is still under WIP since i'm experimenting ways to make it reliable yet easy to implement for you guys, as of now it is more than usable.
 * **Testings**: I've tried my tool on CTF and personal devices but it still needs more testing. As of now, this has been made for linux based shells but I want it to be able to work under windows powershell with all it's implications.
@@ -32,6 +31,9 @@ Disclaimer: please note that this is still under development, and I am still wor
 ```bash
 # directly from the repo
 pipx install git+https://github.com/b3rt1ng/Koi
+
+# or pypi
+pipx install koi-handler
 
 # From source if you want to dev your own modules
 git clone https://github.com/b3rt1ng/koi
