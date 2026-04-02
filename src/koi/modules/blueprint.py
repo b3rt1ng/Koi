@@ -4,9 +4,9 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, List, Optional
 
 if TYPE_CHECKING:
-    from koi.main import Session
+    from koi.session import Session
     from koi.shell_handler.core import ShellHandler
-
+    
 from koi.utils import ui
 
 import argparse
