@@ -4,13 +4,13 @@
 
 This project is my shot at making a fast, easy to use (yet feature rich) shell handler with a pretty interface.
 
-Disclaimer: please note that this is still under development, and I am still working on some of the key features, wich is talked about in [this section](#-wip).
+Disclaimer: please note that this is still under development, and I am still working on some of the key features, which is talked about in [this section](#-wip).
 
 ---
 
 ### Demo
 
-<img src="https://i.imgur.com/nUAtJf5.gif">
+<img src="https://cdn.discordapp.com/attachments/1210033781663338586/1490310723144777818/demo.gif?ex=69d39785&is=69d24605&hm=490d2284b53283d98bfb134b093975a7e8a86c65760896f2716722c1f7a91f4d">
 
 ---
 
@@ -23,7 +23,7 @@ Disclaimer: please note that this is still under development, and I am still wor
 
 ## 🚧 WIP
 * **Windows**: Powershells are now available and upgradable, but needs some testings.
-* **Tunneling**: Once you have your shell, a simple way to tunnel in that network would be very conveinient, this has yet to be done.
+* **Tunneling**: Once you have your shell, a simple way to tunnel in that network would be very convenient, this has yet to be done.
 * **Modules**: Modules for linux are easy to implement. Windows on the other hand, is inherently "stranger". I am thinking about a way to make it more dev friendly.
 * **Testings**: I've tried my tool on CTF and personal devices but it still needs more testing. As of now, this has been made for linux based shells but I want it to be able to work under windows powershell with all it's implications.
 ---
@@ -64,23 +64,6 @@ Send a reverse shell yourself or by typing `payloads *interface*` to get pregene
 
 ---
 
-## 🐚 Listener commands
-
-Once `koi` is running, you are presented with a control terminal:
-
-| Command | Description |
-|---|---|
-| `ls` | List all active sessions |
-| `go <id>` | Enter a session interactively |
-| `upgrade <id>` | Upgrade session to a full PTY |
-| `kill <id>` | Terminate and remove a session |
-| `modules` | List all modules |
-| `run <module_name> <id> [args_if_needed]` | Run a module on a terget |
-| `help` | Show available commands |
-| `exit` | Shut down the listener |
-
----
-
 ## 🔧 PTY Upgrade
 
 Raw shells lack proper terminal support — no tab completion, broken `Ctrl+C`, mangled output. The `upgrade` command fixes this:
@@ -104,21 +87,33 @@ with `TERM=xterm-256color` and some resizing info
 I did not bothered making one for CMD but for powershell, the technique uses [conptyshell](https://github.com/antoniococo/conptyshell) to gather a fully implemented shell:
 
 ```
-# 1 Conptyshell is dowloaded in memory
+# 1 Conptyshell is downloaded in memory
 # 2 It's sent to your target and executed to be sent back to you
 # 3 Koi waits for the shell to reach and puts it as new session
 ```
-> **NOTE:** the origin session will be kept alive but you can still kill it and play with the upgraded shell.
+
+> [!WARNING]
+> <small>_the origin session will be kept alive but you can still kill it and play with the upgraded shell. Just know that as it's technically running the upgraded session, you won't be able to interact much with it._</small>
+
+---
+
+
 
 ### 🤖 Modules
 
+<a href="https://asciinema.org/a/quY43wqm0jhsoypj?autoplay=1"><img src="https://asciinema.org/a/quY43wqm0jhsoypj.svg" alt="koi module download on powershell" width="100%" /></a>
+> [!NOTE]
+> <small>_On this demo, the upload is still being updated for powershell support, i'm on it !_</small>
+
 Modules are basically a way to automate actions on your instances. you can run commands, and take advantage of your python backend.
 
-Checkout the [blueprint](src/koi/modules/blueprint.py) to see how you can make your own module or check our examples ([linpeas](src/koi/modules/linpeas.py), [get users](src/koi/modules/get_users.py)) to get insiprations
+If you want to make your own modules, I recommend cloning this repo and installing it with the `--editable` flag. Once you have a shell, you can dev your payload and use the `reload` command to update all modules including the one you're working on.
+
+Checkout the [blueprint](src/koi/modules/blueprint.py) to see how you can make your own module or check our examples ([linpeas](src/koi/modules/linpeas.py), [get users](src/koi/modules/get_users.py)) to get inspirations
 
 Also, if you want to make your own module part of this repo, do not hesitate to make a PR, I will gladly look at it and see if it's interesting to add here <3
 
-> <small>_fun fact: making modules work for both windows and linux, is indeed conveinient for the user experience but a pain in the ass to implement, just check the code nightmare in [the download module](/src/koi/modules/download.py), especially since windows upgraded pty behave a bit diferently from the basic powershell, let's forget about the command prompt..._</small>
+> <small>_fun fact: making modules work for both windows and linux, is indeed convenient for the user experience but a pain in the ass to implement, just check the code nightmare in [the download module](/src/koi/modules/download.py), especially since windows upgraded pty behave a bit differently from the basic powershell, let's forget about the command prompt..._</small>
 
 <div align="center">
   <img src="https://media1.tenor.com/m/pTHWYc7b8TsAAAAd/smiling-friends-dab.gif">
