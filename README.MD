@@ -1,5 +1,5 @@
 # koi 🎏
-![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54) ![GitHub last commit (branch)](https://img.shields.io/github/last-commit/b3rt1ng/Koi/main?style=for-the-badge&color=rgb(235%2C%20111%2C%20%2092)) ![GitHub Repo stars](https://img.shields.io/github/stars/b3rt1ng/Koi?style=for-the-badge&labelColor=(169%2C%20169%2C%20169)&color=rgb(255%2C%20116%2C%200)) 
+![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54) ![GitHub last commit (branch)](https://img.shields.io/github/last-commit/b3rt1ng/Koi/main?style=for-the-badge&color=rgb(235%2C%20111%2C%20%2092)) ![GitHub Repo stars](https://img.shields.io/github/stars/b3rt1ng/Koi?style=for-the-badge&labelColor=(169%2C%20169%2C%20169)&color=rgb(255%2C%20116%2C%200)) ![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black) ![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
 
 
 This project is my shot at making a fast, easy to use (yet feature rich) shell handler with a pretty interface.
@@ -22,9 +22,9 @@ Disclaimer: please note that this is still under development, and I am still wor
 * **Koi fish themed UI**: Gradient prompt, status indicators, and session boxes, pentest tooling doesn't have to be ugly.
 
 ## 🚧 WIP
-* **Windows**: Currently working on a reliable way to handle windows shell, i'm also thinking about how odules should handle different shells. Mhhhhhh decisions decisions...
+* **Windows**: Powershells are now available and upgradable, but needs some testings.
 * **Tunneling**: Once you have your shell, a simple way to tunnel in that network would be very conveinient, this has yet to be done.
-* **Modules**: I consider this part is still under WIP since i'm experimenting ways to make it reliable yet easy to implement for you guys, as of now it is more than usable.
+* **Modules**: Modules for linux are easy to implement. Windows on the other hand, is inherently "stranger". I am thinking about a way to make it more dev friendly.
 * **Testings**: I've tried my tool on CTF and personal devices but it still needs more testing. As of now, this has been made for linux based shells but I want it to be able to work under windows powershell with all it's implications.
 ---
 
@@ -92,11 +92,23 @@ koi> go 1
   # now a full PTY with proper terminal behaviour
 ```
 
-Under the hood it runs:
+#### Under the hood
+##### For linux:
+a simple python pty is spawned
 ```bash
 python3 -c 'import pty; pty.spawn("/bin/bash")'
 ```
 with `TERM=xterm-256color` and some resizing info
+
+##### For windows:
+I did not bothered making one for CMD but for powershell, the technique uses [conptyshell](https://github.com/antoniococo/conptyshell) to gather a fully implemented shell:
+
+```
+# 1 Conptyshell is dowloaded in memory
+# 2 It's sent to your target and executed to be sent back to you
+# 3 Koi waits for the shell to reach and puts it as new session
+```
+> **NOTE:** the origin session will be kept alive but you can still kill it and play with the upgraded shell.
 
 ### 🤖 Modules
 
@@ -105,6 +117,9 @@ Modules are basically a way to automate actions on your instances. you can run c
 Checkout the [blueprint](src/koi/modules/blueprint.py) to see how you can make your own module or check our examples ([linpeas](src/koi/modules/linpeas.py), [get users](src/koi/modules/get_users.py)) to get insiprations
 
 Also, if you want to make your own module part of this repo, do not hesitate to make a PR, I will gladly look at it and see if it's interesting to add here <3
+
+> <small>_fun fact: making modules work for both windows and linux, is indeed conveinient for the user experience but a pain in the ass to implement, just check the code nightmare in [the download module](/src/koi/modules/download.py), especially since windows upgraded pty behave a bit diferently from the basic powershell, let's forget about the command prompt..._</small>
+
 <div align="center">
   <img src="https://media1.tenor.com/m/pTHWYc7b8TsAAAAd/smiling-friends-dab.gif">
 </div>

@@ -12,6 +12,7 @@ class UploadModule(KoiModule):
     description = "Upload a local file to the target via a dedicated TCP connection."
     usage = "upload <id> <local_path> [-o <remote_path>]"
     category = "File transfer"
+    platform = "linux"
     arguments = [
         {"flags": ["local_path"], "help": "Path of the local file to upload"},
         {"flags": ["-o", "--output"], "default": None, "help": "Remote destination path"},

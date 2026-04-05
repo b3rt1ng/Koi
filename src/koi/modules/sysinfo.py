@@ -8,6 +8,7 @@ class SysInfoModule(KoiModule):
     description = "Gather basic system information from the target."
     category    = "Enumeration"
     usage       = "sysinfo <id>"
+    platform    = "linux"
 
 
     def _get(self, cmd: str, fallback: str = "unknown") -> str:

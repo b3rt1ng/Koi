@@ -10,6 +10,7 @@ WHITE       = (255, 255, 255)
 SILVER      = (169, 169, 169)
 CORAL       = (235, 111,  92)
 UMBER       = (123,  62,   0)
+BLUE        = (118, 241, 245)
 RST = "\033[0m"
 DIM = "\033[2m"
 BOLD = "\033[1m"
@@ -17,12 +18,11 @@ BOLD = "\033[1m"
 def _b(t):  return f"{BOLD}{t}{RST}"
 def _d(t):  return f"{DIM}{t}{RST}"
 def _r(t):  return colored_text(t, CORAL)
-def _g(t):  return colored_text(t, UMBER)
 def _c(t):  return colored_text(t, WHITE)
 def _p(t):  return colored_text(t, PUMPKIN)
 def _y(t):  return colored_text(t, CORAL)
-def _o(t):  return colored_text(t, PUMPKIN)
 def _gr(t): return colored_text(t, SILVER)
+def _bl(t): return colored_text(t, BLUE)
 
 MOTD = ["The serene shell handler", 
         "This has to be legal, right?",
@@ -125,19 +125,6 @@ def print_status_line(text):
     print(f"\r{ERASE_LINE}{output}", end="", flush=True)
 
 
-def format_keywords(keywords_dict):
-    if not keywords_dict:
-        return ""
-
-    parts = []
-    for keyword, count in keywords_dict.items():
-        key_colored   = colored_text(keyword, PUMPKIN)
-        count_colored = colored_text(count,   CORAL)
-        parts.append(f"{key_colored}: {count_colored}")
-
-    return " " + colored_text(f"\033[0m[{', '.join(parts)}]", UMBER)
-
-
 def print_report_box(title, data_dict, top_left_color=PUMPKIN, bottom_right_color=CORAL):
     if not data_dict:
         return
@@ -236,7 +223,8 @@ def notify(msg_type, text):
         'info':    (WHITE,  "ℹ", "Info"),
         'error':   (CORAL,  "✖", "Error"),
         'warning': (CORAL,  "!", "Warning"),
-        'status':  (SILVER, "⚡", "Status")
+        'status':  (SILVER, "⚡", "Status"),
+        'success': (PUMPKIN,  "✔", "Success"),
     }
     
     if msg_type not in prefixes:
@@ -312,8 +300,40 @@ class ProgressBar:
         
 def breaker():
     print(gradient_text(whole_line("─"), PUMPKIN, SILVER))
+    
+def breaker_with_text(test: str = ""):
+    text = f" {test} " if test else ""
+    line = whole_line("─")
 
-if __name__ == "__main__":
-    display_art()
-    print_report_box("Example Report", {"Keyword1": 10, "Keyword2": 5, "Keyword3": 15})
-    print_status_line("Processing...")
+    if not text:
+        print(gradient_text(line, PUMPKIN, SILVER))
+        return
+
+    if len(text) >= len(line):
+        print(colored_text(text[: len(line)], WHITE) + RST)
+        return
+
+    left_len = (len(line) - len(text)) // 2
+    right_len = len(line) - len(text) - left_len
+
+    print(
+        gradient_text("─" * left_len, PUMPKIN, SILVER)
+        + colored_text(text, WHITE)
+        + gradient_text("─" * right_len, SILVER, PUMPKIN)
+        + RST
+    )
+    
+def yesno(question: str, prechosen: bool = True) -> bool:
+    choice_hint = "[Y/n]" if prechosen else "[y/N]"
+
+    while True:
+        answer = input(f"  {color_signal(PUMPKIN)}?  {color_signal(WHITE)}{question} {color_signal(SILVER)}{choice_hint}{color_signal(WHITE)} ").strip().lower()
+
+        if answer == "":
+            return prechosen
+        if answer in {"y", "yes"}:
+            return True
+        if answer in {"n", "no"}:
+            return False
+
+

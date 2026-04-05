@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, List, Literal, Optional, Union
 
 if TYPE_CHECKING:
     from koi.session import Session
@@ -10,6 +10,11 @@ from koi.models import CommandResult, StreamLine
 from koi.utils import ui
 
 import argparse
+
+PlatformSpec = Union[
+    Literal["linux", "windows_cmd", "windows_ps", "any"],
+    List[Literal["linux", "windows_cmd", "windows_ps"]],
+]
 
 class CommandTimeout(Exception):
     def __init__(self, command: str, timeout: float):
@@ -53,6 +58,21 @@ class KoiModule(ABC):
     
     #: Optional category for grouping modules in the UI
     category: Optional[str] = None
+
+    #: Supported platform(s): "linux", "windows_cmd", "windows_ps", "any",
+    #: or a list combining multiple specific targets.
+    platform: PlatformSpec = "any"
+
+    @classmethod
+    def supports(cls, os_type: Optional[str]) -> bool:
+        """Return True if this module is compatible with the given session OS type."""
+        if cls.platform == "any":
+            return True
+        if os_type is None:
+            return False
+        if isinstance(cls.platform, list):
+            return os_type in cls.platform
+        return cls.platform == os_type
 
     def __init__(
         self,

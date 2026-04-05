@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import readline
-from typing import TYPE_CHECKING
 
 from koi.modules.loader import load_modules, get_module
 from koi.utils.payloads import _get_interfaces
@@ -9,9 +8,6 @@ from koi.utils.ui import (
     print_report_box, notify,
     _b, _p, _y,
 )
-
-if TYPE_CHECKING:
-    pass
 
 COMMANDS = [
     "ls", "go", "upgrade", "kill", "help", "exit",

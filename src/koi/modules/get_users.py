@@ -6,6 +6,7 @@ class GetUsersModule(KoiModule):
     description = "List local users by reading /etc/passwd on the target."
     usage = "get_users <id> [all]"
     category = "Enumeration"
+    platform = "linux"
 
     def run(self) -> None:
         result = self.exec("cat /etc/passwd")
