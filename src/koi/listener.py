@@ -27,19 +27,27 @@ LOCALUSER = os.getenv("USER") or os.getenv("USERNAME") or "user"
 
 
 def _platform_badge(platform) -> str:
-    _LABELS = {
-        "linux":       _y("[linux]"),
-        "windows_cmd": _bl("[cmd]"),
-        "windows_ps":  _bl("[ps]"),
-        "any":         _gr("[any]"),
+    _NAMES = {
+        "linux":       "Linux",
+        "windows_cmd": "cmd",
+        "windows_ps":  "PowerShell",
+        "any":         "any",
     }
+    _COLORS = {
+        "linux":       _y,
+        "windows_cmd": _bl,
+        "windows_ps":  _bl,
+        "any":         _gr,
+    }
+
+    def _os_tag(p: str) -> str:
+        return _COLORS.get(p, _gr)(_NAMES.get(p, p))
+
+    ob, cb = _gr("["), _gr("]")
     if isinstance(platform, list):
-        parts = "/".join(
-            {"linux": "linux", "windows_cmd": "cmd", "windows_ps": "ps"}.get(p, p)
-            for p in platform
-        )
-        return _bl(f"[{parts}]")
-    return _LABELS.get(platform, _gr(f"[{platform}]"))
+        inner = _gr(", ").join(_os_tag(p) for p in platform)
+        return f"{ob}{inner}{cb}"
+    return f"{ob}{_os_tag(platform)}{cb}"
 
 
 class Listener:
