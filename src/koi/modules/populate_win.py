@@ -29,7 +29,7 @@ MIMIKATZ_ZIP_URL = "https://github.com/gentilkiwi/mimikatz/releases/download/2.2
 
 class PopulateWinModule(KoiModule):
     name        = "populate_win"
-    description = "Download common exploitation tools (Rubeus, RunasCs, Certify, winPEAS, SharpHound, mimikatz) on the target."
+    description = "Upload common exploitation tools (Rubeus, RunasCs, Certify, winPEAS, SharpHound, mimikatz) on the target."
     usage       = "populate_win <id> [-o <remote_dir>]"
     category    = "Other"
     platform    = "windows_ps"

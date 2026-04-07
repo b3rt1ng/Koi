@@ -1,5 +1,5 @@
 # koi 🎏
-![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54) ![GitHub last commit (branch)](https://img.shields.io/github/last-commit/b3rt1ng/Koi/main?style=for-the-badge&color=rgb(235%2C%20111%2C%20%2092)) ![GitHub Repo stars](https://img.shields.io/github/stars/b3rt1ng/Koi?style=for-the-badge&labelColor=(169%2C%20169%2C%20169)&color=rgb(255%2C%20116%2C%200)) ![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black) ![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
+![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54) ![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black) ![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white) ![GitHub last commit (branch)](https://img.shields.io/github/last-commit/b3rt1ng/Koi/main?style=for-the-badge&color=rgb(235%2C%20111%2C%20%2092)) ![GitHub Repo stars](https://img.shields.io/github/stars/b3rt1ng/Koi?style=for-the-badge&labelColor=(169%2C%20169%2C%20169)&color=rgb(255%2C%20116%2C%200))
 
 
 This project is my shot at making a fast, easy to use (yet feature rich) shell handler with a pretty interface.
@@ -58,7 +58,7 @@ koi --host 10.10.14.5 --port 9001
 koi -p 9001
 ```
 
-### Catch a shell
+#### Catch a shell
 
 Send a reverse shell yourself or by typing `payloads *interface*` to get pregenerated payloads. do note that it needs to be a terminal like shell, as Koi is manipulating linux shs, powershells and cmd.
 
@@ -101,7 +101,7 @@ I did not bothered making one for CMD but for powershell, the technique uses [co
 
 ### 🤖 Modules
 
-<a href="https://asciinema.org/a/quY43wqm0jhsoypj?autoplay=1"><img src="https://asciinema.org/a/quY43wqm0jhsoypj.svg" alt="koi module download on powershell" width="100%" /></a>
+<a href="https://asciinema.org/a/quY43wqm0jhsoypj"><img src="https://asciinema.org/a/quY43wqm0jhsoypj.svg" alt="koi module download on powershell" width="100%" /></a>
 > [!NOTE]
 > <small>_On this demo, the upload is still being updated for powershell support, i'm on it !_</small>
 
@@ -112,8 +112,6 @@ If you want to make your own modules, I recommend cloning this repo and installi
 Checkout the [blueprint](src/koi/modules/blueprint.py) to see how you can make your own module or check our examples ([linpeas](src/koi/modules/linpeas.py), [get users](src/koi/modules/get_users.py)) to get inspirations
 
 Also, if you want to make your own module part of this repo, do not hesitate to make a PR, I will gladly look at it and see if it's interesting to add here <3
-
-> <small>_fun fact: making modules work for both windows and linux, is indeed convenient for the user experience but a pain in the ass to implement, just check the code nightmare in [the download module](/src/koi/modules/download.py), especially since windows upgraded pty behave a bit differently from the basic powershell, let's forget about the command prompt..._</small>
 
 <div align="center">
   <img src="https://media1.tenor.com/m/pTHWYc7b8TsAAAAd/smiling-friends-dab.gif">
