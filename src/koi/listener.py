@@ -66,7 +66,6 @@ class Listener:
         self._in_session = False
         self._pending_notifications: list = []
         self._notif_lock = threading.Lock()
-        # ip -> os_type : sessions attendues par un upgrade ConPtyShell
         self._pending_conpty: dict = {}
 
     def _add(self, conn, addr) -> Session:
@@ -109,7 +108,6 @@ class Listener:
             ).start()
 
     def _detect_and_notify(self, sess: Session) -> None:
-        # Session ConPtyShell attendue : pas besoin de sonder, l'OS est connu.
         parent_os = self._pending_conpty.pop(sess.addr[0], None)
         if parent_os is not None:
             sess.os_type = parent_os
@@ -370,13 +368,11 @@ class Listener:
             notify('error', "ConPtyShell did not connect back in time.")
             return
 
-        # Wait for OS detection to finish
         deadline = time.monotonic() + 5.0
         while new_sess.os_type is None and time.monotonic() < deadline:
             time.sleep(0.1)
 
         new_sess.upgraded = True
-        # Wake up the ConPtyShell PTY so it's ready to accept commands immediately
         time.sleep(0.3)
         new_sess.conn.sendall(b"\r\n")
         notify('success',f"ConPtyShell ready as session {_p(f'#{new_sess.id}')}. ")
@@ -443,9 +439,6 @@ class Listener:
 
         breaker()
 
-        # ConPtyShell sends absolute cursor-position sequences; clear the
-        # terminal first so they land on a blank canvas instead of on top of
-        # the messages printed above.
         if is_windows_pty:
             sys.stdout.write("\033[2J\033[H")
             sys.stdout.flush()
@@ -652,7 +645,6 @@ class Listener:
         stop_event = threading.Event()
         result = ["backgrounded"]
 
-        # Thread qui affiche ce que la session renvoie
         def _recv():
             buf = b""
             while not stop_event.is_set() and sess.alive:
@@ -681,14 +673,12 @@ class Listener:
 
         time.sleep(0.3)
 
-        # Intercepter SIGTSTP (Ctrl+Z) pour background sans attendre Enter
         old_sigtstp = signal.getsignal(signal.SIGTSTP)
         def _handle_sigtstp(signum, frame):
             result[0] = "backgrounded"
             stop_event.set()
         signal.signal(signal.SIGTSTP, _handle_sigtstp)
 
-        # Lire stdin dans un thread séparé via select pour ne pas bloquer
         input_queue: queue.Queue = queue.Queue()
 
         def _read_input():
@@ -700,7 +690,6 @@ class Listener:
                         if line:
                             input_queue.put(line.rstrip('\n'))
                         else:
-                            # EOF
                             input_queue.put(None)
                             return
                 except Exception:
