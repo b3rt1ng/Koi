@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import os
 import select
-import socket
-import threading
 import time
 
 from koi.modules.blueprint import KoiModule
+from koi.utils.tcp import get_local_ip, spawn_send_server
 
 
 class UploadModule(KoiModule):
@@ -20,17 +19,9 @@ class UploadModule(KoiModule):
         {"flags": ["-o", "--output"], "default": None, "help": "Remote destination path"},
     ]
 
-    def _get_local_ip(self) -> str:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            s.connect((self.session.addr[0], 80))
-            return s.getsockname()[0]
-        finally:
-            s.close()
-
     def run(self) -> None:
         local_path  = self.args.local_path
-        local_ip    = self._get_local_ip()
+        local_ip    = get_local_ip(self.session.addr[0])
         os_type     = self.session.os_type
         basename    = os.path.basename(local_path)
 
@@ -49,35 +40,8 @@ class UploadModule(KoiModule):
             raw = f.read()
 
         total = len(raw)
-
-        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        srv.bind(("0.0.0.0", 0))
-        srv.listen(1)
-        srv.settimeout(10)
-        port = srv.getsockname()[1]
-
-        error = []
-
-        def _send():
-            try:
-                conn, _ = srv.accept()
-                bar  = self.ui.ProgressBar(total=total)
-                sent = 0
-                while sent < total:
-                    chunk  = raw[sent : sent + 65536]
-                    conn.sendall(chunk)
-                    sent  += len(chunk)
-                    bar.update(sent)
-                bar.done()
-                conn.close()
-            except Exception as exc:
-                error.append(str(exc))
-            finally:
-                srv.close()
-
-        t = threading.Thread(target=_send, daemon=True)
-        t.start()
+        bar = self.ui.ProgressBar(total=total)
+        port, thread, errors = spawn_send_server(raw, timeout=30, on_progress=bar.update)
 
         self.status(f"Uploading {local_path} → {remote_path} ({total} bytes)…")
 
@@ -108,11 +72,12 @@ class UploadModule(KoiModule):
                 escaped = ps_cmd.replace('"', '\\"')
                 self.sendline(f'powershell -NoProfile -NonInteractive -c "{escaped}"')
 
-        t.join(timeout=30)
+        thread.join(timeout=30)
+        bar.done()
         print()
 
-        if error:
-            self.err(f"Transfer failed: {error[0]}")
+        if errors:
+            self.err(f"Transfer failed: {errors[0]}")
             return
 
         self.box("Upload complete", {

