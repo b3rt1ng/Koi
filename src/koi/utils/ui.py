@@ -1,9 +1,11 @@
+import re
 import shutil
 import sys
 import threading
 import time
-import re
 from random import choice
+
+_ANSI = re.compile(r"\033\[[^m]*m")
 
 PUMPKIN     = (255, 116,   0)
 WHITE       = (255, 255, 255)
@@ -129,8 +131,7 @@ def print_report_box(title, data_dict, top_left_color=PUMPKIN, bottom_right_colo
     if not data_dict:
         return
 
-    _ansi = re.compile(r"\033\[[^m]*m")
-    def _len(s): return len(_ansi.sub("", str(s)))
+    def _len(s): return len(_ANSI.sub("", str(s)))
 
     categorized = any(isinstance(v, dict) for v in data_dict.values())
 
