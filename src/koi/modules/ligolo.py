@@ -4,14 +4,13 @@ import io
 import json
 import re
 import select
-import socket
 import tarfile
-import threading
 import time
 import urllib.request
 import zipfile
 
 from koi.modules.blueprint import KoiModule
+from koi.utils.tcp import spawn_send_server
 
 _GITHUB_API = "https://api.github.com/repos/nicocha30/ligolo-ng/releases/latest"
 
@@ -115,36 +114,8 @@ class LigoloModule(KoiModule):
     def _upload_bytes(self, raw: bytes, dest: str) -> bool:
         """Upload *raw* bytes to *dest* on the target via a side TCP connection."""
         local_ip = self._get_local_ip()
-        total    = len(raw)
-
-        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        srv.bind(("0.0.0.0", 0))
-        srv.listen(1)
-        srv.settimeout(60)
-        port = srv.getsockname()[1]
-
-        error: list[str] = []
-
-        def _send():
-            try:
-                conn, _ = srv.accept()
-                bar  = self.ui.ProgressBar(total=total)
-                sent = 0
-                while sent < total:
-                    chunk = raw[sent: sent + 65536]
-                    conn.sendall(chunk)
-                    sent += len(chunk)
-                    bar.update(sent)
-                bar.done()
-                conn.close()
-            except Exception as exc:
-                error.append(str(exc))
-            finally:
-                srv.close()
-
-        t = threading.Thread(target=_send, daemon=True)
-        t.start()
+        bar = self.ui.ProgressBar(total=len(raw))
+        port, t, errors = spawn_send_server(raw, timeout=60, on_progress=lambda sent: bar.update(sent))
 
         if self.session.os_type == "linux":
             self.exec(
@@ -170,9 +141,10 @@ class LigoloModule(KoiModule):
                 self.sendline(ps_cmd)
 
         t.join(timeout=60)
+        bar.done()
         print()
 
-        if error:
+        if errors:
             return False
 
         time.sleep(1.0)
