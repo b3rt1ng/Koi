@@ -71,7 +71,7 @@ def colored_text(text, foreground_color, background_color=None):
         return f"\033[38;2;{r};{g};{b}m{text}{RST}"
 
 
-def display_art():
+def display_art(small: bool = False):
     terminal_width = shutil.get_terminal_size().columns
     art = f"""
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(PUMPKIN)}⡀⡀⡀⡀⡀⡀⡀⡀⡀{color_signal(WHITE)}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
@@ -110,7 +110,7 @@ def display_art():
 ⠀⠀{color_signal(SILVER)}⠈{color_signal(WHITE)}⠏{color_signal(SILVER)}⠏⠉⠉⠉⠈⠛⠤⣀⣠{color_signal(WHITE)}⡽⠀⠀⠀⠀⠀⠀{RST}
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀By @b3rt1ng⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{RST}
 """
-    if terminal_width < 139:
+    if terminal_width < 139 or small:
         print(small_art)
     else:
         print(art)
