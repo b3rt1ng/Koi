@@ -10,9 +10,11 @@ from koi.utils.ui import (
 )
 
 COMMANDS = [
-    "ls", "go", "upgrade", "kill", "help", "exit",
+    "ls", "go", "upgrade", "kill", "setshell", "help", "exit",
     "quit", "interact", "payload", "run", "modules", "reload",
 ]
+
+_OS_TYPES = ["linux", "windows_ps", "windows_cmd"]
 
 readline.set_history_length(200)
 readline.parse_and_bind("tab: complete")
@@ -37,6 +39,12 @@ def completer(text: str, state: int):
         modules = load_modules()
         options = [name for name in modules if name.startswith(text)]
 
+    elif parts[0] == "setshell" and len(parts) >= 2 and line.endswith(" "):
+        if len(parts) == 2 or (len(parts) == 3 and not line.endswith(" ")):
+            options = [o for o in _OS_TYPES if o.startswith(text)]
+        else:
+            options = []
+
     else:
         options = []
 
@@ -57,6 +65,7 @@ def print_help() -> None:
             f"{_p('modules')}": "List available modules",
             f"{_p('reload')}": "Reload modules from disk (useful during development)",
             f"{_p('run')} {_b('<module>')} {_b('<id>')} {_b('[args…]')}": "Run a module against a session",
+            f"{_p('setshell')} {_b('<id>')} {_b('<os_type>')}": "Manually set the OS type of a session",
             f"{_p('help')}": "Show this message",
             f"{_p('exit')}": "Shut down the listener",
         },

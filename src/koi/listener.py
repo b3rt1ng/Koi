@@ -241,11 +241,20 @@ class Listener:
             elif cmd in ("modules", "mdls", "mods"):
                 self._cmd_modules()
 
-            elif cmd in ("reload", "refresh"):
+            elif cmd in ("reload", "refresh", "rl"):
                 self._cmd_reload()
 
             elif cmd == "run":
                 self._dispatch_run(parts)
+
+            elif cmd in ("setshell", "sh"):
+                if len(parts) < 3:
+                    notify('error', f"Usage: setshell {_p('<id>')} {_p('<linux|windows_ps|windows_cmd>')}")
+                else:
+                    try:
+                        self._cmd_setshell(int(parts[1]), parts[2])
+                    except ValueError:
+                        notify('error', "Session id must be an integer.")
 
             else:
                 notify('error', f"Unknown command: {_p(cmd)}  — type {_b('help')}")
@@ -560,6 +569,41 @@ class Listener:
         finally:
             signal.signal(signal.SIGINT, old_handler)
         print()
+
+    _OS_ALIASES: dict[str, str] = {
+        "linux":       "linux",
+        "windows_ps":  "windows_ps",
+        "windows_cmd": "windows_cmd",
+        "ps":          "windows_ps",
+        "powershell":  "windows_ps",
+        "cmd":         "windows_cmd",
+    }
+
+    def _cmd_setshell(self, sid: int, os_arg: str) -> None:
+        self._prune()
+        sess = self._get(sid)
+        if sess is None:
+            notify('error', f"Session {_p(f'#{sid}')} not found.")
+            return
+
+        os_type = self._OS_ALIASES.get(os_arg.lower())
+        if os_type is None:
+            valid = ", ".join(sorted(set(self._OS_ALIASES.values())))
+            notify('error', f"Unknown OS type {_p(os_arg)!r}.  Valid: {_gr(valid)}")
+            return
+
+        old = sess.os_label()
+        sess.os_type = os_type  # type: ignore[assignment]
+
+        if os_type == "linux":
+            sess.encoding = "utf-8"
+            sess.eol      = "\n"
+        else:
+            sess.encoding = "cp1252"
+            sess.eol      = "\r\n"
+
+        notify('success',
+            f"Session {_p(f'#{sid}')} OS set: {old} → {sess.os_label()}")
 
     def _cmd_payload(self, iface: Optional[str] = None) -> None:
         gen = PayloadGenerator(port=self.port)
