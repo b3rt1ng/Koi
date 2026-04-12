@@ -99,18 +99,19 @@ def display_art():
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠌⠌⠀⠡⠡⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠈⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
 """
-    small_art = r"""
-      :::    ::: :::::::: ::::::::::: 
-     :+:   :+: :+:    :+:    :+:      
-    +:+  +:+  +:+    +:+    +:+       
-   +#++:++   +#+    +:+    +#+        
-  +#+  +#+  +#+    +#+    +#+         
- #+#   #+# #+#    #+#    #+#          
-###    ### ######## ###########       
-        By @b3rt1ng                                           
+    small_art = f"""\
+⠀{color_signal(SILVER)}⢠⣀⠀⠈⠑{color_signal(WHITE)}⢶⣦⣤⡴⢶{color_signal(SILVER)}⠶{color_signal(WHITE)}⣶⣶{color_signal(SILVER)}⣤⡀⠀⠀⠀⠀{RST}
+⠀⠀{color_signal(SILVER)}⠈⠉⢲⠤⠺{color_signal(WHITE)}⣿{color_signal(PUMPKIN)}⣿⣧{color_signal(WHITE)}⣿{color_signal(CORAL)}⣿{color_signal(WHITE)}⣋{color_signal(SILVER)}⢠{color_signal(PUMPKIN)}⣿{color_signal(WHITE)}⣿{color_signal(SILVER)}⣄⠀⠀⠀{RST}██   {color_signal(PUMPKIN)}██{RST}  {color_signal(SILVER)}████{RST}██  ██ 
+⠀⠀⠀{color_signal(SILVER)}⡰⠃⢀⣴{color_signal(WHITE)}⡿{color_signal(SILVER)}⠟⠁⠺{color_signal(WHITE)}⢝⣿⣿{color_signal(CORAL)}⣿{color_signal(PUMPKIN)}⣿⣿{color_signal(WHITE)}⡆⠀⠀{RST}██  {color_signal(PUMPKIN)}█{RST}█  {color_signal(SILVER)}██{RST}    ██ ██ 
+⠀⠀{color_signal(SILVER)}⠾⠵⠖⠋⠁⣀⣀⣠{color_signal(WHITE)}⣮⣭⣼⣷⣞⣥{color_signal(PUMPKIN)}⣹{color_signal(WHITE)}⡇⠀⠀{RST}█████   {color_signal(SILVER)}█{RST}█    ██ █{color_signal(PUMPKIN)}█ 
+⠀⠀⠀⠀{color_signal(SILVER)}⢀⣤{color_signal(WHITE)}⡺⠿⠿{color_signal(PUMPKIN)}⣿⣿⣿{color_signal(WHITE)}⣶⣇⣨{color_signal(CORAL)}⣿{color_signal(WHITE)}⣿{color_signal(SILVER)}⠁⠀⠀{RST}{color_signal(UMBER)}█{RST}█  ██  ██    ██ {color_signal(PUMPKIN)}██ 
+⠀⠀{color_signal(SILVER)}⢠{color_signal(WHITE)}⢶{color_signal(PUMPKIN)}⣿⠿{color_signal(SILVER)}⠃⠀⣀⡁⠀{color_signal(PUMPKIN)}⣿{color_signal(CORAL)}⣿{color_signal(WHITE)}⣼{color_signal(CORAL)}⣿{color_signal(WHITE)}⣿⣏{color_signal(SILVER)}⡑⡄⠀{RST}{color_signal(UMBER)}██{RST}   ██  ██████  {color_signal(PUMPKIN)}██ 
+⠀{color_signal(SILVER)}⢰⣁⡐⠰⠆⣰{color_signal(WHITE)}⣶{color_signal(PUMPKIN)}⣿{color_signal(WHITE)}⣿⡿{color_signal(SILVER)}⠛{color_signal(WHITE)}⠻{color_signal(SILVER)}⡋⠀⠉⠉⠁⠀⠀{RST}
+⠀⠀{color_signal(SILVER)}⠈{color_signal(WHITE)}⠏{color_signal(SILVER)}⠏⠉⠉⠉⠈⠛⠤⣀⣠{color_signal(WHITE)}⡽⠀⠀⠀⠀⠀⠀{RST}
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀By @b3rt1ng⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{RST}
 """
     if terminal_width < 139:
-        print(gradient_text(small_art, WHITE, PUMPKIN))
+        print(small_art)
     else:
         print(art)
 
