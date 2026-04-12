@@ -18,6 +18,8 @@ _OS_TYPES = ["linux", "windows_ps", "windows_cmd"]
 
 readline.set_history_length(200)
 readline.parse_and_bind("tab: complete")
+# Ctrl+T → toggle screenable mode (masks IPs for screenshots)
+readline.parse_and_bind(r'"\C-t": "\C-e\C-u_koi_screenable_\n"')
 
 
 def completer(text: str, state: int):
@@ -72,6 +74,7 @@ def print_help() -> None:
         "Session Signals": {
             f"{_y('Ctrl+Z')}": "Background → return to listener shell",
             f"{_y('Ctrl+C')}": "Send SIGINT to remote (keeps session alive)",
+            f"{_y('Ctrl+T')}": "Toggle screenable mode — masks IPs for screenshots",
         },
     }
     print_report_box("help", data)

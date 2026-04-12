@@ -70,6 +70,21 @@ class Listener:
         self._pending_notifications: list = []
         self._notif_lock = threading.Lock()
         self._pending_conpty: dict = {}
+        self.screenable_mode: bool = False
+
+    def _mask_ip(self, ip: str, kind: str = "remote") -> str:
+        """Return a placeholder instead of a real IP when screenable mode is active."""
+        if self.screenable_mode:
+            return "<LOCAL IP>" if kind == "local" else "<REMOTE IP>"
+        return ip
+
+    def _toggle_screenable(self) -> None:
+        self.screenable_mode = not self.screenable_mode
+        state = _b("ON") if self.screenable_mode else _gr("OFF")
+        sys.stdout.write(f"\r\033[K")
+        notify('info', f"Screenable mode {state}")
+        sys.stdout.write(self._prompt())
+        sys.stdout.flush()
 
     def _add(self, conn, addr) -> Session:
         with self._id_lock:
@@ -122,7 +137,8 @@ class Listener:
             return
 
         os_tag = f" {_gr('[')} {sess.os_label()} {_gr(']')}" if sess.os_type else ""
-        msg = f"{_b(_c(f'#{sess.id}'))}  {_c(sess.addr[0])}{_gr(f':{sess.addr[1]}')}{os_tag}"
+        masked_ip = self._mask_ip(sess.addr[0])
+        msg = f"{_b(_c(f'#{sess.id}'))}  {_c(masked_ip)}{_gr(f':{sess.addr[1]}')}{os_tag}"
         os.write(self._notify_w, b"1\n")
 
         if self._in_session:
@@ -169,10 +185,12 @@ class Listener:
         alive = sum(1 for s in self._sessions.values() if s.alive)
         noun = "session" if alive == 1 else "sessions"
         count = colored_text(str(alive), PUMPKIN if alive else SILVER)
+        anon_tag = colored_text(" [ANON]", SILVER) if self.screenable_mode else ""
         return (
             f"{LOCALUSER}"
             + colored_text("@", PUMPKIN)
             + colored_text("koi", WHITE)
+            + anon_tag
             + _gr("(")
             + count
             + _gr(f" {noun})")
@@ -193,6 +211,15 @@ class Listener:
                 continue
 
             if not raw:
+                continue
+
+            if raw == "_koi_screenable_":
+                import readline as _rl
+                try:
+                    _rl.remove_history_item(_rl.get_current_history_length() - 1)
+                except Exception:
+                    pass
+                self._toggle_screenable()
                 continue
 
             parts = raw.split()
@@ -290,7 +317,8 @@ class Listener:
             return
         data = {}
         for s in sorted(self._sessions.values(), key=lambda x: x.id):
-            key = f"#{s.id}  {s.status_dot()}  {_c(s.addr[0])}{_gr(f':{s.addr[1]}')} [{s.os_label()}]"
+            masked_ip = self._mask_ip(s.addr[0])
+            key = f"#{s.id}  {s.status_dot()}  {_c(masked_ip)}{_gr(f':{s.addr[1]}')} [{s.os_label()}]"
             data[key] = s._uptime()
         print_report_box("Sessions", data)
 
@@ -399,7 +427,7 @@ class Listener:
         )
 
         notify('info',
-            f"Invoking ConPtyShell on session {_p(f'#{sess.id}')} → callback {_b(local_ip)}:{_b(self.port)}"
+            f"Invoking ConPtyShell on session {_p(f'#{sess.id}')} → callback {_b(self._mask_ip(local_ip, 'local'))}:{_b(self.port)}"
         )
 
         self._pending_conpty[sess.addr[0]] = sess.os_type
@@ -467,7 +495,7 @@ class Listener:
         is_windows_pty = sess.os_type in ("windows_cmd", "windows_ps") and sess.upgraded
 
         print()
-        notify('info', f"Entering session {_b(_r(f'#{sid}'))} {_c(ip)}{_gr(f':{port}')}")
+        notify('info', f"Entering session {_b(_r(f'#{sid}'))} {_c(self._mask_ip(ip))}{_gr(f':{port}')}")
         if sess.os_type in ("windows_cmd", "windows_ps") and not sess.upgraded:
             notify('status', _gr('Ctrl+Z to background  ·  line-by-line mode'))
         else:
