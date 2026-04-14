@@ -20,7 +20,7 @@ from koi.session import Session, RawTerminal
 from koi.utils.payloads import PayloadGenerator
 from koi.utils.ui import (
     colored_text, display_art, print_report_box,
-    breaker, notify, Spinner,
+    breaker, notify, Spinner, print_payloads,
     PUMPKIN, WHITE, SILVER, CORAL,
     _b, _bl, _c, _d, _gr, _p, _r, _y,
     gradient_text, yesno, breaker_with_text
@@ -634,30 +634,7 @@ class Listener:
             f"Session {_p(f'#{sid}')} OS set: {old} → {sess.os_label()}")
 
     def _cmd_payload(self, iface: Optional[str] = None) -> None:
-        gen = PayloadGenerator(port=self.port)
-        if iface:
-            payloads = gen.for_interface(iface)
-            print()
-            breaker_with_text(f"payloads for {iface}")
-            print()
-            if payloads is None:
-                notify('error', f"Interface {_p(iface)} not found.")
-                notify('status', _gr("Available: " + ", ".join(gen.get_interfaces().keys())))
-                return
-            for name, payload in payloads.items():
-                print(f"{_b(_p(name))}: {_gr(payload)}\n")
-            breaker()
-        else:
-            all_payloads = gen.for_all()
-            if not all_payloads:
-                notify('error', "No network interfaces found.")
-                return
-            interfaces = gen.get_interfaces()
-            grouped = {
-                f"{name} ({interfaces[name]})": payloads
-                for name, payloads in all_payloads.items()
-            }
-            print_report_box("Payloads", grouped)
+        print_payloads(iface, self.port)
 
     def _flush_pending_notifications(self) -> None:
         with self._notif_lock:

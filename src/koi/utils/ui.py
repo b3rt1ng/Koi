@@ -7,7 +7,7 @@ from random import choice
 
 _ANSI = re.compile(r"\033\[[^m]*m")
 
-PUMPKIN     = (255, 116,   0)
+PUMPKIN     = (248, 101, 70)
 WHITE       = (255, 255, 255)
 SILVER      = (169, 169, 169)
 CORAL       = (235, 111,  92)
@@ -339,3 +339,31 @@ def yesno(question: str, prechosen: bool = True) -> bool:
             return False
 
 
+def print_payloads(iface: str | None, port: int) -> None:
+    from koi.utils.payloads import PayloadGenerator
+    gen = PayloadGenerator(port=port)
+
+    def _show(label: str, payloads: dict) -> None:
+        print()
+        breaker_with_text(label)
+        for name, payload in payloads.items():
+            print(f"\n  {_b(_p(name))}")
+            print(f"  {_gr(payload)}")
+        print()
+        breaker()
+
+    if iface is None:
+        all_payloads = gen.for_all()
+        if not all_payloads:
+            notify('error', "No network interfaces found.")
+            return
+        interfaces = gen.get_interfaces()
+        for name, payloads in all_payloads.items():
+            _show(f"{name}  {interfaces[name]}", payloads)
+    else:
+        payloads = gen.for_interface(iface)
+        if payloads is None:
+            notify('error', f"Interface {_p(iface)} not found.")
+            notify('status', _gr("Available: " + ", ".join(gen.get_interfaces().keys())))
+            return
+        _show(iface, payloads)
