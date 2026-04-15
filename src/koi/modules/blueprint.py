@@ -17,7 +17,7 @@ from koi.utils.tcp import get_local_ip, spawn_recv_server
 import argparse
 
 _PS_PROMPT = re.compile(r'^PS\s+\S+>\s*')
-_SELECT_TIMEOUT = 0.1  # max seconds to block per select() iteration
+_SELECT_TIMEOUT = 0.1
 
 PlatformSpec = Union[
     Literal["linux", "windows_cmd", "windows_ps", "any"],
