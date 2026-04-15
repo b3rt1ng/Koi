@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import queue
 import select
@@ -27,6 +28,7 @@ from koi.utils.ui import (
 )
 
 LOCALUSER = os.getenv("USER") or os.getenv("USERNAME") or "user"
+_STATE_FILE = "/tmp/koi.state"
 
 
 def _platform_badge(platform) -> str:
@@ -72,6 +74,31 @@ class Listener:
         self._pending_conpty: dict = {}
         self.screenable_mode: bool = False
 
+    def _write_state(self) -> None:
+        sessions = []
+        for s in self._sessions.values():
+            sessions.append({
+                "id": s.id,
+                "ip": s.addr[0],
+                "port": s.addr[1],
+                "os_type": s.os_type,
+                "upgraded": s.upgraded,
+                "alive": s.alive,
+                "connected_at": s.connected_at.isoformat(),
+                "uptime": s._uptime(),
+            })
+        state = {
+            "host": self.host,
+            "port": self.port,
+            "pid": os.getpid(),
+            "sessions": sessions,
+        }
+        try:
+            with open(_STATE_FILE, "w") as f:
+                json.dump(state, f)
+        except OSError:
+            pass
+
     def _mask_ip(self, ip: str, kind: str = "remote") -> str:
         """Return a placeholder instead of a real IP when screenable mode is active."""
         if self.screenable_mode:
@@ -101,6 +128,7 @@ class Listener:
         sess = self._sessions.pop(sid, None)
         if sess:
             sess.close()
+        self._write_state()
 
     def _prune(self) -> None:
         for sid in [k for k, s in self._sessions.items() if not s.alive]:
@@ -136,6 +164,7 @@ class Listener:
         if not sess.alive:
             return
 
+        self._write_state()
         os_tag = f" {_gr('[')} {sess.os_label()} {_gr(']')}" if sess.os_type else ""
         masked_ip = self._mask_ip(sess.addr[0])
         msg = f"{_b(_c(f'#{sess.id}'))}  {_c(masked_ip)}{_gr(f':{sess.addr[1]}')}{os_tag}"
@@ -159,6 +188,7 @@ class Listener:
 
         threading.Thread(target=self._accept_loop, daemon=True, name="accept").start()
 
+        self._write_state()
         display_art()
         print()
         notify('info', f"Listening on {_b(self.host)}:{_b(self.port)}")
@@ -179,6 +209,10 @@ class Listener:
                     s.send(b"exit\n")
                     time.sleep(0.5)
                 s.close()
+        try:
+            os.unlink(_STATE_FILE)
+        except OSError:
+            pass
         print()
 
     def _prompt(self) -> str:
@@ -364,6 +398,7 @@ class Listener:
             self._sync_winsize(sess)
             self._drain(sess, 0.3)
             sess.upgraded = True
+            self._write_state()
 
         notify('success', f"Shell {_p(f'#{sid}')} upgraded successfully.")
 
@@ -450,6 +485,7 @@ class Listener:
             time.sleep(0.1)
 
         new_sess.upgraded = True
+        self._write_state()
         time.sleep(0.3)
         new_sess.conn.sendall(b"\r\n")
         notify('success',f"ConPtyShell ready as session {_p(f'#{new_sess.id}')}. ")

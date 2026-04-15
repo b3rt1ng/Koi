@@ -347,8 +347,7 @@ def print_payloads(iface: str | None, port: int) -> None:
         print()
         breaker_with_text(label)
         for name, payload in payloads.items():
-            print(f"\n  {_b(_p(name))}")
-            print(f"  {_gr(payload)}")
+            print(f"\n  {_b(_p(name))} : {_gr(payload)}")
         print()
         breaker()
 
