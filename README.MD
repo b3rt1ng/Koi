@@ -12,6 +12,8 @@ Disclaimer: please note that this is still under development, and I am still wor
 
 <img src="https://i.imgur.com/RFD2dkE.gif" alt="demonstration">
 
+> [!TIP]
+> This demo runs with dockerized OS. If you want to try yourself, you can use the [Ubuntu images](https://hub.docker.com/_/ubuntu) or the [dockur](https://github.com/dockur/windows) windows
 ---
 
 ## ✨ Features
