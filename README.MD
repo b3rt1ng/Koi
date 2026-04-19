@@ -10,7 +10,7 @@ Disclaimer: please note that this is still under development, and I am still wor
 
 ### Demo
 
-<img src="https://cdn.discordapp.com/attachments/1210033781663338586/1490310723144777818/demo.gif?ex=69d39785&is=69d24605&hm=490d2284b53283d98bfb134b093975a7e8a86c65760896f2716722c1f7a91f4d">
+<img src="https://i.imgur.com/RFD2dkE.gif" alt="demonstration">
 
 ---
 
@@ -102,8 +102,6 @@ I did not bothered making one for CMD but for powershell, the technique uses [co
 ### 🤖 Modules
 
 <a href="https://asciinema.org/a/quY43wqm0jhsoypj"><img src="https://asciinema.org/a/quY43wqm0jhsoypj.svg" alt="koi module download on powershell" width="100%" /></a>
-> [!NOTE]
-> <small>_On this demo, the upload is still being updated for powershell support, i'm on it !_</small>
 
 Modules are basically a way to automate actions on your instances. you can run commands, and take advantage of your python backend.
 
