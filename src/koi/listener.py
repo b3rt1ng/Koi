@@ -111,7 +111,6 @@ class Listener:
         state = _b("ON") if self.screenable_mode else _gr("OFF")
         sys.stdout.write(f"\r\033[K")
         notify('info', f"Screenable mode {state}")
-        sys.stdout.write(self._prompt())
         sys.stdout.flush()
 
     def _add(self, conn, addr) -> Session:

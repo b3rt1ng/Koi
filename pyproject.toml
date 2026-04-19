@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "koi-handler"
-version = "0.6.5"
+version = "0.6.6"
 description = "Reverse shell listener"
 requires-python = ">=3.10"
 
