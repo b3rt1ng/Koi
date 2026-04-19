@@ -73,6 +73,7 @@ class Listener:
         self._notif_lock = threading.Lock()
         self._pending_conpty: dict = {}
         self.screenable_mode: bool = False
+        self._accepting: bool = True
 
     def _write_state(self) -> None:
         sessions = []
@@ -143,6 +144,10 @@ class Listener:
                 continue
             except OSError:
                 break
+
+            if not self._accepting and addr[0] not in self._pending_conpty:
+                conn.close()
+                continue
 
             sess = self._add(conn, addr)
 
@@ -220,11 +225,13 @@ class Listener:
         noun = "session" if alive == 1 else "sessions"
         count = colored_text(str(alive), PUMPKIN if alive else SILVER)
         anon_tag = colored_text(" [ANON]", SILVER) if self.screenable_mode else ""
+        pause_tag = colored_text(" [PAUSED]", CORAL) if not self._accepting else ""
         return (
             f"{LOCALUSER}"
             + colored_text("@", PUMPKIN)
             + colored_text("koi", WHITE)
             + anon_tag
+            + pause_tag
             + _gr("(")
             + count
             + _gr(f" {noun})")
@@ -265,6 +272,12 @@ class Listener:
 
             elif cmd in ("help", "h", "?"):
                 print_help()
+
+            elif cmd == "stop":
+                self._cmd_stop_accepting()
+
+            elif cmd == "start":
+                self._cmd_start_accepting()
 
             elif cmd in ("ls", "l", "list"):
                 self._cmd_ls()
@@ -341,6 +354,20 @@ class Listener:
             notify('error', "Session id must be an integer.")
             return
         self._cmd_run(mod_name, sid, parts[3:])
+
+    def _cmd_stop_accepting(self) -> None:
+        if not self._accepting:
+            notify('warning', "Listener is already paused.")
+            return
+        self._accepting = False
+        notify('warning', f"Listener {_b('paused')} — new connections refused. Existing sessions unaffected.")
+
+    def _cmd_start_accepting(self) -> None:
+        if self._accepting:
+            notify('info', "Listener is already accepting connections.")
+            return
+        self._accepting = True
+        notify('success', f"Listener {_b('resumed')} — accepting new connections.")
 
     def _cmd_ls(self) -> None:
         self._prune()

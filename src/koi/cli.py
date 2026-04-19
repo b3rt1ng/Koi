@@ -12,13 +12,13 @@ from koi.utils.ui import (
 COMMANDS = [
     "ls", "go", "upgrade", "kill", "setshell", "help", "exit",
     "quit", "interact", "payload", "run", "modules", "reload",
+    "start", "stop",
 ]
 
 _OS_TYPES = ["linux", "windows_ps", "windows_cmd"]
 
 readline.set_history_length(200)
 readline.parse_and_bind("tab: complete")
-# Ctrl+T → toggle screenable mode (masks IPs for screenshots)
 readline.parse_and_bind(r'"\C-t": "\C-e\C-u_koi_screenable_\n"')
 
 
@@ -68,6 +68,8 @@ def print_help() -> None:
             f"{_p('reload')}": "Reload modules from disk (useful during development)",
             f"{_p('run')} {_b('<module>')} {_b('<id>')} {_b('[args…]')}": "Run a module against a session",
             f"{_p('setshell')} {_b('<id>')} {_b('<os_type>')}": "Manually set the OS type of a session",
+            f"{_p('stop')}": "Pause the listener — refuse new connections",
+            f"{_p('start')}": "Resume the listener — accept new connections again",
             f"{_p('help')}": "Show this message",
             f"{_p('exit')}": "Shut down the listener",
         },
