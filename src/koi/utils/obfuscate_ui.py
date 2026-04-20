@@ -75,20 +75,20 @@ def _render_obfuscator(
 ) -> None:
     cols = max(shutil.get_terminal_size().columns, 60)
     indent = "  "
-    chunk_w = cols - 4
+    chunk_w = cols
 
     sys.stdout.write(_CLEAR)
     sys.stdout.write("\n")
     sys.stdout.write(indent + gradient_text(title, PUMPKIN, CORAL) + "\n\n")
 
     chunks = [payload[i:i + chunk_w] for i in range(0, len(payload), chunk_w)]
-    sys.stdout.write(indent + _gr("─" * (cols - len(indent))) + "\n")
-    for line in chunks[:4]:
-        sys.stdout.write(f"  {_d(line)}\n")
-    if len(chunks) > 4:
-        extra = len(payload) - 4 * chunk_w
-        sys.stdout.write(f"  {_gr(f'... +{extra} chars')}\n")
-    sys.stdout.write(indent + _gr("─" * (cols - len(indent))) + "\n\n")
+    sys.stdout.write(_gr("─" * cols + "\n"))
+    for line in chunks[:15]:
+        sys.stdout.write(f"{_d(line)}\n")
+    if len(chunks) > 15:
+        extra = len(payload) - 15 * chunk_w
+        sys.stdout.write(f"{_gr(f'... +{extra} chars')}\n")
+    sys.stdout.write(_gr("─" * cols + "\n\n"))
 
     if chain:
         sys.stdout.write(f"{indent}Chain: {' & '.join(_p(m) for m in chain)}\n\n")
