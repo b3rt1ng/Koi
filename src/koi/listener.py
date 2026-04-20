@@ -26,6 +26,7 @@ from koi.utils.ui import (
     _b, _bl, _c, _d, _gr, _p, _r, _y,
     gradient_text, yesno, breaker_with_text
 )
+from koi.utils.obfuscate_ui import run_obfuscate_ui
 
 LOCALUSER = os.getenv("USER") or os.getenv("USERNAME") or "user"
 _STATE_FILE = "/tmp/koi.state"
@@ -310,6 +311,9 @@ class Listener:
 
             elif cmd in ("payload", "p"):
                 self._cmd_payload(parts[1] if len(parts) > 1 else None)
+
+            elif cmd in ("obfuscator", "obs", "cook"):
+                self._cmd_obfuscate(parts[1] if len(parts) > 1 else None)
 
             elif cmd in ("modules", "mdls", "mods"):
                 self._cmd_modules()
@@ -690,6 +694,9 @@ class Listener:
 
     def _cmd_payload(self, iface: Optional[str] = None) -> None:
         print_payloads(iface, self.port)
+
+    def _cmd_obfuscate(self, iface: Optional[str] = None) -> None:
+        run_obfuscate_ui(iface, self.port)
 
     def _flush_pending_notifications(self) -> None:
         with self._notif_lock:

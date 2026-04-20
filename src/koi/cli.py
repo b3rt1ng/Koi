@@ -11,8 +11,8 @@ from koi.utils.ui import (
 
 COMMANDS = [
     "ls", "go", "upgrade", "kill", "setshell", "help", "exit",
-    "quit", "interact", "payload", "run", "modules", "reload",
-    "start", "stop",
+    "quit", "interact", "payload", "obfuscator", "run", "modules",
+    "reload", "start", "stop",
 ]
 
 _OS_TYPES = ["linux", "windows_ps", "windows_cmd"]
@@ -29,7 +29,7 @@ def completer(text: str, state: int):
     if len(parts) == 0 or (len(parts) == 1 and not line.endswith(" ")):
         options = [cmd for cmd in COMMANDS if cmd.startswith(text)]
 
-    elif parts[0] in ("payload", "p") and (
+    elif parts[0] in ("payload", "p", "obfuscator", "obs") and (
         len(parts) == 1 or (len(parts) == 2 and not line.endswith(" "))
     ):
         interfaces = list(_get_interfaces().keys())
@@ -64,6 +64,7 @@ def print_help() -> None:
             f"{_p('upgrade')} {_b('<id>')}": "Upgrade session to a full PTY",
             f"{_p('kill')} {_b('<id>')}": "Terminate and remove a session",
             f"{_p('payload')} {_b('[iface]')}": "Show reverse shell payloads",
+            f"{_p('obfuscator')} {_b('[iface]')}": "Interactive payload obfuscator",
             f"{_p('modules')}": "List available modules",
             f"{_p('reload')}": "Reload modules from disk (useful during development)",
             f"{_p('run')} {_b('<module>')} {_b('<id>')} {_b('[args…]')}": "Run a module against a session",

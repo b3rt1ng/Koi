@@ -24,10 +24,8 @@ Disclaimer: please note that this is still under development, and I am still wor
 * **Koi fish themed UI**: Gradient prompt, status indicators, and session boxes, pentest tooling doesn't have to be ugly.
 
 ## 🚧 WIP
-* **Windows**: Powershells are now available and upgradable, but needs some testings.
+* **Windows**: Powershells are now available and upgradable, but I want the upgrading to be undetected by windows defender.
 * **Tunneling**: Once you have your shell, a simple way to tunnel in that network would be very convenient, this has yet to be done.
-* **Modules**: Modules for linux are easy to implement. Windows on the other hand, is inherently "stranger". I am thinking about a way to make it more dev friendly.
-* **Testings**: I've tried my tool on CTF and personal devices but it still needs more testing. As of now, this has been made for linux based shells but I want it to be able to work under windows powershell with all it's implications.
 ---
 
 ## 🚀 Installation
@@ -64,13 +62,13 @@ koi -p 9001
 
 Send a reverse shell yourself or by typing `payloads *interface*` to get pregenerated payloads. do note that it needs to be a terminal like shell, as Koi is manipulating linux shs, powershells and cmd.
 
-##### Buypass defender !
+##### Bypass Windows Defender
 
-Koi provides two obfuscated PowerShell payload variants:
+Koi includes a built-in payload obfuscator to help evade Windows Defender detection. You can chain multiple techniques together though XOR encoding or format transformations are usually sufficient. Keep in mind that stacking too many layers may corrupt the payload and make it unreadable by the target.
 
-- **`powershell (hex)`** — encodes string literals as hex bytes via `[System.Text.Encoding]::UTF8.GetString([byte[]](0x...))`. Adds obfuscation but does not reliably bypass Windows Defender on its own.
-- **`powershell (syntax)`** — splits cmdlet names (`New-Object`, `iex`, `Out-String`...) into randomly concatenated fragments invoked via the `&` call operator, e.g. `&("Ne"+"w-Object")`. The split position and quote style are randomized on each generation, making static signatures ineffective. This variant bypasses Windows Defender.
-- **`powershell (hex+syntax)`** — applies both techniques at once: cmdlets are fragmented first, then all string literals (including the ones introduced by the syntax pass) are hex-encoded.
+<a href="https://asciinema.org/a/1xnYShXuhoBhCUDX"><img src="https://asciinema.org/a/1xnYShXuhoBhCUDX.svg" alt="koi obfuscator demo" width="100%" /></a>
+
+The obfuscator also works for Linux payloads. While most Linux environments don't run antivirus software, bash one-liners are commonly flagged by EDR solutions, IDS rules, or monitored by blue teams watching for known reverse shell patterns. Obfuscating your payload helps fly under the radar in some hardened environments.
 
 ---
 

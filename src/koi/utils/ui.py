@@ -29,11 +29,11 @@ def _bl(t): return colored_text(t, BLUE)
 MOTD = ["The serene shell handler", 
         "This has to be legal, right?",
         "La root est longue mais la voie est libre ;)",
-        "Koi: Flowing through the network.",
         "Don't tell my mom I'm doing this.",
         "流れに逆らう鯉のように",
         "¯＼(º_o)/¯",
-        "Do not download and run random modules..."
+        "Do not download and run random modules...",
+        "AD is not that scary, I promise!"
 ]
 
 def whole_line(char=" "):
@@ -304,19 +304,21 @@ def breaker():
     print(gradient_text(whole_line("─"), PUMPKIN, SILVER))
     
 def breaker_with_text(test: str = ""):
-    text = f" {test} " if test else ""
-    line = whole_line("─")
+    cols = shutil.get_terminal_size().columns
 
-    if not text:
-        print(gradient_text(line, PUMPKIN, SILVER))
+    if not test:
+        print(gradient_text("─" * cols, PUMPKIN, SILVER))
         return
 
-    if len(text) >= len(line):
-        print(colored_text(text[: len(line)], WHITE) + RST)
+    text = f" {test} "
+    vlen = len(_ANSI.sub("", text))
+
+    if vlen >= cols:
+        print(colored_text(_ANSI.sub("", text)[:cols], WHITE) + RST)
         return
 
-    left_len = (len(line) - len(text)) // 2
-    right_len = len(line) - len(text) - left_len
+    left_len = (cols - vlen) // 2
+    right_len = cols - vlen - left_len
 
     print(
         gradient_text("─" * left_len, PUMPKIN, SILVER)
@@ -347,8 +349,8 @@ def print_payloads(iface: str | None, port: int) -> None:
         print()
         breaker_with_text(label)
         for name, payload in payloads.items():
-            print(f"\n  {_b(_p(name))} : {_gr(payload)}")
-        print()
+            print(f"  {_b(_p(name))}")
+            print(payload)
         breaker()
 
     if iface is None:
