@@ -1,8 +1,5 @@
 from __future__ import annotations
-import re
 from koi.modules.blueprint import KoiModule
-
-_ANSI = re.compile(r'\x1b\[[0-9;?]*[a-zA-Z]|\r')
 
 
 class SysInfoModule(KoiModule):
@@ -15,19 +12,8 @@ class SysInfoModule(KoiModule):
 
     def _get(self, cmd: str, fallback: str = "unknown") -> str:
         try:
-            result = self.exec(cmd, timeout=10)
-            lines = []
-            for l in result.stdout.splitlines():
-                clean = _ANSI.sub("", l).strip()
-                if not clean:
-                    continue
-                if "__KOI_DONE_" in clean:
-                    continue
-                if "_rc=$?" in clean:
-                    continue
-                if any(fragment in clean for fragment in ["printf", "\\n", "_rc="]):
-                    continue
-                lines.append(clean)
+            raw = self._exec_clean(cmd, timeout=10)
+            lines = [l for l in raw.splitlines() if l.strip()]
             return lines[-1] if lines else fallback
         except Exception:
             return fallback

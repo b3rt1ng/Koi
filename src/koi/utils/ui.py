@@ -20,9 +20,9 @@ BOLD = "\033[1m"
 def _b(t):  return f"{BOLD}{t}{RST}"
 def _d(t):  return f"{DIM}{t}{RST}"
 def _r(t):  return colored_text(t, CORAL)
+_y = _r
 def _c(t):  return colored_text(t, WHITE)
 def _p(t):  return colored_text(t, PUMPKIN)
-def _y(t):  return colored_text(t, CORAL)
 def _gr(t): return colored_text(t, SILVER)
 def _bl(t): return colored_text(t, BLUE)
 
@@ -300,9 +300,6 @@ class ProgressBar:
         self.update(self.total if self.total else self._current)
         print()
         
-def breaker():
-    print(gradient_text(whole_line("─"), PUMPKIN, SILVER))
-    
 def breaker_with_text(test: str = ""):
     cols = shutil.get_terminal_size().columns
 
@@ -351,7 +348,7 @@ def print_payloads(iface: str | None, port: int) -> None:
         for name, payload in payloads.items():
             print(f"  {_b(_p(name))}")
             print(payload)
-        breaker()
+        breaker_with_text()
 
     if iface is None:
         all_payloads = gen.for_all()

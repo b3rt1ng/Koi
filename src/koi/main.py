@@ -9,6 +9,7 @@ import signal
 import sys
 
 from koi.listener import Listener, _STATE_FILE
+from koi.session import OS_LABEL_NAMES
 from koi.utils.ui import notify, _b, _p, _c, _gr, _y, _bl, display_art, print_payloads, print_report_box
 
 
@@ -43,9 +44,8 @@ def _print_info() -> None:
 
     if alive:
         print()
-        _OS_LABELS = {"linux": "linux", "windows_cmd": "cmd", "windows_ps": "powershell"}
         for s in sorted(alive, key=lambda x: x["id"]):
-            os_label = _OS_LABELS.get(s.get("os_type") or "", "unknown")
+            os_label = OS_LABEL_NAMES.get(s.get("os_type") or "", "unknown")
             upgrade_label = "PTY" if s.get("upgraded") else "raw"
             print(f"  #{s['id']}  {s['ip']}:{s['port']}  {os_label}  {upgrade_label}  up {s.get('uptime', '?')}")
 

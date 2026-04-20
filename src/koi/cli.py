@@ -3,7 +3,7 @@ from __future__ import annotations
 import readline
 
 from koi.modules.loader import load_modules, get_module
-from koi.utils.payloads import _get_interfaces
+from koi.utils.payloads import get_interfaces
 from koi.utils.ui import (
     print_report_box, notify,
     _b, _p, _y,
@@ -32,7 +32,7 @@ def completer(text: str, state: int):
     elif parts[0] in ("payload", "p", "obfuscator", "obs") and (
         len(parts) == 1 or (len(parts) == 2 and not line.endswith(" "))
     ):
-        interfaces = list(_get_interfaces().keys())
+        interfaces = list(get_interfaces().keys())
         options = [iface for iface in interfaces if iface.startswith(text)]
 
     elif parts[0] == "run" and (

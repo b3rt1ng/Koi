@@ -14,8 +14,8 @@ from koi.utils.payloads import (
     _ps_syntax_obfuscate,
     _ps_format_obfuscate,
     _ps_xor_obfuscate,
-    _build_payloads,
-    _get_interfaces,
+    get_interfaces,
+    PayloadGenerator,
 )
 from koi.utils.ui import (
     _b, _p, _d, _gr, _c,
@@ -149,17 +149,17 @@ class _Cancelled(Exception):
 
 
 def run_obfuscate_ui(iface: str | None, port: int) -> None:
-    interfaces = _get_interfaces()
+    interfaces = get_interfaces()
     if not interfaces:
         notify('error', "No network interfaces found.")
         return
 
     if iface and iface in interfaces:
-        ip = interfaces[iface]
+        selected_iface = iface
     elif len(interfaces) == 1:
-        ip = next(iter(interfaces.values()))
+        selected_iface = next(iter(interfaces))
     else:
-        ip = None
+        selected_iface = None
 
     final_payload = ""
     final_chain: list[str] = []
@@ -168,7 +168,7 @@ def run_obfuscate_ui(iface: str | None, port: int) -> None:
     sys.stdout.write(_ALT_ON + _HIDE)
     sys.stdout.flush()
     try:
-        if ip is None:
+        if selected_iface is None:
             iface_names = list(interfaces.keys())
             iface_cursor = 0
             while True:
@@ -179,10 +179,13 @@ def run_obfuscate_ui(iface: str | None, port: int) -> None:
                 elif ch == b'\x1b[B':
                     iface_cursor = (iface_cursor + 1) % len(iface_names)
                 elif ch in (b'\r', b'\n'):
-                    ip = interfaces[iface_names[iface_cursor]]
+                    selected_iface = iface_names[iface_cursor]
                     break
                 elif ch in (b'q', b'Q', b'\x03'):
                     raise _Cancelled
+
+        ip = interfaces[selected_iface]
+        gen = PayloadGenerator(port)
 
         os_cursor = 0
         while True:
@@ -198,7 +201,7 @@ def run_obfuscate_ui(iface: str | None, port: int) -> None:
                 raise _Cancelled
 
         if os_cursor == 0:
-            base = _build_payloads(ip, port)["powershell"]
+            base = gen.for_interface(selected_iface)["powershell"]
             final_payload, final_chain = _run_obfuscator_loop(
                 "Windows Payload Obfuscator", "powershell", base, WIN_METHODS
             )

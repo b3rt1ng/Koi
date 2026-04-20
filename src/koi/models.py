@@ -7,7 +7,6 @@ class CommandResult:
     command: str
     returncode: int
     stdout: str
-    stderr: str
     duration: float
 
     @property

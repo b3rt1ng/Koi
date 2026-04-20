@@ -21,10 +21,10 @@ from koi.session import Session, RawTerminal
 from koi.utils.payloads import PayloadGenerator
 from koi.utils.ui import (
     colored_text, display_art, print_report_box,
-    breaker, notify, Spinner, print_payloads,
+    breaker_with_text, notify, Spinner, print_payloads,
     PUMPKIN, WHITE, SILVER, CORAL,
     _b, _bl, _c, _d, _gr, _p, _r, _y,
-    gradient_text, yesno, breaker_with_text
+    gradient_text, yesno,
 )
 from koi.utils.obfuscate_ui import run_obfuscate_ui
 
@@ -573,7 +573,7 @@ class Listener:
             sess.send(b"\r\n")
             time.sleep(0.2)
 
-        breaker()
+        breaker_with_text()
 
         if is_windows_pty:
             sys.stdout.write("\033[2J\033[H")
@@ -585,7 +585,7 @@ class Listener:
 
         signal.signal(signal.SIGWINCH, signal.SIG_DFL)
         print()
-        breaker()
+        breaker_with_text()
 
         if reason == "backgrounded":
             print()

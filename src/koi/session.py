@@ -14,6 +14,12 @@ from koi.utils.ui import _gr, _p, _r, _y, _bl
 
 OsType = Literal["linux", "windows_cmd", "windows_ps"] | None
 
+OS_LABEL_NAMES: dict[str, str] = {
+    "linux":       "linux",
+    "windows_cmd": "cmd",
+    "windows_ps":  "powershell",
+}
+
 
 @dataclass
 class Session:
@@ -35,11 +41,10 @@ class Session:
         return f"{h:02d}:{m:02d}:{s:02d}"
 
     def os_label(self) -> str:
-        return {
-            "linux":       _y("linux"),
-            "windows_cmd": _bl("cmd"),
-            "windows_ps":  _bl("powershell"),
-        }.get(self.os_type or "", _gr("?"))
+        colors = {"linux": _y, "windows_cmd": _bl, "windows_ps": _bl}
+        key = self.os_type or ""
+        fn = colors.get(key, _gr)
+        return fn(OS_LABEL_NAMES.get(key, "?"))
 
     def status_dot(self) -> str:
         if not self.alive:

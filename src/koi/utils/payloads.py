@@ -72,7 +72,7 @@ def _ps_xor_obfuscate(payload: str) -> str:
         payload,
     )
 
-def _get_interfaces() -> dict[str, str]:
+def get_interfaces() -> dict[str, str]:
     result = {}
     try:
         out = subprocess.check_output(["ip", "-4", "addr", "show"], text=True)
@@ -137,10 +137,10 @@ class PayloadGenerator:
         self.port = port
 
     def get_interfaces(self) -> dict[str, str]:
-        return _get_interfaces()
+        return get_interfaces()
 
     def for_interface(self, iface: str) -> dict[str, str] | None:
-        interfaces = _get_interfaces()
+        interfaces = get_interfaces()
         if iface not in interfaces:
             return None
         return _build_payloads(interfaces[iface], self.port)
@@ -148,5 +148,5 @@ class PayloadGenerator:
     def for_all(self) -> dict[str, dict[str, str]]:
         return {
             iface: _build_payloads(ip, self.port)
-            for iface, ip in _get_interfaces().items()
+            for iface, ip in get_interfaces().items()
         }

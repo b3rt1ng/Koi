@@ -17,6 +17,7 @@ from koi.utils.tcp import get_local_ip, spawn_recv_server
 import argparse
 
 _PS_PROMPT = re.compile(r'^PS\s+\S+>\s*')
+_ANSI_RE   = re.compile(r'\x1b\[[0-9;?]*[a-zA-Z]|\r')
 _SELECT_TIMEOUT = 0.1
 
 PlatformSpec = Union[
@@ -69,6 +70,10 @@ class KoiModule(ABC):
     #: or a list combining multiple specific targets.
     platform: PlatformSpec = "any"
 
+    @staticmethod
+    def _clean(text: str) -> str:
+        return _ANSI_RE.sub("", text).strip()
+
     @classmethod
     def supports(cls, os_type: Optional[str]) -> bool:
         """Return True if this module is compatible with the given session OS type."""
@@ -102,7 +107,7 @@ class KoiModule(ABC):
         self.ui = ui
         self.notify = ui.notify
         self.spinner = ui.Spinner
-        self.breaker = ui.breaker
+        self.breaker = ui.breaker_with_text
         self.box = ui.print_report_box
 
     def _parse_args(self):
@@ -265,14 +270,13 @@ class KoiModule(ABC):
                         command=command,
                         returncode=rc,
                         stdout=output,
-                        stderr="",
                         duration=time.monotonic() - (deadline - timeout),
                     )
                 output_lines.append(text)
 
         return CommandResult(
             command=command, returncode=1,
-            stdout="\n".join(output_lines), stderr="",
+            stdout="\n".join(output_lines),
             duration=0,
         )
 
