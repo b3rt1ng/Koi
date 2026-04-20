@@ -64,6 +64,14 @@ koi -p 9001
 
 Send a reverse shell yourself or by typing `payloads *interface*` to get pregenerated payloads. do note that it needs to be a terminal like shell, as Koi is manipulating linux shs, powershells and cmd.
 
+##### Buypass defender !
+
+Koi provides two obfuscated PowerShell payload variants:
+
+- **`powershell (hex)`** — encodes string literals as hex bytes via `[System.Text.Encoding]::UTF8.GetString([byte[]](0x...))`. Adds obfuscation but does not reliably bypass Windows Defender on its own.
+- **`powershell (syntax)`** — splits cmdlet names (`New-Object`, `iex`, `Out-String`...) into randomly concatenated fragments invoked via the `&` call operator, e.g. `&("Ne"+"w-Object")`. The split position and quote style are randomized on each generation, making static signatures ineffective. This variant bypasses Windows Defender.
+- **`powershell (hex+syntax)`** — applies both techniques at once: cmdlets are fragmented first, then all string literals (including the ones introduced by the syntax pass) are hex-encoded.
+
 ---
 
 ## 🔧 PTY Upgrade

