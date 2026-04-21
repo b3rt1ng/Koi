@@ -9,13 +9,12 @@ import tty
 from typing import Callable
 
 from koi.utils.bash_obfuscate import METHODS as LINUX_METHODS
-from koi.utils.payloads import (
+from koi.utils.payloads import get_interfaces, PayloadGenerator
+from koi.utils.ps_obfuscate import (
     _ps_hex_obfuscate,
     _ps_syntax_obfuscate,
     _ps_format_obfuscate,
     _ps_xor_obfuscate,
-    get_interfaces,
-    PayloadGenerator,
 )
 from koi.utils.ui import (
     _b, _p, _d, _gr, _c,

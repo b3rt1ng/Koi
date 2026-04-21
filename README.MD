@@ -24,7 +24,7 @@ Disclaimer: please note that this is still under development, and I am still wor
 * **Koi fish themed UI**: Gradient prompt, status indicators, and session boxes, pentest tooling doesn't have to be ugly.
 
 ## 🚧 WIP
-* **Windows**: Powershells are now available and upgradable, but I want the upgrading to be undetected by windows defender.
+* **Windows**: Powershells are now available and upgradable with in-memory obfuscation to evade Windows Defender.
 * **Tunneling**: Once you have your shell, a simple way to tunnel in that network would be very convenient, this has yet to be done.
 ---
 
@@ -100,11 +100,13 @@ with `TERM=xterm-256color` and some resizing info
 I did not bothered making one for CMD but for powershell, the technique uses [conptyshell](https://github.com/antoniococo/conptyshell) to gather a fully implemented shell:
 
 ```
-# 1 Conptyshell is downloaded in memory
-# 2 It's sent to your target and executed to be sent back to you
-# 3 Koi waits for the shell to reach and puts it as new session
+# 1 ConPtyShell is fetched from GitHub and kept in memory
+# 2 All IOC identifiers are renamed to random strings (class names, method names, PS function name)
+# 3 Distinctive C# string literals are replaced with runtime char-array constructions (no literal in compiled MSIL)
+# 4 The obfuscated script is served over a temporary HTTP server and executed on the target via IEX(IWR ...)
+# 5 The target connects back with a fully interactive PTY shell, registered as a new session
 ```
-
+This way, the conptyshell effectively bypasses windows defender.
 > [!WARNING]
 > <small>_the origin session will be kept alive but you can still kill it and play with the upgraded shell. Just know that as it's technically running the upgraded session, you won't be able to interact much with it._</small>
 
