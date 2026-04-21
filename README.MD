@@ -43,6 +43,11 @@ cd koi
 pipx install --editable .
 ```
 
+To upgrade:
+```
+pipx upgrade koi-handler
+```
+
 ---
 
 ## 💻 Usage
