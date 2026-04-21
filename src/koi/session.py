@@ -29,6 +29,7 @@ class Session:
     connected_at: datetime = field(default_factory=datetime.now)
     alive: bool = True
     upgraded: bool = False
+    is_conptyshell: bool = False
     os_type: OsType = field(default=None)
     encoding: str = field(default="utf-8")
     eol: str = field(default="\n")

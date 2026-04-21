@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.server
 import socket
 import threading
 from typing import Callable, Optional
@@ -56,6 +57,39 @@ def spawn_send_server(
     t = threading.Thread(target=_run, daemon=True)
     t.start()
     return port, t, errors
+
+
+def spawn_http_server(
+    data: bytes,
+    content_type: str = "text/plain; charset=utf-8",
+    timeout: float = 60.0,
+) -> tuple[int, threading.Thread]:
+    """
+    One-shot HTTP server that serves *data* to the first GET request then shuts down.
+    Returns (port, thread).
+    """
+    class _Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *_):
+            pass
+
+    srv = http.server.HTTPServer(("0.0.0.0", 0), _Handler)
+    srv.timeout = timeout
+    port = srv.server_address[1]
+
+    def _run():
+        srv.handle_request()
+        srv.server_close()
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    return port, t
 
 
 def spawn_recv_server(

