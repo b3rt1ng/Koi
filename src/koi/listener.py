@@ -490,12 +490,20 @@ class Listener:
         while new_sess.os_type is None and time.monotonic() < deadline:
             time.sleep(0.1)
 
+        old_id  = sess.id
+        new_id  = new_sess.id
+        sess.close()
+        self._sessions.pop(old_id, None)
+        self._sessions.pop(new_id, None)
+        new_sess.id = old_id
+        self._sessions[old_id] = new_sess
+
         new_sess.upgraded = True
         new_sess.is_conptyshell = True
         self._write_state()
         time.sleep(0.3)
         new_sess.conn.sendall(b"\r\n")
-        notify('success', f"ConPtyShell ready as session {_p(f'#{new_sess.id}')}. ")
+        notify('success', f"Session {_p(f'#{old_id}')} upgraded to ConPtyShell.")
 
     def _wait_for_new_session(
         self,

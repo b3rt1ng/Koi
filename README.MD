@@ -107,8 +107,6 @@ I did not bothered making one for CMD but for powershell, the technique uses [co
 # 5 The target connects back with a fully interactive PTY shell, registered as a new session
 ```
 This way, the conptyshell effectively bypasses windows defender.
-> [!WARNING]
-> <small>_the origin session will be kept alive but you can still kill it and play with the upgraded shell. Just know that as it's technically running the upgraded session, you won't be able to interact much with it._</small>
 
 ---
 
