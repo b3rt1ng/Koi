@@ -338,6 +338,30 @@ def yesno(question: str, prechosen: bool = True) -> bool:
             return False
 
 
+def platform_badge(platform) -> str:
+    _NAMES = {
+        "linux":       "Linux",
+        "windows_cmd": "cmd",
+        "windows_ps":  "PowerShell",
+        "any":         "any",
+    }
+    _COLORS = {
+        "linux":       _y,
+        "windows_cmd": _bl,
+        "windows_ps":  _bl,
+        "any":         _gr,
+    }
+
+    def _os_tag(p: str) -> str:
+        return _COLORS.get(p, _gr)(_NAMES.get(p, p))
+
+    ob, cb = _gr("["), _gr("]")
+    if isinstance(platform, list):
+        inner = _gr(", ").join(_os_tag(p) for p in platform)
+        return f"{ob}{inner}{cb}"
+    return f"{ob}{_os_tag(platform)}{cb}"
+
+
 def print_payloads(iface: str | None, port: int) -> None:
     from koi.utils.payloads import PayloadGenerator
     gen = PayloadGenerator(port=port)

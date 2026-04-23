@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, List, Literal, Optional, Union
 if TYPE_CHECKING:
     from koi.session import Session
 
-from koi.models import CommandResult, StreamLine
+from koi.utils.models import CommandResult, StreamLine
 from koi.utils import ui
 from koi.utils.tcp import get_local_ip, spawn_recv_server
 
