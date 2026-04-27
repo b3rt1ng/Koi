@@ -16,13 +16,12 @@ TOOLS: dict[str, str] = {
     "RunasCs.exe":     "https://github.com/Flangvik/SharpCollection/raw/refs/heads/master/NetFramework_4.7_x64/RunasCs.exe",
     "Certify.exe":     "https://github.com/Flangvik/SharpCollection/raw/refs/heads/master/NetFramework_4.7_x64/Certify.exe",
     "winPEAS.exe":     "https://github.com/Flangvik/SharpCollection/raw/refs/heads/master/NetFramework_4.7_x64/winPEAS.exe",
-    "SharpHound.ps1":  "https://raw.githubusercontent.com/SpecterOps/BloodHound-Legacy/refs/heads/master/Collectors/SharpHound.ps1",
 }
 
 
 class PopulateWinModule(KoiModule):
     name        = "populate_win"
-    description = "Upload common exploitation tools (Rubeus, RunasCs, Certify, winPEAS, SharpHound, mimikatz) on the target."
+    description = "Upload common exploitation tools (Rubeus, RunasCs, Certify, winPEAS, mimikatz) on the target."
     usage       = "populate_win <id> [-o <remote_dir>]"
     category    = "Other"
     platform    = "windows_ps"
