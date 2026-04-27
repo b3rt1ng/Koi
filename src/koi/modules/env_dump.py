@@ -42,10 +42,6 @@ def _is_interesting(key: str, value: str) -> bool:
     return False
 
 
-def _truncate(val: str) -> str:
-    return val[:_MAX_VAL_LEN] + "…" if len(val) > _MAX_VAL_LEN else val
-
-
 class EnvDumpModule(KoiModule):
     name        = "env_dump"
     description = "Dump environment variables and highlight credentials, tokens, and keys."
@@ -64,8 +60,8 @@ class EnvDumpModule(KoiModule):
     # ── helpers ───────────────────────────────────────────────────────────────
 
     def _display(self, env: dict[str, str], show_all: bool, total: int) -> None:
-        interesting = {k: _truncate(v) for k, v in env.items() if _is_interesting(k, v)}
-        rest        = {k: _truncate(v) for k, v in env.items() if k not in interesting}
+        interesting = {k: v for k, v in env.items() if _is_interesting(k, v)}
+        rest        = {k: v for k, v in env.items() if k not in interesting}
 
         if interesting:
             self.box(
