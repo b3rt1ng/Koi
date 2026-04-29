@@ -24,7 +24,6 @@ def upgrade_windows_conptyshell(
     pending_conpty: dict,
     conpty_staging: dict,
     conpty_lock: threading.Lock,
-    write_state: Callable[[], None],
     mask_ip: Callable[[str, str], str],
 ) -> None:
     try:
@@ -82,7 +81,6 @@ def upgrade_windows_conptyshell(
 
     new_sess.upgraded = True
     new_sess.is_conptyshell = True
-    write_state()
     time.sleep(0.3)
     new_sess.conn.sendall(b"\r\n")
     notify('success', f"Session {_p(f'#{old_id}')} upgraded to ConPtyShell.")

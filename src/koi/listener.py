@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import os
+import re
 import select
 import shutil
 import signal
@@ -27,7 +27,38 @@ from koi.utils.ui import (
 from koi.utils.obfuscate_ui import run_obfuscate_ui
 
 LOCALUSER = os.getenv("USER") or os.getenv("USERNAME") or "user"
-_STATE_FILE = "/tmp/koi.state"
+
+_IPV4_TEXT  = re.compile(r'(?<!\d)(?:25[0-5]|2[0-4]\d|[01]?\d\d?)(?:\.(?:25[0-5]|2[0-4]\d|[01]?\d\d?)){3}(?!\d)')
+_IPV4_BYTES = re.compile(rb'(?<!\d)(?:25[0-5]|2[0-4]\d|[01]?\d\d?)(?:\.(?:25[0-5]|2[0-4]\d|[01]?\d\d?)){3}(?!\d)')
+
+
+class _MaskBinary:
+    def __init__(self, real, check):
+        self._real  = real
+        self._check = check
+
+    def write(self, b):
+        if self._check():
+            b = _IPV4_BYTES.sub(b'<IP>', b)
+        return self._real.write(b)
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+class _MaskStream:
+    def __init__(self, real, check):
+        self._real  = real
+        self._check = check
+        self.buffer = _MaskBinary(real.buffer, check)
+
+    def write(self, s):
+        if self._check():
+            s = _IPV4_TEXT.sub('<IP>', s)
+        return self._real.write(s)
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
 
 
 class Listener:
@@ -49,31 +80,6 @@ class Listener:
         self.screenable_mode: bool = False
         self._accepting: bool = True
 
-    def _write_state(self) -> None:
-        sessions = []
-        for s in self._sessions.values():
-            sessions.append({
-                "id": s.id,
-                "ip": s.addr[0],
-                "port": s.addr[1],
-                "os_type": s.os_type,
-                "upgraded": s.upgraded,
-                "alive": s.alive,
-                "connected_at": s.connected_at.isoformat(),
-                "uptime": s._uptime(),
-            })
-        state = {
-            "host": self.host,
-            "port": self.port,
-            "pid": os.getpid(),
-            "sessions": sessions,
-        }
-        try:
-            with open(_STATE_FILE, "w") as f:
-                json.dump(state, f)
-        except OSError:
-            pass
-
     def _mask_ip(self, ip: str, kind: str = "remote") -> str:
         """Return a placeholder instead of a real IP when screenable mode is active."""
         if self.screenable_mode:
@@ -82,8 +88,8 @@ class Listener:
 
     def _toggle_screenable(self) -> None:
         self.screenable_mode = not self.screenable_mode
-        state = _b("ON") if self.screenable_mode else _gr("OFF")
-        sys.stdout.write(f"\r\033[K")
+        state = _c("ON") if self.screenable_mode else _gr("OFF")
+        sys.stdout.write("\033[F\033[2K")  # move up + wipe the echoed _koi_screenable_ line
         notify('info', f"Screenable mode {state}")
         sys.stdout.flush()
 
@@ -102,7 +108,6 @@ class Listener:
         sess = self._sessions.pop(sid, None)
         if sess:
             sess.close()
-        self._write_state()
 
     def _prune(self) -> None:
         for sid in [k for k, s in self._sessions.items() if not s.alive]:
@@ -147,7 +152,6 @@ class Listener:
         if not sess.alive:
             return
 
-        self._write_state()
         os_tag = f" {_gr('[')} {sess.os_label()} {_gr(']')}" if sess.os_type else ""
         masked_ip = self._mask_ip(sess.addr[0])
         msg = f"{_b(_c(f'#{sess.id}'))}  {_c(masked_ip)}{_gr(f':{sess.addr[1]}')}{os_tag}"
@@ -169,9 +173,11 @@ class Listener:
         self._server_sock.listen(16)
         self._running = True
 
+        sys.stdout = _MaskStream(sys.stdout, lambda: self.screenable_mode)
+        sys.stderr = _MaskStream(sys.stderr, lambda: self.screenable_mode)
+
         threading.Thread(target=self._accept_loop, daemon=True, name="accept").start()
 
-        self._write_state()
         display_art()
         print()
         notify('info', f"Listening on {_b(self.host)}:{_b(self.port)}")
@@ -192,17 +198,13 @@ class Listener:
                     s.send(b"exit\n")
                     time.sleep(0.5)
                 s.close()
-        try:
-            os.unlink(_STATE_FILE)
-        except OSError:
-            pass
         print()
 
     def _prompt(self) -> str:
         alive = sum(1 for s in self._sessions.values() if s.alive)
         noun = "session" if alive == 1 else "sessions"
         count = colored_text(str(alive), PUMPKIN if alive else SILVER)
-        anon_tag = colored_text(" [ANON]", SILVER) if self.screenable_mode else ""
+        anon_tag = colored_text(" [ANON]", PUMPKIN) if self.screenable_mode else ""
         pause_tag = colored_text(" [PAUSED]", CORAL) if not self._accepting else ""
         return (
             f"{LOCALUSER}"
@@ -341,7 +343,7 @@ class Listener:
             notify('warning', "Listener is already paused.")
             return
         self._accepting = False
-        notify('warning', f"Listener {_b('paused')} — new connections refused. Existing sessions unaffected.")
+        notify('warning', f"Listener {_b('paused')} — new connections refused.")
 
     def _cmd_start_accepting(self) -> None:
         if self._accepting:
@@ -388,7 +390,7 @@ class Listener:
             upgrade_windows_conptyshell(
                 sess, self._sessions, self.port,
                 self._pending_conpty, self._conpty_staging, self._conpty_lock,
-                self._write_state, self._mask_ip,
+                self._mask_ip,
             )
             return
 
@@ -410,7 +412,6 @@ class Listener:
             self._sync_winsize(sess)
             self._drain(sess, 0.3)
             sess.upgraded = True
-            self._write_state()
 
         notify('success', f"Shell {_p(f'#{sid}')} upgraded successfully.")
 
