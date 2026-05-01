@@ -62,7 +62,7 @@ class _MaskStream:
 
 
 class Listener:
-    def __init__(self, host: str = "0.0.0.0", port: int = 4444):
+    def __init__(self, host: str = "0.0.0.0", port: int = 4010):
         self.host = host
         self.port = port
         self._sessions: Dict[int, Session] = {}

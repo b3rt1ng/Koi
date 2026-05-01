@@ -33,7 +33,9 @@ MOTD = ["The serene shell handler",
         "流れに逆らう鯉のように",
         "¯＼(º_o)/¯",
         "Do not download and run random modules...",
-        "AD is not that scary, I promise!"
+        "AD is not that scary, I promise!",
+        "Defender doesn't have sunglasses because he's cool...",
+        "don't forget to star the repo <3"
 ]
 
 def whole_line(char=" "):

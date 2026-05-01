@@ -28,7 +28,7 @@ def main():
     )
     parser.add_argument("-h", "--help", action=_ArtHelpAction, help="show this help message and exit")
     parser.add_argument("--host", default="0.0.0.0", help="Bind address (default: 0.0.0.0)")
-    parser.add_argument("--port", "-p", type=int, default=4444, help="Listen port (default: 4444)")
+    parser.add_argument("--port", "-p", type=int, default=4010, help="Listen port (default: 4010)")
     parser.add_argument("--payloads", nargs="?", const="__all__", metavar="IFACE",
                         help="Print payloads for all interfaces (or a specific one) and exit")
     args = parser.parse_args()

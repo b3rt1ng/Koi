@@ -55,7 +55,7 @@ pipx upgrade koi-handler
 ### Start the listener
 
 ```bash
-# Default: bind 0.0.0.0:4444
+# Default: bind 0.0.0.0:4010
 koi
 
 # Custom host/port

@@ -68,7 +68,7 @@ $client.Close()
 
 class PayloadGenerator:
 
-    def __init__(self, port: int = 4444):
+    def __init__(self, port: int = 4010):
         self.port = port
 
     def get_interfaces(self) -> dict[str, str]:
