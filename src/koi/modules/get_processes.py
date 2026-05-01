@@ -42,10 +42,6 @@ class GetProcessesModule(KoiModule):
         },
     ]
 
-    # ── shared ────────────────────────────────────────────────────────────────
-
-    # ── Linux ─────────────────────────────────────────────────────────────────
-
     def _parse_linux(self, raw: str) -> list[dict]:
         procs = []
         for line in raw.splitlines():
@@ -103,17 +99,12 @@ class GetProcessesModule(KoiModule):
             val_fn=lambda p: p["cmd"],
         )
 
-    # ── Windows PS ────────────────────────────────────────────────────────────
-
     _WIN_SYSTEM_USERS = frozenset({
         "n/a", "nt authority\\system", "nt authority\\local service",
         "nt authority\\network service",
     })
 
     def _parse_windows_tasklist(self, raw: str) -> list[dict]:
-        # tasklist /fo csv /nh /v columns:
-        # "Image Name","PID","Session Name","Session#","Mem Usage",
-        # "Status","User Name","CPU Time","Window Title"
         procs = []
         for entry in raw.split("§"):
             entry = self._clean(entry)
@@ -148,8 +139,6 @@ class GetProcessesModule(KoiModule):
         return False
 
     def _run_windows(self) -> None:
-        # Run tasklist inside PS and join all lines with § so _win_query
-        # (which returns the last echoed line) gets the full output at once.
         ps_expr = "(tasklist /fo csv /nh /v) -join '§'"
         with self.spinner("Collecting processes via tasklist…"):
             raw = self._win_query(ps_expr, timeout=30)
@@ -166,8 +155,6 @@ class GetProcessesModule(KoiModule):
             key_fn=lambda p: f"PID {p['pid']}  {p['name']}  ({p['user']})",
             val_fn=lambda p: f"session={p['session']}  mem={p['mem']}",
         )
-
-    # ── dispatch (shared filtering/display logic) ─────────────────────────────
 
     def _dispatch(self, procs, total, is_interesting, key_fn, val_fn) -> None:
         keyword  = getattr(self.args, "filter", None)
@@ -199,8 +186,6 @@ class GetProcessesModule(KoiModule):
             self.box(label, {key_fn(p): val_fn(p) for p in interesting})
         else:
             self.ok(f"No noteworthy processes found ({total} total). Use -a to list all.")
-
-    # ── entry point ───────────────────────────────────────────────────────────
 
     def run(self) -> None:
         if self.session.os_type == "linux":

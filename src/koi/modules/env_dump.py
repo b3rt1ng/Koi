@@ -57,8 +57,6 @@ class EnvDumpModule(KoiModule):
         },
     ]
 
-    # ── helpers ───────────────────────────────────────────────────────────────
-
     def _display(self, env: dict[str, str], show_all: bool, total: int) -> None:
         interesting = {k: v for k, v in env.items() if _is_interesting(k, v)}
         rest        = {k: v for k, v in env.items() if k not in interesting}
@@ -75,8 +73,6 @@ class EnvDumpModule(KoiModule):
             self.box(f"Other variables  ({len(rest)})", rest)
         elif not show_all and rest:
             self.ok(f"{len(rest)} other variables — use -a to show all.")
-
-    # ── Linux ─────────────────────────────────────────────────────────────────
 
     def _run_linux(self) -> None:
         with self.spinner("Dumping environment…"):
@@ -99,11 +95,7 @@ class EnvDumpModule(KoiModule):
         show_all = getattr(self.args, "all", False)
         self._display(env, show_all, len(env))
 
-    # ── Windows PS ────────────────────────────────────────────────────────────
-
     def _run_windows(self) -> None:
-        # Use ||| as key/value separator (unlikely to appear in a var name)
-        # and § to join lines, so _win_query returns everything in one shot.
         ps_expr = (
             "(Get-ChildItem Env: | ForEach-Object {"
             "\"$($_.Name)|||$($_.Value)\""
@@ -128,8 +120,6 @@ class EnvDumpModule(KoiModule):
 
         show_all = getattr(self.args, "all", False)
         self._display(env, show_all, len(env))
-
-    # ── entry point ───────────────────────────────────────────────────────────
 
     def run(self) -> None:
         if self.session.os_type == "linux":

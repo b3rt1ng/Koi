@@ -112,7 +112,7 @@ def display_art(small: bool = False):
 ⠀⠀{color_signal(SILVER)}⠈{color_signal(WHITE)}⠏{color_signal(SILVER)}⠏⠉⠉⠉⠈⠛⠤⣀⣠{color_signal(WHITE)}⡽⠀⠀⠀⠀⠀⠀{RST}
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀By @b3rt1ng⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{RST}
 """
-    if terminal_width < 139 or small:
+    if terminal_width < 110 or small:
         print(small_art)
     else:
         print(art)

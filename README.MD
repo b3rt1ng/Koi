@@ -20,18 +20,20 @@ Disclaimer: please note that this is still under development, and I am still wor
 
 * **Multi-session**: Handles multiple reverse shells simultaneously list, switch, and background sessions without dropping any.
 * **PTY Upgrade**: Upgrades a raw shell to a full PTY for proper tab completion, Ctrl+C forwarding, and terminal resizing.
+* **Modules**: Various modules to automate post exploitation tasks such as easy upload and download, simple information gathering and more 
+* **Obfuscator**: Easy to use payload obfuscator, chaining obfuscation techniques to evade defender.
 * **Clean signals**: `Ctrl+Z` backgrounds the session, `Ctrl+C` sends `SIGINT` to the remote never kills your listener by accident.
-* **Koi fish themed UI**: Gradient prompt, status indicators, and session boxes, pentest tooling doesn't have to be ugly.
+* **Koi fish themed UI**: sick UI, pentest tooling doesn't have to be ugly.
 
 ## 🚧 WIP
-* **Windows**: Powershells are now available and upgradable with in-memory obfuscation to evade Windows Defender.
-* **Tunneling**: Once you have your shell, a simple way to tunnel in that network would be very convenient, this has yet to be done.
+* **Windows**: Powershells are now available and upgradable with in-memory obfuscation to evade Windows Defender, but needs more testing.
+* **Tunneling**: Once you have your shell, a simple way to tunnel in that network with few inputs would be very convenient.
 ---
 
 ## 🚀 Installation
 
 ```bash
-# directly from the repo
+# directly from the repo to get the latest version
 pipx install git+https://github.com/b3rt1ng/Koi
 
 # or pypi
@@ -69,7 +71,7 @@ Send a reverse shell yourself or by typing `payloads *interface*` to get pregene
 
 ##### Bypass Windows Defender
 
-Koi includes a built-in payload obfuscator to help evade Windows Defender detection. You can chain multiple techniques together though XOR encoding or format transformations are usually sufficient. Keep in mind that stacking too many layers may corrupt the payload and make it unreadable by the target.
+Koi includes a built-in payload obfuscator to help evade Windows Defender detection. You can chain multiple techniques together though XOR encoding and format transformations are usually sufficient. Keep in mind that stacking too many layers may corrupt the payload and make it unreadable by the target.
 
 <a href="https://asciinema.org/a/1xnYShXuhoBhCUDX"><img src="https://asciinema.org/a/1xnYShXuhoBhCUDX.svg" alt="koi obfuscator demo" width="100%" /></a>
 
@@ -97,16 +99,15 @@ python3 -c 'import pty; pty.spawn("/bin/bash")'
 with `TERM=xterm-256color` and some resizing info
 
 ##### For windows:
-I did not bothered making one for CMD but for powershell, the technique uses [conptyshell](https://github.com/antoniococo/conptyshell) to gather a fully implemented shell:
+I did not bothered making one for CMD but for powershell, the technique uses an obfuscated [conptyshell](https://github.com/antoniococo/conptyshell) to gather a fully implemented shell:
 
 ```
-# 1 ConPtyShell is fetched from GitHub and kept in memory
-# 2 All IOC identifiers are renamed to random strings (class names, method names, PS function name)
-# 3 Distinctive C# string literals are replaced with runtime char-array constructions (no literal in compiled MSIL)
-# 4 The obfuscated script is served over a temporary HTTP server and executed on the target via IEX(IWR ...)
-# 5 The target connects back with a fully interactive PTY shell, registered as a new session
+1) ConPtyShell is fetched from GitHub and kept in memory
+2) All IOC identifiers are renamed to random strings (class names, method names, PS function name)
+3) Distinctive C# string literals are replaced with runtime char-array constructions (no literal in compiled MSIL)
+4) The obfuscated script is served over a temporary HTTP server and executed on the target via IEX(IWR ...)
+5) The target connects back with a fully interactive PTY shell, registered as a new session
 ```
-This way, the conptyshell effectively bypasses windows defender.
 
 ---
 
@@ -120,7 +121,7 @@ Modules are basically a way to automate actions on your instances. you can run c
 
 If you want to make your own modules, I recommend cloning this repo and installing it with the `--editable` flag. Once you have a shell, you can dev your payload and use the `reload` command to update all modules including the one you're working on.
 
-Checkout the [blueprint](src/koi/modules/blueprint.py) to see how you can make your own module or check our examples ([linpeas](src/koi/modules/linpeas.py), [get users](src/koi/modules/get_users.py)) to get inspirations
+Checkout the [blueprint](src/koi/modules/blueprint.py) to see how you can make your own module or check our examples ([linpeas](src/koi/modules/ligolo.py), [get users](src/koi/modules/get_users.py)) to get inspirations
 
 Also, if you want to make your own module part of this repo, do not hesitate to make a PR, I will gladly look at it and see if it's interesting to add here <3
 

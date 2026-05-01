@@ -31,15 +31,11 @@ class NetworkEnumModule(KoiModule):
         },
     ]
 
-    # ── helpers ───────────────────────────────────────────────────────────────
-
     def _run(self, cmd: str, timeout: float = 15.0) -> str:
         try:
             return self._exec_clean(cmd, timeout=timeout)
         except Exception:
             return ""
-
-    # ── section: interfaces ───────────────────────────────────────────────────
 
     def _section_interfaces(self) -> tuple[dict, list[tuple[str, str]]]:
         """Return (box_data, [(iface, ipv4_cidr), ...]) for non-loopback interfaces."""
@@ -62,8 +58,6 @@ class NetworkEnumModule(KoiModule):
         box = {iface: "  ".join(addrs) for iface, addrs in grouped.items()}
         return box, ipv4_ifaces
 
-    # ── section: routes ───────────────────────────────────────────────────────
-
     def _section_routes(self) -> dict:
         raw = self._run("ip route show")
         box: dict[str, str] = {}
@@ -76,8 +70,6 @@ class NetworkEnumModule(KoiModule):
             rest = parts[1] if len(parts) > 1 else ""
             box[dest] = rest
         return box
-
-    # ── section: ARP neighbors (cached, instant) ──────────────────────────────
 
     def _section_neighbors(self) -> dict:
         raw = self._run("ip neigh show 2>/dev/null || arp -a 2>/dev/null")
@@ -103,8 +95,6 @@ class NetworkEnumModule(KoiModule):
                 box[ip] = f"{mac}  dev={dev}"
         return box
 
-    # ── section: listening ports ──────────────────────────────────────────────
-
     def _section_listening(self) -> dict:
         raw = self._run("ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null")
         box: dict[str, str] = {}
@@ -127,8 +117,6 @@ class NetworkEnumModule(KoiModule):
                 process = parts[6]
                 box[local] = process
         return box
-
-    # ── section: established connections ─────────────────────────────────────
 
     def _section_connections(self) -> dict:
         raw = self._run(
@@ -153,8 +141,6 @@ class NetworkEnumModule(KoiModule):
                 box[f"{local} → {remote}"] = process
         return box
 
-    # ── section: DNS ──────────────────────────────────────────────────────────
-
     def _section_dns(self) -> dict:
         raw = self._run("cat /etc/resolv.conf 2>/dev/null")
         box: dict[str, str] = {}
@@ -171,8 +157,6 @@ class NetworkEnumModule(KoiModule):
                 idx[key] = n + 1
                 box[key if n == 0 else f"{key} {n + 1}"] = val
         return box
-
-    # ── host discovery (ARP scan) ─────────────────────────────────────────────
 
     @staticmethod
     def _cidr_to_network(cidr: str) -> tuple[str, int]:
@@ -301,8 +285,6 @@ class NetworkEnumModule(KoiModule):
                 )
             else:
                 self.warn(f"No live hosts found on {network}.")
-
-    # ── entry point ───────────────────────────────────────────────────────────
 
     def run(self) -> None:
         no_scan = getattr(self.args, "no_scan", False)
