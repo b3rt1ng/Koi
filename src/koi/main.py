@@ -9,6 +9,7 @@ import sys
 from koi.listener import Listener
 from koi.utils.ui import notify, _b, _p, _c, display_art, print_payloads
 from koi.utils.obfuscate_ui import run_obfuscate_ui
+from koi.utils.logger import review as _review
 
 
 
@@ -59,6 +60,23 @@ def main():
     except OSError as e:
         notify('error', f"Cannot start listener: {e}")
         sys.exit(1)
+
+
+def koireview():
+    parser = argparse.ArgumentParser(
+        description="koireview – review a recorded Koi session",
+        add_help=False,
+    )
+    parser.add_argument("-h", "--help", action=_ArtHelpAction, help="show this help message and exit")
+    parser.add_argument("log", nargs="?", default=None, metavar="LOG",
+                        help="Log file to review (name or path). Omit to list available logs.")
+    args = parser.parse_args()
+
+    if args.log is None:
+        from koi.utils.logger import print_log_list
+        print_log_list()
+    else:
+        _review(args.log)
 
 
 def obfuscator():

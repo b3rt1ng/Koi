@@ -33,6 +33,7 @@ class Session:
     os_type: OsType = field(default=None)
     encoding: str = field(default="utf-8")
     eol: str = field(default="\n")
+    log_path: Optional[str] = field(default=None)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def _uptime(self) -> str:

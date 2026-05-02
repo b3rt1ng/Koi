@@ -12,7 +12,7 @@ from koi.utils.ui import (
 COMMANDS = [
     "ls", "go", "upgrade", "kill", "setshell", "help", "exit",
     "quit", "interact", "payload", "obfuscator", "run", "modules",
-    "reload", "start", "stop",
+    "reload", "start", "stop", "logs",
 ]
 
 _OS_TYPES = ["linux", "windows_ps", "windows_cmd"]
@@ -70,6 +70,7 @@ def print_help() -> None:
             f"{_p('run')} {_b('<module>')} {_b('<id>')} {_b('[args…]')}": "Run a module against a session",
             f"{_p('setshell')} {_b('<id>')} {_b('<os_type>')}": "Manually set the OS type of a session",
             f"{_p('stop')}": "Pause the listener — refuse new connections",
+            f"{_p('logs')}": "List recorded session logs",
             f"{_p('start')}": "Resume the listener — accept new connections again",
             f"{_p('help')}": "Show this message",
             f"{_p('exit')}": "Shut down the listener",

@@ -79,6 +79,7 @@ class Listener:
         self._conpty_lock = threading.Lock()
         self.screenable_mode: bool = False
         self._accepting: bool = True
+        self._loggers: dict = {}
 
     def _mask_ip(self, ip: str, kind: str = "remote") -> str:
         """Return a placeholder instead of a real IP when screenable mode is active."""
@@ -108,6 +109,10 @@ class Listener:
         sess = self._sessions.pop(sid, None)
         if sess:
             sess.close()
+        if sid in self._loggers:
+            self._loggers[sid].log_event("terminated")
+            self._loggers[sid].close()
+            del self._loggers[sid]
 
     def _prune(self) -> None:
         for sid in [k for k, s in self._sessions.items() if not s.alive]:
@@ -295,6 +300,9 @@ class Listener:
             elif cmd in ("obfuscator", "obs", "cook"):
                 self._cmd_obfuscate(parts[1] if len(parts) > 1 else None)
 
+            elif cmd in ("logs", "log"):
+                self._cmd_logs()
+
             elif cmd in ("modules", "mdls", "mods"):
                 self._cmd_modules()
 
@@ -365,6 +373,10 @@ class Listener:
             key = f"#{s.id}  {s.status_dot()}  {_c(masked_ip)}{_gr(f':{s.addr[1]}')} [{s.os_label()}]"
             data[key] = s._uptime()
         print_report_box("Sessions", data)
+
+    def _cmd_logs(self) -> None:
+        from koi.utils.logger import print_log_list
+        print_log_list()
 
     def _cmd_reload(self) -> None:
         with Spinner("Reloading modules…"):
@@ -463,8 +475,18 @@ class Listener:
             sys.stdout.write("\033[2J\033[H")
             sys.stdout.flush()
 
+        if sess.id not in self._loggers:
+            from koi.utils.logger import start_logger
+            lg = start_logger(sess)
+            self._loggers[sess.id] = lg
+            sess.log_path = str(lg.path)
+            notify('info', f"Logging to {_gr(lg.path.name)}")
+
         self._in_session = True
-        reason = interact(sess)
+        logger = self._loggers.get(sess.id)
+        logger.log_event(f"enter — {self._mask_ip(ip)}:{port}")
+        reason = interact(sess, logger=logger)
+        logger.log_event(reason)
         self._in_session = False
 
         signal.signal(signal.SIGWINCH, signal.SIG_DFL)
