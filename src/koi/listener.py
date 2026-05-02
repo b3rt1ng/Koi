@@ -395,19 +395,15 @@ class Listener:
             return
 
         with Spinner("Upgrading shell…"):
-            spawn = (
-                "python3 -c 'import pty; pty.spawn(\"/bin/bash\")' 2>/dev/null || "
-                "python -c 'import pty; pty.spawn(\"/bin/bash\")' 2>/dev/null || "
-                "script -qc /bin/bash /dev/null\n"
-            )
-            sess.send(spawn.encode())
+            from koi.utils.bash_obfuscate import obfuscated_upgrade_spawn
+            sess.send(obfuscated_upgrade_spawn().encode())
             self._drain(sess, 0.8)
 
             if not sess.alive:
                 notify('error', f"Session {_p(f'#{sid}')} died during upgrade.")
                 return
 
-            sess.send(b"export TERM=xterm-256color HISTFILE=/dev/null\n")
+            sess.send(b"export TERM=xterm-256color HISTSIZE=0 HISTFILESIZE=0\n")
             self._drain(sess, 0.3)
             self._sync_winsize(sess)
             self._drain(sess, 0.3)

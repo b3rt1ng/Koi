@@ -28,6 +28,7 @@ Disclaimer: please note that this is still under development, and I am still wor
 ## 🚧 WIP
 * **Windows**: Powershells are now available and upgradable with in-memory obfuscation to evade Windows Defender, but needs more testing.
 * **Tunneling**: Once you have your shell, a simple way to tunnel in that network with few inputs would be very convenient.
+* **EDR proof**: Koi is indeed conveinient but it's a rather "loud" method in using edr i'm while the payloads does bypass casual / low tier EDR, it can get flagged on more expensives solutions. I'm working on ways to make it even less flaggable (tls, http ?)
 ---
 
 ## 🚀 Installation
