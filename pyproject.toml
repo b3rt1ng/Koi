@@ -4,12 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "koi-handler"
-version = "0.7.9"
+version = "0.8.0"
 description = "Reverse shell listener"
 requires-python = ">=3.10"
 
 [project.scripts]
 koi = "koi.main:main"
+koifuscator = "koi.main:obfuscator"
 
 [tool.setuptools.packages.find]
 where = ["src"]

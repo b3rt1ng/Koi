@@ -8,6 +8,7 @@ import sys
 
 from koi.listener import Listener
 from koi.utils.ui import notify, _b, _p, _c, _gr, _y, _bl, display_art, print_payloads, print_report_box
+from koi.utils.obfuscate_ui import run_obfuscate_ui
 
 
 
@@ -31,10 +32,16 @@ def main():
     parser.add_argument("--port", "-p", type=int, default=4010, help="Listen port (default: 4010)")
     parser.add_argument("--payloads", nargs="?", const="__all__", metavar="IFACE",
                         help="Print payloads for all interfaces (or a specific one) and exit")
+    parser.add_argument("--obfuscator", "--cook", nargs="?", const="__all__", metavar="IFACE",
+                        help="Open the payload obfuscator (optionally for a specific interface) and exit")
     args = parser.parse_args()
 
     if args.payloads is not None:
         print_payloads(None if args.payloads == "__all__" else args.payloads, args.port)
+        sys.exit(0)
+
+    if args.obfuscator is not None:
+        run_obfuscate_ui(None if args.obfuscator == "__all__" else args.obfuscator, args.port)
         sys.exit(0)
 
     listener = Listener(host=args.host, port=args.port)
@@ -52,6 +59,19 @@ def main():
     except OSError as e:
         notify('error', f"Cannot start listener: {e}")
         sys.exit(1)
+
+
+def obfuscator():
+    parser = argparse.ArgumentParser(
+        description="koifuscator – payload obfuscator",
+        add_help=False,
+    )
+    parser.add_argument("-h", "--help", action=_ArtHelpAction, help="show this help message and exit")
+    parser.add_argument("--port", "-p", type=int, default=4010, help="Callback port embedded in the payload (default: 4010)")
+    parser.add_argument("iface", nargs="?", default=None, metavar="IFACE",
+                        help="Network interface to use (default: all)")
+    args = parser.parse_args()
+    run_obfuscate_ui(args.iface, args.port)
 
 
 if __name__ == "__main__":
