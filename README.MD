@@ -8,21 +8,7 @@ Disclaimer: please note that this is still under development, and I am still wor
 
 ## 📑 Table of Contents
 
-- [koi 🎏](#koi-)
-  - [📑 Table of Contents](#-table-of-contents)
-    - [Demo](#demo)
-  - [✨ Features](#-features)
-  - [🚧 WIP](#-wip)
-  - [🚀 Installation](#-installation)
-  - [💻 Usage](#-usage)
-    - [Start the listener](#start-the-listener)
-      - [Catch a shell](#catch-a-shell)
-        - [Bypass Windows Defender](#bypass-windows-defender)
-  - [🔧 PTY Upgrade](#-pty-upgrade)
-      - [Under the hood](#under-the-hood)
-        - [For linux:](#for-linux)
-        - [For windows:](#for-windows)
-    - [🤖 Modules](#-modules)
+[✨ Features](#-features) — [🚧 WIP](#-wip) — [🚀 Installation](#-installation) — [💻 Usage](#-usage) — [🔧 PTY Upgrade](#-pty-upgrade) — [🤖 Modules](#-modules)
   
 ---
 
