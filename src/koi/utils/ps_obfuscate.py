@@ -26,6 +26,8 @@ _PS_CMDLETS = [
     "Out-String",
     "Get-Content",
     "Write-Host",
+    "Get-Item",
+    "Test-Path",
     "iex",
     "pwd",
 ]

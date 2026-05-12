@@ -90,7 +90,7 @@ class Listener:
     def _toggle_screenable(self) -> None:
         self.screenable_mode = not self.screenable_mode
         state = _c("ON") if self.screenable_mode else _gr("OFF")
-        sys.stdout.write("\033[F\033[2K")  # move up + wipe the echoed _koi_screenable_ line
+        sys.stdout.write("\033[F\033[2K")
         notify('info', f"Screenable mode {state}")
         sys.stdout.flush()
 
@@ -132,7 +132,6 @@ class Listener:
                 conn.close()
                 continue
 
-            # ConPtyShell callback: stash without assigning an ID
             if addr[0] in self._pending_conpty:
                 os_type = self._pending_conpty.pop(addr[0])
                 staging = Session(id=-1, conn=conn, addr=addr)

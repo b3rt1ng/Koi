@@ -347,6 +347,10 @@ class KoiModule(ABC):
     def status(self, msg: str) -> None:
         """Print a status notification."""
         self.notify("status", msg)
+        
+    def success(self, msg: str) -> None:
+        """Print a success notification."""
+        self.notify("success", msg)
 
     def __str__(self) -> str:
         return f"<KoiModule {self.name!r} on session #{self.session.id}>"
