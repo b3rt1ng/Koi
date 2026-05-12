@@ -54,7 +54,8 @@ pipx install --editable .
 _This installation comes with `koifuscator` and `koireview`_
 
 `koifuscator` is the direct shortcut to the obfuscator module.
-`koireview` is you way to see the logs of you sessions.
+
+`koireview` is your way to see the logs of your sessions.
 > 
 To upgrade:
 ```

@@ -37,7 +37,7 @@ MOTD = ["The serene shell handler",
         "¯＼(º_o)/¯",
         "Do not download and run random modules...",
         "AD is not that scary, I promise!",
-        "Defender doesn't have sunglasses because he's cool...",
+        "Defender have sunglasses because he's cool...",
         "don't forget to star the repo <3",
         "Use koireview to see your shells history",
         "You can use \"koifuscator\" to directly use the obfuscator"
