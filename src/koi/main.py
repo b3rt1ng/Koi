@@ -10,6 +10,7 @@ from koi.listener import Listener
 from koi.utils.ui import notify, _b, _p, _c, display_art, print_payloads
 from koi.utils.obfuscate_ui import run_obfuscate_ui
 from koi.utils.logger import review as _review
+from koi.utils.logger import clear_log as _clear_log
 
 
 
@@ -70,6 +71,7 @@ def koireview():
     parser.add_argument("-h", "--help", action=_ArtHelpAction, help="show this help message and exit")
     parser.add_argument("log", nargs="?", default=None, metavar="LOG",
                         help="Log file to review (name or path). Omit to list available logs.")
+    parser.add_argument("-c", "--clear", action="store_true", help="Clear the specified log or all logs if none specified")
     args = parser.parse_args()
 
     if args.log is None:
@@ -78,6 +80,22 @@ def koireview():
     else:
         _review(args.log)
 
+    if args.clear:
+        if args.log is None:
+            from koi.utils.logger import list_logs
+            logs = list_logs()
+            if not logs:
+                print("No logs to clear.")
+                return
+            for log in logs:
+                _clear_log(log)
+        else:
+            from koi.utils.logger import resolve_log
+            log_path = resolve_log(args.log)
+            if log_path is None:
+                print(f"Log not found: {args.log}", file=sys.stderr)
+                sys.exit(1)
+            _clear_log(log_path)
 
 def obfuscator():
     parser = argparse.ArgumentParser(

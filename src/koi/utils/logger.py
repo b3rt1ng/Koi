@@ -108,6 +108,13 @@ def resolve_log(name: str) -> Path | None:
     matches = sorted(log_dir().glob(f"*{p.name}*"), reverse=True)
     return matches[0] if matches else None
 
+def clear_log(path: Path) -> None:
+    try:
+        path.unlink()
+        print(f"{_CORAL}Log cleared: {path.name}{_RST}")
+    except OSError as exc:
+        print(f"{_CORAL}Failed to clear log {path.name}: {exc}{_RST}", file=sys.stderr)
+
 
 _PROMPT_SUFFIXES = ("$", "#", "❯", ">", "% ")
 _CTRL = re.compile(r"[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f]")
