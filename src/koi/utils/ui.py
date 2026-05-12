@@ -3,6 +3,7 @@ import shutil
 import sys
 import threading
 import time
+import importlib.metadata
 from random import choice
 
 _ANSI = re.compile(r"\033\[[^m]*m")
@@ -16,6 +17,8 @@ BLUE        = (118, 241, 245)
 RST = "\033[0m"
 DIM = "\033[2m"
 BOLD = "\033[1m"
+
+__version__ = importlib.metadata.version("koi-handler")
 
 def _b(t):  return f"{BOLD}{t}{RST}"
 def _d(t):  return f"{DIM}{t}{RST}"
@@ -88,10 +91,10 @@ def display_art(small: bool = False):
 ⠈⢮{color_signal(CORAL)}⣺⢸⢸⢸⢸⢸⢐{color_signal(WHITE)}⢕⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(UMBER)}⡂⠌⡐⢌⠢⠡⡑⡑⡑{color_signal(WHITE)}⢕⢕⢕⠵⢽⢽⡺⣵⣣⡳⡱⡱⠡⠡⠀⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(PUMPKIN)}⠀ 888`88b.  {color_signal(WHITE)}  888      888  888  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
 ⠀⢵⢯{color_signal(CORAL)}⡺⡸⡸⡸⡸⡸⡐{color_signal(WHITE)}⡐⡐⡐⢄⠀⠀⠀⠀⠀{color_signal(UMBER)}⢑⢈⠢⠡⡑⡐⡐{color_signal(WHITE)}⢌⢂⠢⡑⡑⢕⠳⡱⡱⣱⢹⢜⠌⠌⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(PUMPKIN)}⠀ 888  `88b. {color_signal(WHITE)} {color_signal(SILVER)}`88b   {color_signal(WHITE)} d88'  888  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
 ⠀⢯⣻⡪⡪⠪⡪⡪⡪⡪⡂⡪⡨⢢⠂⠀⠀⠀⠀⠀⠀⠅⡑⡐⡐⢌⢆⠢⡑⡐⢌⠢⡑⠌⢎⢎⢇⢗⢵⡱⡠⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(PUMPKIN)}⠀⠀o888o  o888o {color_signal(WHITE)} {color_signal(SILVER)}`Y8bo{color_signal(WHITE)}od8P'  o888o ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⢹⡾⣝⠆⠅⡂⠌⢎⢎⢎⢪⢈⠪⠀⠀⠀⠀⠀⠀⠀⠀⠐⠐⠈⠆⢇⢕⠐⢌⠢⠑⠌⢌⢆⢂⠊⡎⡎⡮⣺{color_signal(PUMPKIN)}⣦⢀⠀⠀⠀{color_signal(WHITE)}⠀⠀⠀
+⠀⢹⡾⣝⠆⠅⡂⠌⢎⢎⢎⢪⢈⠪⠀⠀⠀⠀⠀⠀⠀⠀⠐⠐⠈⠆⢇⢕⠐⢌⠢⠑⠌⢌⢆⢂⠊⡎⡎⡮⣺{color_signal(PUMPKIN)}⣦⢀⠀⠀⠀{color_signal(WHITE)}
 ⠀{color_signal(UMBER)}⠂⢿⡸⣣{color_signal(WHITE)}⡁⡢⠡⠡⡑⠌⢌⢪⢪⠠⢀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠠⠑⠕⢄⢅⢅⢑⢐⠐⠄⢕⢜⢜{color_signal(PUMPKIN)}⢼⢿⣾⣳⣔⢀⠀⠀⠀{color_signal(WHITE)}⠀⠀{choice(MOTD)}
 ⠀{color_signal(UMBER)}⠈⠸⡽⣿⣽⣮{color_signal(WHITE)}⡪⡢⡨⡨⡢⡣⡣⠣⠣⡪⡐⠄⢄⠀⠀⠀⠀⠀⠀⠀⠀⠁⠂⡑⡑⡐⠄⠅⢅⢑⠱⡱⡣{color_signal(PUMPKIN)}⡫⣺⢻⡚⣆⠀⠀⠀⠀⠀⠀⠀{color_signal(WHITE)}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀{color_signal(UMBER)}⠹⡽⣾⣷⡻{color_signal(WHITE)}⡸⡸⡸⡸⡨⠨⡈⡂⡂⠪⡘⢜⢜⢔⢐⠐⠌⠌⠀⠀⠀⠀⢂⠢⠨⠨⡈⡂⠢⡑⢜⢯⣎⢎{color_signal(PUMPKIN)}⢎⢎⢎⢎⠄⠀⠀⠀{color_signal(WHITE)}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀{color_signal(UMBER)}⠹⡽⣾⣷⡻{color_signal(WHITE)}⡸⡸⡸⡸⡨⠨⡈⡂⡂⠪⡘⢜⢜⢔⢐⠐⠌⠌⠀⠀⠀⠀⢂⠢⠨⠨⡈⡂⠢⡑⢜⢯⣎⢎{color_signal(PUMPKIN)}⢎⢎⢎⢎⠄⠀⠀⠀{color_signal(WHITE)}⠀  V.{__version__}
 ⠀⠀⠀⠀{color_signal(UMBER)}⠘⢽⢞⢮{color_signal(WHITE)}⢪⢪⢪⠪⡈⡂{color_signal(UMBER)}⡂⠢⡈⠢⠨{color_signal(WHITE)}⡘⢜⢜⠬⡨⡨⡐⡀⠀⠀⠀⠠⠡⠡⢁⠂⠌⠢⡈⡂⠣⡫⣷⠱⡱⡱⡱⡱⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
 ⠀⠀⠀⠀⠀⠀⠣⡣⡣⡣⡣⡣⡂⡢{color_signal(UMBER)}⡈⠢⠨⡈⠢⡈⠢{color_signal(WHITE)}⡑⢕⢕⢜⢜⢌⢆⢄⠀⠀⠡⢁⠂⠌⠌⠀⠂⢌⠢⡑⢝⢵⢨⠪⡪⡪⡪⡀ ⠀    By @b3rt1ng
 ⠀⠀⠀⠀⠀⠀⠀⠀⠑⠕⡕⡕⣕⢕⢜⢌⢆⢎⢆⢪⢢⢪⢢⢣⢣⢣⢣⠣⠣⠡⡡⠀⠂⠌⠈⠀⠀⠀⠠⠑⠌⢌⢪⢣⢣⠡⢣⢣⢣⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(SILVER)}⠀⠀⠀⠀⠀⢀⢐⢀⠀⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(WHITE)}
@@ -112,7 +115,7 @@ def display_art(small: bool = False):
 ⠀⠀{color_signal(SILVER)}⢠{color_signal(WHITE)}⢶{color_signal(PUMPKIN)}⣿⠿{color_signal(SILVER)}⠃⠀⣀⡁⠀{color_signal(PUMPKIN)}⣿{color_signal(CORAL)}⣿{color_signal(WHITE)}⣼{color_signal(CORAL)}⣿{color_signal(WHITE)}⣿⣏{color_signal(SILVER)}⡑⡄⠀{RST}{color_signal(UMBER)}██{RST}   ██  ██████  {color_signal(PUMPKIN)}██ 
 ⠀{color_signal(SILVER)}⢰⣁⡐⠰⠆⣰{color_signal(WHITE)}⣶{color_signal(PUMPKIN)}⣿{color_signal(WHITE)}⣿⡿{color_signal(SILVER)}⠛{color_signal(WHITE)}⠻{color_signal(SILVER)}⡋⠀⠉⠉⠁⠀⠀{RST}
 ⠀⠀{color_signal(SILVER)}⠈{color_signal(WHITE)}⠏{color_signal(SILVER)}⠏⠉⠉⠉⠈⠛⠤⣀⣠{color_signal(WHITE)}⡽⠀⠀⠀⠀⠀⠀{RST}
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀By @b3rt1ng⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{RST}
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀By @b3rt1ng / Version {__version__}{RST}
 """
     if terminal_width < 110 or small:
         print(small_art)

