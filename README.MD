@@ -6,6 +6,8 @@ This project is my shot at making a fast, easy to use (yet feature rich) shell h
 
 Disclaimer: please note that this is still under development, and I am still working on some of the key features, which is talked about in [this section](#-wip).
 
+#### NEW WIKI [HERE](https://b3rt1ng.github.io/koi-wiki/) !!
+
 ## 📑 Table of Contents
 
 [✨ Features](#-features) — [🚧 WIP](#-wip) — [🚀 Installation](#-installation) — [💻 Usage](#-usage) — [🔧 PTY Upgrade](#-pty-upgrade) — [🤖 Modules](#-modules)
