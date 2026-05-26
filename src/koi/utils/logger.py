@@ -182,13 +182,26 @@ def review(name: str) -> None:
                         continue
                     if _is_prompt(stripped):
                         continue
+                    if "__KOI_" in stripped:
+                        continue
                     print(f"  {_DIM}{ts}{_RST}     {_GREY}{stripped}{_RST}")
                 recent_cmds.clear()
 
             elif kind == "event":
                 input_buf = b""
                 recent_cmds.clear()
-                print(f"\n  {_DIM}──  {entry['msg']}  ──{_RST}\n")
+                msg = entry["msg"]
+                if msg.startswith("exec  "):
+                    cmd = msg[6:].strip()
+                    # strip the _exec_clean wrapper: ( <cmd> ) > /dev/tcp/...
+                    m = re.match(r'\(\s*(.+?)\s*\)\s*>\s*/dev/tcp/\S+', cmd)
+                    if m:
+                        cmd = m.group(1).strip()
+                    print(f"  {_DIM}{ts}{_RST}  {_ORANGE}❯{_RST}  {_WHITE}{cmd}{_RST}")
+                elif not msg.startswith("module_"):
+                    print(f"\n  {_DIM}/!\  {msg}  /!\{_RST}\n")
+                else:
+                    print(f"\n  {_DIM}/!\  {msg}  /!\{_RST}\n")
 
     print()
 

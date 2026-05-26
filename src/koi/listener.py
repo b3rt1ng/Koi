@@ -550,14 +550,24 @@ class Listener:
         print()
         old_handler = signal.getsignal(signal.SIGINT)
         signal.signal(signal.SIGINT, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
+        if sess.id not in self._loggers:
+            from koi.utils.logger import start_logger
+            lg = start_logger(sess)
+            self._loggers[sess.id] = lg
+            sess.log_path = str(lg.path)
+        logger = self._loggers[sess.id]
         try:
-            mod = mod_cls(session=sess, args=mod_args)
-            mod.run()
+            mod = mod_cls(session=sess, args=mod_args, logger=logger)
+            mod.run_module()
         except KeyboardInterrupt:
             print()
             notify('warning', "Module interrupted.")
+            if logger:
+                logger.log_event(f"module_interrupted  {mod_name}")
         except Exception as exc:
             notify('error', f"Module raised an exception: {exc}")
+            if logger:
+                logger.log_event(f"module_error  {mod_name}  {exc}")
         finally:
             signal.signal(signal.SIGINT, old_handler)
         print()
@@ -641,4 +651,3 @@ class Listener:
             return
         self._sync_winsize(sess)
         self._drain(sess, 0.15)
-
