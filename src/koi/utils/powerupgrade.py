@@ -19,28 +19,16 @@ _CONPTYSHELL_URL = (
 
 
 def _fetch_conptyshell() -> tuple[bytes, str]:
-    """
-    Fetch ConPtyShell, with a local cache as fallback.
-
-    Strategy:
-      1. Try to download the latest version from GitHub.
-         On success → update the cache and return the fresh bytes.
-      2. If the network request fails and a cached copy exists → use it.
-      3. If neither works → raise the original network exception.
-
-    Returns:
-        (ps1_data, source_label) where source_label is "remote" or "cache".
-    """
     try:
         with urllib.request.urlopen(_CONPTYSHELL_URL, timeout=15) as resp:
             ps1_data = resp.read()
-        save_conptyshell(ps1_data)           # keep the cache fresh
+        save_conptyshell(ps1_data)
         return ps1_data, "remote"
     except Exception as exc:
         cached = load_conptyshell()
         if cached is not None:
             return cached, "cache"
-        raise exc                            # no cache either — bubble up
+        raise exc
 
 
 def upgrade_windows_conptyshell(

