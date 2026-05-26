@@ -90,7 +90,7 @@ def _rand_ident(length: int = 10) -> str:
 
 def _cs_char_array(value: str) -> str:
     """Construct a C# runtime expression equivalent to a string literal.
-    Produces no string literal in MSIL — only a char-array allocation.
+    Produces no string literal in MSIL, only a char-array allocation.
     """
     chars = ",".join(f"(char){ord(c)}" for c in value)
     return f"new string(new char[]{{{chars}}})"

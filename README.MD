@@ -10,7 +10,7 @@ Disclaimer: please note that this is still under development, and I am still wor
 
 ## 📑 Table of Contents
 
-[✨ Features](#-features) — [🚧 WIP](#-wip) — [🚀 Installation](#-installation) — [💻 Usage](#-usage) — [🔧 PTY Upgrade](#-pty-upgrade) — [🤖 Modules](#-modules)
+[✨ Features](#-features) | [🚧 WIP](#-wip) | [🚀 Installation](#-installation) | [💻 Usage](#-usage) | [🔧 PTY Upgrade](#-pty-upgrade) | [🤖 Modules](#-modules)
   
 ---
 
@@ -95,7 +95,7 @@ The obfuscator also works for Linux payloads. While most Linux environments don'
 
 ## 🔧 PTY Upgrade
 
-Raw shells lack proper terminal support — no tab completion, broken `Ctrl+C`, mangled output. The `upgrade` command fixes this:
+Raw shells lack proper terminal support, no tab completion, broken `Ctrl+C`, mangled output. The `upgrade` command fixes this:
 
 ```
 koi> upgrade 1

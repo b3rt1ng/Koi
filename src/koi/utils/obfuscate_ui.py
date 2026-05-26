@@ -171,7 +171,7 @@ def run_obfuscate_ui(iface: str | None, port: int) -> None:
             iface_names = list(interfaces.keys())
             iface_cursor = 0
             while True:
-                _render_menu("Obfuscate — Select Interface", iface_names, iface_cursor)
+                _render_menu("Obfuscate Select Interface", iface_names, iface_cursor)
                 ch = _getch()
                 if ch == b'\x1b[A':
                     iface_cursor = (iface_cursor - 1) % len(iface_names)
@@ -188,7 +188,7 @@ def run_obfuscate_ui(iface: str | None, port: int) -> None:
 
         os_cursor = 0
         while True:
-            _render_menu("Obfuscate — Select Platform", ["Windows", "Linux"], os_cursor)
+            _render_menu("Obfuscate Select Platform", ["Windows", "Linux"], os_cursor)
             ch = _getch()
             if ch == b'\x1b[A':
                 os_cursor = (os_cursor - 1) % 2

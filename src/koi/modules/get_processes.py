@@ -181,7 +181,7 @@ class GetProcessesModule(KoiModule):
         if interesting:
             label = (
                 f"Interesting processes  ({len(interesting)} of {total} total)"
-                f"  —  use -a to show all"
+                f" use -a to show all"
             )
             self.box(label, {key_fn(p): val_fn(p) for p in interesting})
         else:

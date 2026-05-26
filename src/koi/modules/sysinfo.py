@@ -36,6 +36,6 @@ class SysInfoModule(KoiModule):
             "IP":          self._get("hostname -I 2>/dev/null || ip -4 addr show | grep inet | awk '{print $2}' | tr '\\n' ' '"),
         }
 
-        self.box(f"System Info — #{self.session.id}", {
+        self.box(f"System Info #{self.session.id}", {
             k: v for k, v in info.items() if v and v.strip()
         })

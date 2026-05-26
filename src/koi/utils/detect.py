@@ -76,7 +76,7 @@ def _apply(session: "Session", response: str, expected: str) -> None:
         session.os_type = "linux"
         session.encoding = "utf-8"
         session.eol = "\n"
-        logger.debug(f"[detect] session #{session.id} → linux")
+        logger.debug(f"[detect] session #{session.id}, linux")
         return
 
     ps_hints = [
@@ -89,7 +89,7 @@ def _apply(session: "Session", response: str, expected: str) -> None:
         session.os_type = "windows_ps"
         session.encoding = "cp1252"
         session.eol = "\r\n"
-        logger.debug(f"[detect] session #{session.id} → windows_ps")
+        logger.debug(f"[detect] session #{session.id}, windows_ps")
         return
 
     cmd_hints = [
@@ -102,7 +102,7 @@ def _apply(session: "Session", response: str, expected: str) -> None:
         session.os_type = "windows_cmd"
         session.encoding = "cp1252"
         session.eol = "\r\n"
-        logger.debug(f"[detect] session #{session.id} → windows_cmd")
+        logger.debug(f"[detect] session #{session.id}, windows_cmd")
         return
 
     _fallback(session)
@@ -130,4 +130,4 @@ def _fallback(session: "Session") -> None:
         session.encoding = "cp1252"
         session.eol = "\r\n"
     else:
-        logger.debug(f"[detect] session #{session.id} → detection failed, os_type stays None")
+        logger.debug(f"[detect] session #{session.id}, detection failed, os_type stays None")

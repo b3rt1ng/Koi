@@ -109,9 +109,9 @@ class NetworkEnumModule(KoiModule):
             parts = line.split()
             if len(parts) >= 4 and re.match(r'[\d\[\]:]', parts[2]):
                 proc_m = re.search(r'users:\(\("([^"]+)",pid=(\d+)', line)
-                box[f"{parts[2]} → {parts[3]}"] = f"{proc_m.group(1)} pid={proc_m.group(2)}" if proc_m else ""
+                box[f"{parts[2]} -> {parts[3]}"] = f"{proc_m.group(1)} pid={proc_m.group(2)}" if proc_m else ""
             elif re.match(r'tcp6?', parts[0]) and len(parts) >= 7:
-                box[f"{parts[3]} → {parts[4]}"] = parts[6]
+                box[f"{parts[3]} -> {parts[4]}"] = parts[6]
         return box
 
     def _section_dns(self) -> dict:
@@ -182,11 +182,11 @@ class NetworkEnumModule(KoiModule):
             host_count = max(2 ** (32 - prefix) - 2, 1)
             self.status(f"Host discovery on {network} ({host_count} hosts)…")
             if host_count > 2048:
-                self.warn(f"Large subnet ({host_count} hosts) — skipping. Use -s to narrow.")
+                self.warn(f"Large subnet ({host_count} hosts), skipping. Use -s to narrow.")
                 continue
             hosts = self._ping_sweep(network, host_count, t, net, prefix)
             if hosts:
-                self.box(f"Live hosts — {network}  ({len(hosts)} up)", dict(sorted(hosts.items())))
+                self.box(f"Live hosts {network}  ({len(hosts)} up)", dict(sorted(hosts.items())))
             else:
                 self.warn(f"No live hosts found on {network}.")
 
@@ -215,6 +215,6 @@ class NetworkEnumModule(KoiModule):
         if no_scan:
             self.status("Skipping live host discovery (--no-scan).")
         elif not ifaces and not subnet:
-            self.warn("No interfaces detected — skipping host discovery.")
+            self.warn("No interfaces detected, skipping host discovery.")
         else:
             self._discover_hosts(ifaces, subnet, t)

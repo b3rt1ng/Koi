@@ -247,13 +247,13 @@ class SharpHoundModule(KoiModule):
         check = self._win_query(f"(Test-Path '{work}\\{exe_nm}').ToString()")
         if check.strip().lower() != "true":
             self.err(
-                f"SharpHound.exe not present after upload — likely AV/AMSI removed it. "
+                f"SharpHound.exe not present after upload, likely AV/AMSI removed it. "
                 f"Workspace kept at {work} for inspection."
             )
             return
 
         self.status(
-            f"Running SharpHound on target — collection: {collection}. "
+            f"Running SharpHound on target, collection: {collection}. "
             f"This can take several minutes."
         )
         try:

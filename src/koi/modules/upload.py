@@ -43,7 +43,7 @@ class UploadModule(KoiModule):
         bar = self.ui.ProgressBar(total=total)
         port, thread, errors = spawn_send_server(raw, timeout=30, on_progress=bar.update)
 
-        self.status(f"Uploading {local_path} → {remote_path} ({total} bytes)…")
+        self.status(f"Uploading {local_path}, {remote_path} ({total} bytes)…")
 
         if os_type == "linux":
             self.exec(

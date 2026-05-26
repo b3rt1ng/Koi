@@ -69,16 +69,16 @@ def print_help() -> None:
             f"{_p('reload')}": "Reload modules from disk (useful during development)",
             f"{_p('run')} {_b('<module>')} {_b('<id>')} {_b('[args…]')}": "Run a module against a session",
             f"{_p('setshell')} {_b('<id>')} {_b('<os_type>')}": "Manually set the OS type of a session",
-            f"{_p('stop')}": "Pause the listener — refuse new connections",
+            f"{_p('stop')}": "Pause the listener, refuse new connections",
             f"{_p('logs')}": "List recorded session logs",
-            f"{_p('start')}": "Resume the listener — accept new connections again",
+            f"{_p('start')}": "Resume the listener, accept new connections again",
             f"{_p('help')}": "Show this message",
             f"{_p('exit')}": "Shut down the listener",
         },
         "Session Signals": {
-            f"{_y('Ctrl+Z')}": "Background → return to listener shell",
+            f"{_y('Ctrl+Z')}": "Background, return to listener shell",
             f"{_y('Ctrl+C')}": "Send SIGINT to remote (keeps session alive)",
-            f"{_y('Ctrl+T')}": "Toggle screenable mode — masks IPs for screenshots",
+            f"{_y('Ctrl+T')}": "Toggle screenable mode, masks IPs for screenshots",
         },
     }
     print_report_box("help", data)

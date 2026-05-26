@@ -57,7 +57,7 @@ def upgrade_windows_conptyshell(
             return
 
     if source == "cache":
-        notify('warning', f"Network unavailable — using cached ConPtyShell ({conpty_cache_path()})")
+        notify('warning', f"Network unavailable, using cached ConPtyShell ({conpty_cache_path()})")
     else:
         notify('info', "ConPtyShell fetched from remote (cache updated)")
 
@@ -73,7 +73,7 @@ def upgrade_windows_conptyshell(
     )
 
     notify('info',
-        f"Invoking ConPtyShell on session {_p(f'#{sess.id}')} → callback {_b(mask_ip(local_ip, 'local'))}:{_b(port)}"
+        f"Invoking ConPtyShell on session {_p(f'#{sess.id}')}, callback {_b(mask_ip(local_ip, 'local'))}:{_b(port)}"
     )
 
     pending_conpty[sess.addr[0]] = sess.os_type

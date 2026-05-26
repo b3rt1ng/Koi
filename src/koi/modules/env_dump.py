@@ -72,7 +72,7 @@ class EnvDumpModule(KoiModule):
         if show_all and rest:
             self.box(f"Other variables  ({len(rest)})", rest)
         elif not show_all and rest:
-            self.ok(f"{len(rest)} other variables — use -a to show all.")
+            self.ok(f"{len(rest)} other variables, use -a to show all.")
 
     def _run_linux(self) -> None:
         with self.spinner("Dumping environment…"):
