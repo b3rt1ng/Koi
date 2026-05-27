@@ -9,11 +9,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from koi.utils.ui import (
+    RST, DIM, BOLD, PUMPKIN, WHITE, SILVER, CORAL,
+    gradient_text, colored_text, notify
+)
+
 if TYPE_CHECKING:
     from koi.session import Session
 
 _LOG_DIR = Path.home() / ".koi" / "logs"
-
 _ANSI = re.compile(r"\x1b(?:\][^\x07]*\x07|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])")
 
 
@@ -76,15 +80,6 @@ def start_logger(sess: "Session") -> SessionLogger:
     return logger
 
 
-_RST    = "\033[0m"
-_DIM    = "\033[2m"
-_BOLD   = "\033[1m"
-_ORANGE = "\033[38;2;248;101;70m"
-_WHITE  = "\033[38;2;255;255;255m"
-_GREY   = "\033[38;2;169;169;169m"
-_CORAL  = "\033[38;2;235;111;92m"
-
-
 def _clean(raw: bytes, encoding: str) -> str:
     text = raw.decode(encoding, errors="replace")
     text = _ANSI.sub("", text)
@@ -108,12 +103,13 @@ def resolve_log(name: str) -> Path | None:
     matches = sorted(log_dir().glob(f"*{p.name}*"), reverse=True)
     return matches[0] if matches else None
 
+
 def clear_log(path: Path) -> None:
     try:
         path.unlink()
-        print(f"{_CORAL}Log cleared: {path.name}{_RST}")
+        notify('success', f"Log cleared: {path.name}")
     except OSError as exc:
-        print(f"{_CORAL}Failed to clear log {path.name}: {exc}{_RST}", file=sys.stderr)
+        notify('error', f"Failed to clear log {path.name}: {exc}")
 
 
 _PROMPT_SUFFIXES = ("$", "#", "❯", ">", "% ")
@@ -128,7 +124,7 @@ def _is_prompt(line: str) -> bool:
 def review(name: str) -> None:
     path = resolve_log(name)
     if path is None:
-        print(f"Log not found: {name}", file=sys.stderr)
+        notify('error', f"Log not found: {name}")
         sys.exit(1)
 
     encoding = "utf-8"
@@ -149,16 +145,21 @@ def review(name: str) -> None:
             ts   = datetime.fromtimestamp(entry["ts"]).strftime("%H:%M:%S")
             kind = entry.get("type")
 
+            dim_ts = colored_text(ts, SILVER, background_color=None)
+            dim_ts_str = f"{DIM}{ts}{RST}"
+
             if kind == "meta":
                 encoding = "utf-8" if entry.get("os") == "linux" else "cp1252"
                 os_label = entry.get("os") or "?"
-                print(f"{_ORANGE}{'─' * 64}{_RST}")
-                print(
-                    f"  {_BOLD}{_WHITE}Session #{entry['id']}{_RST}"
-                    f"  {_ORANGE}{entry['ip']}:{entry['port']}{_RST}"
-                    f"  {_GREY}[{os_label}]{_RST}"
-                )
-                print(f"{_ORANGE}{'─' * 64}{_RST}\n")
+                
+                separator = colored_text('─' * 64, PUMPKIN)
+                sess_id = f"{BOLD}{colored_text(f'Session #{entry['id']}', WHITE)}"
+                target = colored_text(f"{entry['ip']}:{entry['port']}", PUMPKIN)
+                os_tag = colored_text(f"[{os_label}]", SILVER)
+
+                print(separator)
+                print(f"  {sess_id}  {target}  {os_tag}")
+                print(separator + "\n")
 
             elif kind == "input":
                 input_buf += base64.b64decode(entry["data"])
@@ -169,7 +170,9 @@ def review(name: str) -> None:
                             break
                     cmd = _CTRL.sub("", _clean(cmd_bytes, encoding)).strip()
                     if cmd and _printable(cmd):
-                        print(f"  {_DIM}{ts}{_RST}  {_ORANGE}❯{_RST}  {_WHITE}{cmd}{_RST}")
+                        arrow = colored_text("❯", PUMPKIN)
+                        cmd_text = colored_text(cmd, WHITE)
+                        print(f"{dim_ts_str}  {arrow}  {cmd_text}")
                         recent_cmds.add(cmd.lower())
 
             elif kind == "output":
@@ -184,36 +187,54 @@ def review(name: str) -> None:
                         continue
                     if "__KOI_" in stripped:
                         continue
-                    print(f"  {_DIM}{ts}{_RST}     {_GREY}{stripped}{_RST}")
+                    
+                    clean_line = colored_text(stripped, SILVER)
+                    print(f"{dim_ts_str}     {clean_line}")
                 recent_cmds.clear()
 
             elif kind == "event":
-                input_buf = b""
-                recent_cmds.clear()
                 msg = entry["msg"]
                 if msg.startswith("exec  "):
+                    input_buf = b""
+                    recent_cmds.clear()
                     cmd = msg[6:].strip()
-                    # strip the _exec_clean wrapper: ( <cmd> ) > /dev/tcp/...
                     m = re.match(r'\(\s*(.+?)\s*\)\s*>\s*/dev/tcp/\S+', cmd)
                     if m:
                         cmd = m.group(1).strip()
-                    print(f"  {_DIM}{ts}{_RST}  {_ORANGE}❯{_RST}  {_WHITE}{cmd}{_RST}")
+                    
+                    arrow = colored_text("❯", PUMPKIN)
+                    cmd_text = colored_text(cmd, WHITE)
+                    print(f"{dim_ts_str}  {arrow}  {cmd_text}")
+                    
+                elif msg.startswith("module_start  "):
+                    input_buf = b""
+                    recent_cmds.clear()
+                    mod = msg[14:].strip()
+                    print(f"\n{gradient_text(f'[+] module {mod} started', PUMPKIN, WHITE)}")
+                    
+                elif msg.startswith("module_end  "):
+                    input_buf = b""
+                    recent_cmds.clear()
+                    mod = msg[12:].strip()
+                    print(f"{gradient_text(f'[-] module {mod} end', CORAL, SILVER)}\n")
+                    
                 elif not msg.startswith("module_"):
-                    print(f"\n  {_DIM}/!\  {msg}  /!\{_RST}\n")
-                else:
-                    print(f"\n  {_DIM}/!\  {msg}  /!\{_RST}\n")
-
+                    input_buf = b""
+                    recent_cmds.clear()
+                    print(f"\n{DIM}/!\\  {msg}  /!\\{RST}\n")
     print()
-
 
 def print_log_list() -> None:
     logs = list_logs()
     if not logs:
-        print(f"  {_GREY}No logs found in {log_dir()}{_RST}")
+        notify('status', f"No logs found in {log_dir()}")
         return
     print()
     for p in logs:
         size = p.stat().st_size
         size_str = f"{size // 1024}K" if size >= 1024 else f"{size}B"
-        print(f"  {_ORANGE}{p.name}{_RST}  {_GREY}{size_str}{_RST}")
+        
+        log_name = colored_text(p.name, PUMPKIN)
+        log_size = colored_text(size_str, SILVER)
+        print(f"  {log_name}  {log_size}")
     print()

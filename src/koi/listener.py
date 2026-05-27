@@ -165,10 +165,13 @@ class Listener:
             with self._notif_lock:
                 self._pending_notifications.append(('new', msg))
         else:
+            import readline as _rl
+            buf = _rl.get_line_buffer()
             sys.stdout.write(f"\r\033[K")
             notify('new', msg)
-            sys.stdout.write(self._prompt())
+            sys.stdout.write(self._prompt() + buf)
             sys.stdout.flush()
+            _rl.redisplay()
 
     def start(self):
         self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -321,7 +324,7 @@ class Listener:
                         notify('error', "Session id must be an integer.")
 
             else:
-                notify('error', f"Unknown command: {_p(cmd)}   type {_b('help')}")
+                notify('error', f"Unknown command: {_p(cmd)}, type {_b('help')}")
 
     def _dispatch_run(self, parts: list) -> None:
         if len(parts) < 3:
@@ -332,7 +335,7 @@ class Listener:
                 elif mod_cls:
                     notify('error', f"Usage: run {_p(mod_cls.name)} {_p('<id>')}")
                 else:
-                    notify('error', f"Unknown module {_p(parts[1])}   type {_b('modules')}")
+                    notify('error', f"Unknown module {_p(parts[1])}, type {_b('modules')}")
             else:
                 notify('error', f"Usage: run {_p('<module>')} {_p('<id>')} {_p('[args…]')}")
             return
@@ -350,14 +353,14 @@ class Listener:
             notify('warning', "Listener is already paused.")
             return
         self._accepting = False
-        notify('warning', f"Listener {_b('paused')}  new connections refused.")
+        notify('warning', f"Listener {_b('paused')}, new connections refused.")
 
     def _cmd_start_accepting(self) -> None:
         if self._accepting:
             notify('info', "Listener is already accepting connections.")
             return
         self._accepting = True
-        notify('success', f"Listener {_b('resumed')}  accepting new connections.")
+        notify('success', f"Listener {_b('resumed')}, accepting new connections.")
 
     def _cmd_ls(self) -> None:
         self._prune()
@@ -483,7 +486,7 @@ class Listener:
 
         self._in_session = True
         logger = self._loggers.get(sess.id)
-        logger.log_event(f"enter  {self._mask_ip(ip)}:{port}")
+        logger.log_event(f"enter {self._mask_ip(ip)}:{port}")
         reason = interact(sess, logger=logger)
         logger.log_event(reason)
         self._in_session = False
@@ -562,12 +565,10 @@ class Listener:
         except KeyboardInterrupt:
             print()
             notify('warning', "Module interrupted.")
-            if logger:
-                logger.log_event(f"module_interrupted  {mod_name}")
+            logger.log_event(f"module_interrupted  {mod_name}")
         except Exception as exc:
             notify('error', f"Module raised an exception: {exc}")
-            if logger:
-                logger.log_event(f"module_error  {mod_name}  {exc}")
+            logger.log_event(f"module_error  {mod_name}  {exc}")
         finally:
             signal.signal(signal.SIGINT, old_handler)
         print()
@@ -605,7 +606,7 @@ class Listener:
             sess.eol      = "\r\n"
 
         notify('success',
-            f"Session {_p(f'#{sid}')} OS set: {old} to {sess.os_label()}")
+            f"Session {_p(f'#{sid}')} OS set: {old} → {sess.os_label()}")
 
     def _cmd_payload(self, iface: Optional[str] = None) -> None:
         print_payloads(iface, self.port)
