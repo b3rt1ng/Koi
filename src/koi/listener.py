@@ -622,7 +622,7 @@ class Listener:
             sess.eol      = "\r\n"
 
         notify('success',
-            f"Session {_p(f'#{sid}')} OS set: {old} → {sess.os_label()}")
+            f"Session {_p(f'#{sid}')} OS set: {old} -> {sess.os_label()}")
 
     def _cmd_payload(self, iface: Optional[str] = None) -> None:
         print_payloads(iface, self.port)

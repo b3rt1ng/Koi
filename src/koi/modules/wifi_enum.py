@@ -20,7 +20,6 @@ class WifiEnumModule(KoiModule):
     def run(self) -> None:
         self.status("Analyzing Wi-Fi...")
 
-        # 1. Visible networks via nmcli
         with self.spinner("Scanning Wi-Fi networks..."):
             nmcli_res = self._get("nmcli --fields BARS,SSID,SECURITY device wifi list 2>/dev/null")
 
@@ -36,7 +35,6 @@ class WifiEnumModule(KoiModule):
         else:
             self.warn("nmcli returned no results (check interface status).")
 
-        # 2. wpa_supplicant profiles
         self.status("Checking Wi-Fi configuration files...")
 
         wpa_conf = self._get("cat /etc/wpa_supplicant/wpa_supplicant.conf 2>/dev/null")

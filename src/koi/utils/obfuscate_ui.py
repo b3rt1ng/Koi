@@ -221,7 +221,7 @@ def run_obfuscate_ui(iface: str | None, port: int) -> None:
     if not final_payload:
         return
 
-    label = final_label + " with " + " → ".join(final_chain) if final_chain else final_label
+    label = final_label + " with " + " -> ".join(final_chain) if final_chain else final_label
     print(f"Final obfuscated payload ({_p(label)}):\n")
     print(final_payload)
     print("\n\n")

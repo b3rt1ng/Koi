@@ -23,8 +23,6 @@ _CTRL            = re.compile(r"[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f]")
 _PROMPT_SUFFIXES = ("$", "#", "❯", ">", "% ")
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
-
 def log_dir() -> Path:
     _LOG_DIR.mkdir(parents=True, exist_ok=True)
     return _LOG_DIR
@@ -48,8 +46,6 @@ def _dim_ts(entry: dict) -> str:
     ts = datetime.fromtimestamp(entry["ts"]).strftime("%H:%M:%S")
     return f"{DIM}{ts}{RST}"
 
-
-# ── logger class ──────────────────────────────────────────────────────────────
 
 class SessionLogger:
     def __init__(self, path: Path):
@@ -93,8 +89,6 @@ def start_logger(sess: "Session") -> SessionLogger:
     return lg
 
 
-# ── log management ────────────────────────────────────────────────────────────
-
 def list_logs() -> list[Path]:
     return sorted(log_dir().glob("*.log"), reverse=True)
 
@@ -127,8 +121,6 @@ def print_log_list() -> None:
         print(f"  {colored_text(p.name, PUMPKIN)}  {colored_text(size_str, SILVER)}")
     print()
 
-
-# ── review renderers ──────────────────────────────────────────────────────────
 
 def _render_meta(entry: dict) -> None:
     sid     = entry["id"]
@@ -171,8 +163,6 @@ def _render_event(entry: dict) -> None:
     elif not msg.startswith("module_"):
         print("\n" + DIM + "/!\\  " + msg + "  /!\\" + RST + "\n")
 
-
-# ── main entry point ──────────────────────────────────────────────────────────
 
 def review(name: str) -> None:
     path = resolve_log(name)

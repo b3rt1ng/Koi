@@ -197,10 +197,6 @@ class KoiModule(ABC):
         except SystemExit:
             return argparse.Namespace()
 
-    # -------------------------------------------------------------------------
-    # Shared session helpers
-    # -------------------------------------------------------------------------
-
     def _get_local_ip(self) -> str:
         """Return the local IP that routes toward the current session."""
         return get_local_ip(self.session.addr[0])
