@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import select
 import tempfile
 import time
@@ -40,7 +41,6 @@ class PopulateWinModule(KoiModule):
 
     def _fetch_mimikatz_exe(self) -> bytes:
         """Download mimikatz_trunk.zip locally and return the x64/mimikatz.exe bytes."""
-        import os
         with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
             tmp_path = tmp.name
         try:

@@ -35,6 +35,10 @@ class Session:
     eol: str = field(default="\n")
     log_path: Optional[str] = field(default=None)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    _logger: object = field(default=None, repr=False)  # SessionLogger | None
+
+    def attach_logger(self, logger) -> None:
+        self._logger = logger
 
     def _uptime(self) -> str:
         secs = int((datetime.now() - self.connected_at).total_seconds())
@@ -57,6 +61,8 @@ class Session:
         try:
             with self._lock:
                 self.conn.sendall(data)
+            if self._logger and data:
+                self._logger.log_input(data)
             return True
         except OSError:
             self.alive = False

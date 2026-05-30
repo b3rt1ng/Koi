@@ -4,11 +4,9 @@ import os
 import posixpath
 import select
 import shlex
-import socket
-import threading
 import time
 import uuid
-from koi.modules.blueprint import KoiModule
+from koi.modules.blueprint import KoiModule, TCPReceiveServer
 
 
 def _remote_basename(path: str) -> str:
@@ -77,37 +75,9 @@ class DownloadModule(KoiModule):
                     remote_size = None
 
         # Step 3 : open local TCP listener
-        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        srv.bind(("0.0.0.0", 0))
-        srv.listen(1)
-        srv.settimeout(10)
-        port = srv.getsockname()[1]
-
-        received: list[bytes] = []
-        error:    list[str]   = []
-
-        def _recv():
-            try:
-                conn, _ = srv.accept()
-                buf = b""
-                bar = self.ui.ProgressBar(total=remote_size or 0)
-                while True:
-                    chunk = conn.recv(65536)
-                    if not chunk:
-                        break
-                    buf += chunk
-                    bar.update(len(buf))
-                bar.done()
-                received.append(buf)
-                conn.close()
-            except Exception as exc:
-                error.append(str(exc))
-            finally:
-                srv.close()
-
-        t = threading.Thread(target=_recv, daemon=True)
-        t.start()
+        bar = self.ui.ProgressBar(total=remote_size or 0)
+        srv  = TCPReceiveServer(timeout=30, on_progress=bar.update).start()
+        port = srv.port
 
         self.status(
             f"Downloading {remote_path}"
@@ -143,18 +113,14 @@ class DownloadModule(KoiModule):
                 escaped = ps_cmd.replace('"', '\\"')
                 self.sendline(f'powershell -NoProfile -NonInteractive -c "{escaped}"')
 
-        t.join(timeout=30)
-        print()
-
         # Step 5 : write to disk
-        if error:
-            self.err(f"Transfer failed: {error[0]}")
+        try:
+            raw = srv.collect()
+        except (RuntimeError, TimeoutError) as exc:
+            self.err(f"Transfer failed: {exc}")
             return
-        if not received:
-            self.err("No data received — transfer timed out.")
-            return
-
-        raw = received[0]
+        bar.done()
+        print()
         try:
             with open(local_path, "wb") as f:
                 f.write(raw)

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 import select
+import socket
+import threading
 import time
 import uuid
 from abc import ABC, abstractmethod
@@ -24,6 +26,71 @@ PlatformSpec = Union[
     Literal["linux", "windows_cmd", "windows_ps", "any"],
     List[Literal["linux", "windows_cmd", "windows_ps"]],
 ]
+
+class TCPReceiveServer:
+    """One-shot TCP server that collects bytes from the first incoming connection."""
+
+    def __init__(self, timeout: float = 30.0, on_progress=None):
+        self._timeout     = timeout
+        self._on_progress = on_progress
+        self._sock        = None
+        self._done        = threading.Event()
+        self._data        = b""
+        self._error       = None
+        self.port: int    = 0
+
+    def start(self) -> "TCPReceiveServer":
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._sock.bind(("0.0.0.0", 0))
+        self._sock.listen(1)
+        self._sock.settimeout(self._timeout)
+        self.port = self._sock.getsockname()[1]
+        threading.Thread(target=self._run, daemon=True).start()
+        return self
+
+    def _run(self) -> None:
+        try:
+            conn, _ = self._sock.accept()
+            buf = b""
+            while chunk := conn.recv(65536):
+                buf += chunk
+                if self._on_progress:
+                    self._on_progress(len(buf))
+            conn.close()
+            self._data = buf
+        except Exception as exc:
+            self._error = str(exc)
+        finally:
+            self._close()
+            self._done.set()
+
+    def collect(self) -> bytes:
+        """Block until all data is received. Raises RuntimeError or TimeoutError."""
+        self._done.wait(timeout=self._timeout + 2)
+        if self._error:
+            raise RuntimeError(self._error)
+        if not self._done.is_set():
+            raise TimeoutError("TCP receive server timed out")
+        return self._data
+
+    def stop(self) -> None:
+        self._close()
+
+    def _close(self) -> None:
+        if self._sock:
+            try:
+                self._sock.close()
+            except OSError:
+                pass
+            self._sock = None
+
+    def __enter__(self) -> "TCPReceiveServer":
+        return self.start()
+
+    def __exit__(self, *_) -> None:
+        self.stop()
+
 
 class CommandTimeout(Exception):
     def __init__(self, command: str, timeout: float):

