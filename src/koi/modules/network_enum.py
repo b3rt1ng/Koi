@@ -19,16 +19,10 @@ class NetworkEnumModule(KoiModule):
          "help": "Ping timeout per host for discovery (default: 1s)."},
     ]
 
-    def _run(self, cmd: str, timeout: float = 15.0) -> str:
-        try:
-            return self._exec_clean(cmd, timeout=timeout)
-        except Exception:
-            return ""
-
     def _section_interfaces(self) -> tuple[dict, list[tuple[str, str]]]:
         grouped: dict[str, list[str]] = {}
         ipv4_ifaces: list[tuple[str, str]] = []
-        for line in self._run("ip -o addr show").splitlines():
+        for line in self._try_exec("ip -o addr show", timeout=15).splitlines():
             m = re.search(r'\d+:\s+(\S+)\s+(inet6?)\s+(\S+)', self._clean(line))
             if not m or m.group(1) == "lo":
                 continue
@@ -40,7 +34,7 @@ class NetworkEnumModule(KoiModule):
 
     def _section_routes(self) -> dict:
         box: dict[str, str] = {}
-        for line in self._run("ip route show").splitlines():
+        for line in self._try_exec("ip route show", timeout=15).splitlines():
             line = self._clean(line)
             if line:
                 parts = line.split(None, 1)
@@ -49,7 +43,7 @@ class NetworkEnumModule(KoiModule):
 
     def _section_neighbors(self) -> dict:
         box: dict[str, str] = {}
-        for line in self._run("ip neigh show 2>/dev/null || arp -a 2>/dev/null").splitlines():
+        for line in self._try_exec("ip neigh show 2>/dev/null || arp -a 2>/dev/null", timeout=15).splitlines():
             line = self._clean(line)
             m = re.match(r'(\d+\.\d+\.\d+\.\d+)\s+dev\s+(\S+)(?:\s+lladdr\s+([0-9a-fA-F:]{17}))?\s*(\S*)', line)
             if m:
@@ -68,7 +62,7 @@ class NetworkEnumModule(KoiModule):
         if not pids:
             return {}
         info: dict[str, tuple[str, str]] = {}
-        for line in self._run(f"ps -o pid=,user=,comm= -p {','.join(pids)} 2>/dev/null", timeout=5.0).splitlines():
+        for line in self._try_exec(f"ps -o pid=,user=,comm= -p {','.join(pids)} 2>/dev/null", timeout=5.0).splitlines():
             parts = line.split(None, 2)
             if len(parts) >= 2:
                 info[parts[0].strip()] = (parts[1].strip(), parts[2].strip() if len(parts) == 3 else "")
@@ -76,7 +70,7 @@ class NetworkEnumModule(KoiModule):
 
     def _section_listening(self) -> dict:
         entries: list[tuple[str, str, str]] = []
-        for line in self._run("ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null").splitlines():
+        for line in self._try_exec("ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null", timeout=15).splitlines():
             line = self._clean(line)
             if not line or line.startswith(("State", "Proto", "Netid")):
                 continue
@@ -102,7 +96,7 @@ class NetworkEnumModule(KoiModule):
 
     def _section_connections(self) -> dict:
         box: dict[str, str] = {}
-        for line in self._run("ss -tnp state established 2>/dev/null || netstat -tnp 2>/dev/null | grep ESTABLISHED").splitlines():
+        for line in self._try_exec("ss -tnp state established 2>/dev/null || netstat -tnp 2>/dev/null | grep ESTABLISHED", timeout=15).splitlines():
             line = self._clean(line)
             if not line or line.startswith(("Recv", "Proto")):
                 continue
@@ -117,7 +111,7 @@ class NetworkEnumModule(KoiModule):
     def _section_dns(self) -> dict:
         box: dict[str, str] = {}
         idx: dict[str, int] = {}
-        for line in self._run("cat /etc/resolv.conf 2>/dev/null").splitlines():
+        for line in self._try_exec("cat /etc/resolv.conf 2>/dev/null", timeout=15).splitlines():
             line = self._clean(line)
             if not line or line.startswith("#"):
                 continue
@@ -164,7 +158,7 @@ class NetworkEnumModule(KoiModule):
 
     def _ping_sweep(self, network: str, host_count: int, t: int, net: str, prefix: int) -> dict[str, str]:
         with self.spinner(f"Pinging {host_count} hosts…"):
-            self._run(
+            self._try_exec(
                 f"python3 -c 'import ipaddress,subprocess;"
                 f'net=ipaddress.ip_network("{network}",strict=False);'
                 f'procs=[subprocess.Popen(["ping","-c1","-W","{t}",str(h)],'
@@ -172,7 +166,7 @@ class NetworkEnumModule(KoiModule):
                 f"[p.wait() for p in procs]' 2>/dev/null",
                 timeout=host_count * t + 20,
             )
-        return self._parse_arp_table(self._run("ip neigh show 2>/dev/null; arp -a 2>/dev/null", timeout=10), net, prefix)
+        return self._parse_arp_table(self._try_exec("ip neigh show 2>/dev/null; arp -a 2>/dev/null", timeout=10), net, prefix)
 
     def _discover_hosts(self, ifaces: list[tuple[str, str]], subnet_override: str | None, t: int) -> None:
         cidrs = [("user-specified", subnet_override)] if subnet_override else ifaces

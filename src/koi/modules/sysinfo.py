@@ -11,12 +11,8 @@ class SysInfoModule(KoiModule):
 
 
     def _get(self, cmd: str, fallback: str = "unknown") -> str:
-        try:
-            raw = self._exec_clean(cmd, timeout=10)
-            lines = [l for l in raw.splitlines() if l.strip()]
-            return lines[-1] if lines else fallback
-        except Exception:
-            return fallback
+        lines = [l for l in self._try_exec(cmd, timeout=10).splitlines() if l.strip()]
+        return lines[-1] if lines else fallback
 
     def run(self) -> None:
         self.status("Gathering system information…")

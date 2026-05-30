@@ -11,17 +11,11 @@ class WifiEnumModule(KoiModule):
     platform    = "linux"
     usage       = "wifi_enum <id>"
 
-    def _get(self, cmd: str) -> str:
-        try:
-            return self._exec_clean(cmd, timeout=8)
-        except Exception:
-            return ""
-
     def run(self) -> None:
         self.status("Analyzing Wi-Fi...")
 
         with self.spinner("Scanning Wi-Fi networks..."):
-            nmcli_res = self._get("nmcli --fields BARS,SSID,SECURITY device wifi list 2>/dev/null")
+            nmcli_res = self._try_exec("nmcli --fields BARS,SSID,SECURITY device wifi list 2>/dev/null", timeout=8)
 
         if nmcli_res and "SSID" in nmcli_res:
             lines = nmcli_res.splitlines()
@@ -37,7 +31,7 @@ class WifiEnumModule(KoiModule):
 
         self.status("Checking Wi-Fi configuration files...")
 
-        wpa_conf = self._get("cat /etc/wpa_supplicant/wpa_supplicant.conf 2>/dev/null")
+        wpa_conf = self._try_exec("cat /etc/wpa_supplicant/wpa_supplicant.conf 2>/dev/null", timeout=8)
         creds = {}
 
         if wpa_conf and "network=" in wpa_conf:
