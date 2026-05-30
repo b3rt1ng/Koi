@@ -309,7 +309,7 @@ class KoiModule(ABC):
     def _dispatch_ps(self, ps_cmd: str) -> None:
         """Route a PS command to the session: raw socket for upgraded, sendline otherwise."""
         if self.session.upgraded:
-            self.session.conn.sendall((ps_cmd + "\r\n").encode(self.session.encoding))
+            self.session.send((ps_cmd + "\r\n").encode(self.session.encoding))
             time.sleep(0.3)
             r, _, _ = select.select([self.session.conn], [], [], 1.0)
             if r:

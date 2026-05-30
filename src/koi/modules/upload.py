@@ -20,6 +20,11 @@ class UploadModule(KoiModule):
         local_path  = self.args.local_path
         os_type     = self.session.os_type
         basename    = os.path.basename(local_path)
+
+        if not os.path.isfile(local_path):
+            self.err(f"Local file not found: {local_path}")
+            return
+
         if self.args.output:
             remote_path = self.args.output
         elif os_type == "linux":
@@ -28,10 +33,6 @@ class UploadModule(KoiModule):
         else:
             cwd = self._win_query("(Get-Location).Path").strip() or "C:\\Windows\\Temp"
             remote_path = f"{cwd}\\{basename}"
-
-        if not os.path.isfile(local_path):
-            self.err(f"Local file not found: {local_path}")
-            return
 
         with open(local_path, "rb") as f:
             raw = f.read()

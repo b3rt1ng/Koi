@@ -54,6 +54,7 @@ def upgrade_windows_conptyshell(
     conpty_staging: dict,
     conpty_lock: threading.Lock,
     mask_ip: Callable[[str, str], str],
+    logger=None,
 ) -> None:
     try:
         cols, rows = shutil.get_terminal_size()
@@ -86,6 +87,9 @@ def upgrade_windows_conptyshell(
         f"Invoking ConPtyShell on session {_p(f'#{sess.id}')}, callback {_b(mask_ip(local_ip, 'local'))}:{_b(port)}"
     )
 
+    if logger:
+        logger.log_event("upgrade_start")
+
     pending_conpty[sess.addr[0]] = sess.os_type
     sess.send((invoke_cmd + "\r\n").encode(sess.encoding, errors="replace"))
 
@@ -109,6 +113,9 @@ def upgrade_windows_conptyshell(
 
     new_sess.upgraded = True
     new_sess.is_conptyshell = True
+    if logger:
+        logger.log_event("upgrade_done")
+        new_sess.attach_logger(logger)
     time.sleep(0.3)
     new_sess.conn.sendall(b"\r\n")
     notify('success', f"Session {_p(f'#{old_id}')} upgraded to ConPtyShell.")

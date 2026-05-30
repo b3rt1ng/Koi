@@ -401,10 +401,16 @@ class Listener:
                 return
 
         if sess.os_type in ("windows_cmd", "windows_ps"):
+            if sess.id not in self._loggers:
+                from koi.utils.logger import start_logger
+                lg = start_logger(sess)
+                self._loggers[sess.id] = lg
+                sess.log_path = str(lg.path)
+                notify('info', f"Logging to {_gr(lg.path.name)}")
             upgrade_windows_conptyshell(
                 sess, self._sessions, self.port,
                 self._pending_conpty, self._conpty_staging, self._conpty_lock,
-                self._mask_ip,
+                self._mask_ip, logger=self._loggers[sess.id],
             )
             return
 
@@ -499,14 +505,19 @@ class Listener:
             sys.stdout.write("\033[2J\033[H")
             sys.stdout.flush()
 
+        if sess.id not in self._loggers:
+            from koi.utils.logger import start_logger
+            lg = start_logger(sess)
+            self._loggers[sess.id] = lg
+            sess.log_path = str(lg.path)
+            notify('info', f"Logging to {_gr(lg.path.name)}")
+
         self._in_session = True
-        logger = self._loggers.get(sess.id)
+        logger = self._loggers[sess.id]
         sess.attach_logger(logger)
-        if logger:
-            logger.log_event(f"enter {self._mask_ip(ip)}:{port}")
+        logger.log_event(f"enter {self._mask_ip(ip)}:{port}")
         reason = interact(sess, logger=logger)
-        if logger:
-            logger.log_event(reason)
+        logger.log_event(reason)
         self._in_session = False
 
         signal.signal(signal.SIGWINCH, signal.SIG_DFL)
