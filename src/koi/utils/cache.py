@@ -3,30 +3,25 @@ from __future__ import annotations
 from pathlib import Path
 
 _CACHE_DIR = Path.home() / ".koi" / "cache"
-_CONPTY_FILENAME = "Invoke-ConPtyShell.ps1"
 
 
-def cache_dir() -> Path:
+def _cache_dir() -> Path:
     _CACHE_DIR.mkdir(parents=True, exist_ok=True)
     return _CACHE_DIR
 
 
-def conpty_cache_path() -> Path:
-    return cache_dir() / _CONPTY_FILENAME
+def cache_path(name: str) -> Path:
+    return _cache_dir() / name
 
 
-def save_conptyshell(data: bytes) -> None:
-    """Persist a fresh copy of ConPtyShell to the local cache."""
-    conpty_cache_path().write_bytes(data)
+def put_cache(name: str, data: bytes) -> None:
+    cache_path(name).write_bytes(data)
 
 
-def load_conptyshell() -> bytes | None:
-    """Return the cached ConPtyShell bytes, or None if no cache exists."""
-    p = conpty_cache_path()
-    if p.exists():
-        return p.read_bytes()
-    return None
+def get_cache(name: str) -> bytes | None:
+    p = cache_path(name)
+    return p.read_bytes() if p.exists() else None
 
 
-def cache_exists() -> bool:
-    return conpty_cache_path().exists()
+def has_cache(name: str) -> bool:
+    return cache_path(name).exists()

