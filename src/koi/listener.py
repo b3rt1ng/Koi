@@ -30,6 +30,8 @@ LOCALUSER = os.getenv("USER") or os.getenv("USERNAME") or "user"
 
 _IPV4_TEXT  = re.compile(r'(?<!\d)(?:25[0-5]|2[0-4]\d|[01]?\d\d?)(?:\.(?:25[0-5]|2[0-4]\d|[01]?\d\d?)){3}(?!\d)')
 _IPV4_BYTES = re.compile(rb'(?<!\d)(?:25[0-5]|2[0-4]\d|[01]?\d\d?)(?:\.(?:25[0-5]|2[0-4]\d|[01]?\d\d?)){3}(?!\d)')
+_MAC_TEXT   = re.compile(r'(?<![0-9a-fA-F])(?:[0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]{2}(?![0-9a-fA-F])')
+_MAC_BYTES  = re.compile(rb'(?<![0-9a-fA-F])(?:[0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]{2}(?![0-9a-fA-F])')
 
 
 class _MaskBinary:
@@ -40,6 +42,7 @@ class _MaskBinary:
     def write(self, b):
         if self._check():
             b = _IPV4_BYTES.sub(b'<IP>', b)
+            b = _MAC_BYTES.sub(b'<MAC>', b)
         return self._real.write(b)
 
     def __getattr__(self, name):
@@ -55,6 +58,7 @@ class _MaskStream:
     def write(self, s):
         if self._check():
             s = _IPV4_TEXT.sub('<IP>', s)
+            s = _MAC_TEXT.sub('<MAC>', s)
         return self._real.write(s)
 
     def __getattr__(self, name):
@@ -188,6 +192,7 @@ class Listener:
         display_art()
         print()
         notify('info', f"Listening on {_b(self.host)}:{_b(self.port)}")
+        self._warn_log_accumulation()
         print()
 
         self._main_loop()
@@ -375,6 +380,15 @@ class Listener:
             key = f"#{s.id}  {s.status_dot()}  {_c(masked_ip)}{_gr(f':{s.addr[1]}')} [{s.os_label()}]"
             data[key] = s._uptime()
         print_report_box("Sessions", data)
+
+    def _warn_log_accumulation(self, threshold: int = 10) -> None:
+        from koi.utils.logger import list_logs
+        logs = list_logs()
+        if len(logs) > threshold:
+            notify('warning',
+                f"{_p(str(len(logs)))} logs stored, "
+                f"use {_r('koireview')} to check them out or {_r('koireview --clear')} to clear them."
+            )
 
     def _cmd_logs(self) -> None:
         from koi.utils.logger import print_log_list
