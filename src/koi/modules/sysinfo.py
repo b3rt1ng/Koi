@@ -15,7 +15,7 @@ class SysInfoModule(KoiModule):
         return lines[-1] if lines else fallback
 
     def run(self) -> None:
-        self.status("Gathering system information…")
+        self.status("Gathering system information...")
 
         info = {
             "hostname":    self._get("hostname"),

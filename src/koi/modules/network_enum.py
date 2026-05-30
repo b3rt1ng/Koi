@@ -157,7 +157,7 @@ class NetworkEnumModule(KoiModule):
         return hosts
 
     def _ping_sweep(self, network: str, host_count: int, t: int, net: str, prefix: int) -> dict[str, str]:
-        with self.spinner(f"Pinging {host_count} hosts…"):
+        with self.spinner(f"Pinging {host_count} hosts..."):
             self._try_exec(
                 f"python3 -c 'import ipaddress,subprocess;"
                 f'net=ipaddress.ip_network("{network}",strict=False);'
@@ -174,7 +174,7 @@ class NetworkEnumModule(KoiModule):
             net, prefix = self._cidr_to_network(cidr)
             network    = f"{net}/{prefix}"
             host_count = max(2 ** (32 - prefix) - 2, 1)
-            self.status(f"Host discovery on {network} ({host_count} hosts)…")
+            self.status(f"Host discovery on {network} ({host_count} hosts)...")
             if host_count > 2048:
                 self.warn(f"Large subnet ({host_count} hosts), skipping. Use -s to narrow.")
                 continue
@@ -189,17 +189,17 @@ class NetworkEnumModule(KoiModule):
         subnet  = getattr(self.args, "subnet", None)
         t       = getattr(self.args, "timeout", 1)
 
-        with self.spinner("Enumerating interfaces…"):
+        with self.spinner("Enumerating interfaces..."):
             iface_box, ifaces = self._section_interfaces()
         if iface_box:
             self.box("Interfaces", iface_box)
 
         for spinner_msg, box_title, fn in [
-            ("Fetching routing table…",          "Routes",                 self._section_routes),
-            ("Reading ARP neighbors…",           "ARP neighbors (cached)", self._section_neighbors),
-            ("Listing listening ports…",         "Listening ports",        self._section_listening),
-            ("Listing established connections…", "Established connections", self._section_connections),
-            ("Reading DNS config…",              "DNS (/etc/resolv.conf)", self._section_dns),
+            ("Fetching routing table...",          "Routes",                 self._section_routes),
+            ("Reading ARP neighbors...",           "ARP neighbors (cached)", self._section_neighbors),
+            ("Listing listening ports...",         "Listening ports",        self._section_listening),
+            ("Listing established connections...", "Established connections", self._section_connections),
+            ("Reading DNS config...",              "DNS (/etc/resolv.conf)", self._section_dns),
         ]:
             with self.spinner(spinner_msg):
                 data = fn()

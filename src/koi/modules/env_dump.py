@@ -75,7 +75,7 @@ class EnvDumpModule(KoiModule):
             self.ok(f"{len(rest)} other variables, use -a to show all.")
 
     def _run_linux(self) -> None:
-        with self.spinner("Dumping environment…"):
+        with self.spinner("Dumping environment..."):
             raw = self._exec_clean("printenv 2>/dev/null || env 2>/dev/null", timeout=10)
 
         env: dict[str, str] = {}
@@ -101,7 +101,7 @@ class EnvDumpModule(KoiModule):
             "\"$($_.Name)|||$($_.Value)\""
             "}) -join '§'"
         )
-        with self.spinner("Dumping environment…"):
+        with self.spinner("Dumping environment..."):
             raw = self._win_query(ps_expr, timeout=15)
 
         env: dict[str, str] = {}

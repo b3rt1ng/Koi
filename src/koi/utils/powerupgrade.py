@@ -68,7 +68,7 @@ def upgrade_windows_conptyshell(
     if local_ip in ("0.0.0.0", ""):
         local_ip = "127.0.0.1"
 
-    with Spinner("Fetching ConPtyShell…"):
+    with Spinner("Fetching ConPtyShell..."):
         try:
             ps1_data, source = _fetch_conptyshell()
         except Exception as exc:
@@ -96,7 +96,7 @@ def upgrade_windows_conptyshell(
     pending_conpty[sess.addr[0]] = sess.os_type
     sess.send((invoke_cmd + "\r\n").encode(sess.encoding, errors="replace"))
 
-    with Spinner("Waiting for ConPtyShell connection…"):
+    with Spinner("Waiting for ConPtyShell connection..."):
         new_sess = _wait_for_new_session(
             conpty_staging=conpty_staging,
             conpty_lock=conpty_lock,

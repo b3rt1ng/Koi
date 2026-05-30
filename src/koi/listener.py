@@ -204,7 +204,7 @@ class Listener:
                 self._server_sock.close()
             except OSError:
                 pass
-        with Spinner("Closing sessions…"):
+        with Spinner("Closing sessions..."):
             for s in list(self._sessions.values()):
                 if s.upgraded:
                     s.send(b"exit\n")
@@ -342,7 +342,7 @@ class Listener:
                 else:
                     notify('error', f"Unknown module {_p(parts[1])}, type {_b('modules')}")
             else:
-                notify('error', f"Usage: run {_p('<module>')} {_p('<id>')} {_p('[args…]')}")
+                notify('error', f"Usage: run {_p('<module>')} {_p('<id>')} {_p('[args...]')}")
             return
 
         mod_name = parts[1]
@@ -395,7 +395,7 @@ class Listener:
         print_log_list()
 
     def _cmd_reload(self) -> None:
-        with Spinner("Reloading modules…"):
+        with Spinner("Reloading modules..."):
             modules = load_modules(reload=True)
         notify('info', f"Loaded {_p(str(len(modules)))} modules.")
 
@@ -437,7 +437,7 @@ class Listener:
         logger = self._loggers[sess.id]
         sess.attach_logger(logger)
 
-        with Spinner("Upgrading shell…"):
+        with Spinner("Upgrading shell..."):
             pty_payload = (
                 'if command -v script >/dev/null 2>&1; then '
                     'exec script -qc /bin/bash /dev/null 2>/dev/null || exec script -q /dev/null /bin/bash 2>/dev/null; '
@@ -472,7 +472,7 @@ class Listener:
         if sess is None:
             notify('error', f"Session {_p(f'#{sid}')} not found.")
             return
-        with Spinner(f"Terminating session #{sid}…"):
+        with Spinner(f"Terminating session #{sid}..."):
             if sess.upgraded:
                 sess.send(b"exit\n")
                 time.sleep(0.5)
@@ -592,7 +592,7 @@ class Listener:
             notify('error', f"Module {_p(mod_name)} {badge} is not compatible with session {_p(f'#{sid}')} ({os_label}).")
             return
 
-        notify('info', f"Running module {_p(mod_name)} on session {_p(f'#{sid}')}…")
+        notify('info', f"Running module {_p(mod_name)} on session {_p(f'#{sid}')}...")
         print()
         old_handler = signal.getsignal(signal.SIGINT)
         signal.signal(signal.SIGINT, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))

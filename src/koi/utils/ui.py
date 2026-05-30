@@ -251,7 +251,7 @@ def notify(msg_type, text):
 class Spinner:
     _FRAMES = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"]
 
-    def __init__(self, message: str = "Loading…"):
+    def __init__(self, message: str = "Loading..."):
         self.message   = message
         self._stop_ev  = threading.Event()
         self._thread   = None

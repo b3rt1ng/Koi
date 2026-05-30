@@ -80,7 +80,7 @@ class GetProcessesModule(KoiModule):
         return False
 
     def _run_linux(self) -> None:
-        with self.spinner("Collecting processes…"):
+        with self.spinner("Collecting processes..."):
             raw = self._exec_clean(
                 "ps aux --no-headers 2>/dev/null || ps aux 2>/dev/null",
                 timeout=15,
@@ -140,7 +140,7 @@ class GetProcessesModule(KoiModule):
 
     def _run_windows(self) -> None:
         ps_expr = "(tasklist /fo csv /nh /v) -join '§'"
-        with self.spinner("Collecting processes via tasklist…"):
+        with self.spinner("Collecting processes via tasklist..."):
             raw = self._win_query(ps_expr, timeout=30)
 
         procs = self._parse_windows_tasklist(raw)

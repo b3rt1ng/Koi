@@ -391,7 +391,7 @@ class KoiModule(ABC):
         self.spinner(msg)     -> context manager
         self.box(title, dict)
         self.breaker()
-        self.session          -> Session dataclass (id, conn, addr, upgraded, …)
+        self.session          -> Session dataclass (id, conn, addr, upgraded, ...)
         self.args             -> list[str] from the CLI
         """
     def exec(self, command: str, timeout: float = 30.0, _silent: bool = False):

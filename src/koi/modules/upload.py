@@ -28,18 +28,16 @@ class UploadModule(KoiModule):
         if self.args.output:
             remote_path = self.args.output
         elif os_type == "linux":
-            cwd = self._exec_clean("pwd").strip() or "/tmp"
-            remote_path = f"{cwd}/{basename}"
+            remote_path = f"./{basename}"
         else:
-            cwd = self._win_query("(Get-Location).Path").strip() or "C:\\Windows\\Temp"
-            remote_path = f"{cwd}\\{basename}"
+            remote_path = f".\\{basename}"
 
         with open(local_path, "rb") as f:
             raw = f.read()
 
         total = len(raw)
         bar = self.ui.ProgressBar(total=total)
-        self.status(f"Uploading {local_path} -> {remote_path} ({total} bytes)…")
+        self.status(f"Uploading {local_path} -> {remote_path} ({total} bytes)...")
         ok = self._upload_bytes(raw, remote_path, timeout=30, on_progress=bar.update)
         bar.done()
         print()

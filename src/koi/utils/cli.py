@@ -67,7 +67,7 @@ def print_help() -> None:
             f"{_p('obfuscator')} {_b('[iface]')}": "Interactive payload obfuscator",
             f"{_p('modules')}": "List available modules",
             f"{_p('reload')}": "Reload modules from disk (useful during development)",
-            f"{_p('run')} {_b('<module>')} {_b('<id>')} {_b('[args…]')}": "Run a module against a session",
+            f"{_p('run')} {_b('<module>')} {_b('<id>')} {_b('[args...]')}": "Run a module against a session",
             f"{_p('setshell')} {_b('<id>')} {_b('<os_type>')}": "Manually set the OS type of a session",
             f"{_p('stop')}": "Pause the listener, refuse new connections",
             f"{_p('logs')}": "List recorded session logs",

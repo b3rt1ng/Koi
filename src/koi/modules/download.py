@@ -40,7 +40,7 @@ class DownloadModule(KoiModule):
 
         quoted = _shell_quote(remote_path)
 
-        with self.spinner("Checking if file exists…"):
+        with self.spinner("Checking if file exists..."):
             if os_type == "linux":
                 token_ok  = uuid.uuid4().hex
                 token_err = uuid.uuid4().hex
@@ -56,7 +56,7 @@ class DownloadModule(KoiModule):
             self.err(f"Remote file not found: {remote_path}")
             return
 
-        with self.spinner("Getting file size…"):
+        with self.spinner("Getting file size..."):
             if os_type == "linux":
                 size_str = self._exec_clean(f"wc -c < {quoted}")
                 try:
@@ -77,7 +77,7 @@ class DownloadModule(KoiModule):
         self.status(
             f"Downloading {remote_path}"
             + (f" ({remote_size} bytes)" if remote_size else "")
-            + "…"
+            + "..."
         )
 
         if os_type == "linux":
