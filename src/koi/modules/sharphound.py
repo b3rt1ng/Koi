@@ -20,7 +20,7 @@ class SharpHoundModule(KoiModule):
     name        = "sharphound"
     description = "Fetch SharpHound, run it on target and retrieve the BloodHound zip locally."
     usage       = "sharphound <id> [-c <collection>] [-o <local_zip>]"
-    category    = "Enumeration"
+    category    = "Active Directory"
     platform    = "windows_ps"
     arguments   = [
         {"flags": ["-c", "--collection"], "default": "Default",
@@ -81,7 +81,7 @@ class SharpHoundModule(KoiModule):
 
         ps_cmd = (
             f"$ErrorActionPreference='Continue';"
-            f"$work='{work_dir}';"
+            f"$work=(Get-Item '{work_dir}').FullName;"
             f"$exe=Join-Path $work '{exe_name}';"
             f"$log=Join-Path $work '{log_name}';"
             f"$payload=$null;"
@@ -156,13 +156,17 @@ class SharpHoundModule(KoiModule):
                 f"New-Item -ItemType Directory -Path '{work}' -Force | Out-Null"
             )
 
-        with self.spinner(f"Uploading {len(files)} file(s) to target..."):
-            for name, blob in files.items():
-                dest = f"{work}\\{name}"
-                if not self._upload_bytes(blob, dest, timeout=120):
-                    self.err(f"Upload of {name} failed.")
-                    self._cleanup(work)
-                    return
+        self.status(f"Uploading {len(files)} file(s) to target...")
+        for name, blob in files.items():
+            dest = f"{work}\\{name}"
+            bar = self.ui.ProgressBar(total=len(blob), prefix=name)
+            ok = self._upload_bytes(blob, dest, timeout=120, on_progress=bar.update)
+            bar.done()
+            print()
+            if not ok:
+                self.err(f"Upload of {name} failed.")
+                self._cleanup(work)
+                return
 
         time.sleep(0.5)
 

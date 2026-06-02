@@ -24,18 +24,17 @@ Disclaimer: please note that this is still under development, and I am still wor
 
 ## ✨ Features
 
-* **Multi-session**: Handles multiple reverse shells simultaneously list, switch, and background sessions without dropping any.
-* **PTY Upgrade**: Upgrades a raw shell to a full PTY for proper tab completion, Ctrl+C forwarding, and terminal resizing.
-* **Modules**: Various modules to automate post exploitation tasks such as easy upload and download, simple information gathering and more 
-* **Obfuscator**: Easy to use payload obfuscator, chaining obfuscation techniques to evade defender.
-* **Clean signals**: `Ctrl+Z` backgrounds the session, `Ctrl+C` sends `SIGINT` to the remote never kills your listener by accident.
-* **Koi fish themed UI**: sick UI, pentest tooling doesn't have to be ugly.
+* **Multi-session**: Handle multiple reverse shells simultaneously — list, switch, and background sessions without dropping any.
+* **PTY Upgrade**: Upgrade a raw shell to a full PTY (Linux via `script`/`socat`, Windows via obfuscated ConPtyShell) for tab completion, Ctrl+C forwarding, and terminal resizing.
+* **Modules**: Automate post-exploitation tasks — file transfer, enumeration, pivoting, AD collection, and more. Easily extensible with your own modules.
+* **Obfuscator**: Built-in payload obfuscator with chainable techniques (XOR, hex, format strings, char-array) to evade Defender and EDR solutions.
+* **Session logging**: Every session is logged automatically. Replay any session with `koireview`.
+* **Screenable mode**: Masks IPs and MAC addresses from output for safe screen sharing during CTFs or live demos.
+* **Clean signals**: `Ctrl+Z` backgrounds the session, `Ctrl+C` sends `SIGINT` to the remote — never kills your listener by accident.
 
 ## 🚧 WIP
-* **Windows**: Powershells are now available and upgradable with in-memory obfuscation to evade Windows Defender, but needs more testing.
-* **Tunneling**: Once you have your shell, a simple way to tunnel in that network with few inputs would be very convenient.
-* **EDR proof**: Koi is indeed conveinient but it's a rather "loud" method. While the payloads does bypass casual / low tier EDR, it can get flagged on more expensives solutions. I'm working on ways to make it even less flaggable (tls, http ?)
-* **Logging**: right now, koi logs your sessions interraction, it's conveinient when doing pentest reports. Yet this feature is still a bit too primitive and needs  more upgrading. It's now a thing but it's  not the best (yet)
+* **Tunneling**: Once you have your shell, a simple way to tunnel into that network with minimal input would be very convenient. The `ligolo` module automates agent deployment, but native tunnel management is planned.
+* **EDR evasion**: Koi bypasses casual and mid-tier EDR solutions, but more aggressive environments (expensive commercial EDR, heavily monitored networks) may still flag activity. Further improvements (TLS transport, HTTP C2) are under consideration.
 ---
 
 ## 🚀 Installation
@@ -116,11 +115,12 @@ with `TERM=xterm-256color` and some resizing info
 I did not bothered making one for CMD but for powershell, the technique uses an obfuscated [conptyshell](https://github.com/antoniococo/conptyshell) to gather a fully implemented shell:
 
 ```
-1) ConPtyShell is fetched from GitHub and kept in memory
+1) ConPtyShell is fetched from GitHub and cached locally for offline reuse
 2) All IOC identifiers are renamed to random strings (class names, method names, PS function name)
 3) Distinctive C# string literals are replaced with runtime char-array constructions (no literal in compiled MSIL)
-4) The obfuscated script is served over a temporary HTTP server and executed on the target via IEX(IWR ...)
-5) The target connects back with a fully interactive PTY shell, registered as a new session
+4) The obfuscated script is served over a temporary HTTP server
+5) The invocation command is base64-encoded (-EncodedCommand) with IEX and IWR obfuscated via random split techniques (concat / format string / char-array), so no plaintext cmdlet names appear on the command line
+6) The target connects back with a fully interactive PTY shell, registered as a new session
 ```
 
 ---
@@ -135,7 +135,7 @@ Modules are basically a way to automate actions on your instances. you can run c
 
 If you want to make your own modules, I recommend cloning this repo and installing it with the `--editable` flag. Once you have a shell, you can dev your payload and use the `reload` command to update all modules including the one you're working on.
 
-Checkout the [blueprint](src/koi/modules/blueprint.py) to see how you can make your own module or check our examples ([linpeas](src/koi/modules/ligolo.py), [get users](src/koi/modules/get_users.py)) to get inspirations
+Check the [Module Development Guide](https://b3rt1ng.github.io/koi-wiki/make-your-modules/) in the wiki for a full API reference, or browse the existing modules ([ligolo](src/koi/modules/ligolo.py), [get_users](src/koi/modules/get_users.py)) for inspiration.
 
 Also, if you want to make your own module part of this repo, do not hesitate to make a PR, I will gladly look at it and see if it's interesting to add here <3
 

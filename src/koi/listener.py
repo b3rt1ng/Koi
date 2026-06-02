@@ -218,7 +218,7 @@ class Listener:
         count = colored_text(str(alive), PUMPKIN if alive else SILVER)
         anon_tag = colored_text(" [ANON]", PUMPKIN) if self.screenable_mode else ""
         pause_tag = colored_text(" [PAUSED]", CORAL) if not self._accepting else ""
-        return (
+        raw = (
             f"{LOCALUSER}"
             + colored_text("@", PUMPKIN)
             + colored_text("koi", WHITE)
@@ -229,6 +229,7 @@ class Listener:
             + _gr(f" {noun})")
             + gradient_text(" ❯ ", PUMPKIN, CORAL)
         )
+        return re.sub(r'\033\[[^m]*m', lambda m: f'\001{m.group()}\002', raw)
 
     def _main_loop(self):
         while self._running:

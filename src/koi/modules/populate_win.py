@@ -22,7 +22,7 @@ class PopulateWinModule(KoiModule):
     name        = "populate_win"
     description = "Upload common exploitation tools (Rubeus, RunasCs, Certify, winPEAS, mimikatz) on the target."
     usage       = "populate_win <id> [-o <remote_dir>]"
-    category    = "Other"
+    category    = "Post-Exploitation"
     platform    = "windows_ps"
     arguments   = [
         {
