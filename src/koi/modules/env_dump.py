@@ -43,11 +43,11 @@ def _is_interesting(key: str, value: str) -> bool:
 
 
 class EnvDumpModule(KoiModule):
-    name        = "env_dump"
+    name        = "env"
     description = "Dump environment variables and highlight credentials, tokens, and keys."
     category    = "Enumeration"
     platform    = ["linux", "windows_ps"]
-    usage       = "env_dump <id> [-a]"
+    usage       = "env <id> [-a]"
     arguments   = [
         {
             "flags": ["-a", "--all"],

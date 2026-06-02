@@ -4,9 +4,9 @@ from koi.modules.blueprint import KoiModule
 
 
 class GetUsersModule(KoiModule):
-    name = "get_users"
+    name = "users"
     description = "List local users by reading /etc/passwd on the target."
-    usage = "get_users <id> [-a]"
+    usage = "users <id> [-a]"
     category = "Enumeration"
     platform = "linux"
     arguments = [

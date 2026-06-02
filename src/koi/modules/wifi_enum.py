@@ -5,11 +5,11 @@ from koi.modules.blueprint import KoiModule
 
 
 class WifiEnumModule(KoiModule):
-    name        = "wifi_enum"
+    name        = "wifi"
     description = "Cleanly enumerates nearby Wi-Fi networks and configurations via nmcli or local files."
     category    = "Enumeration"
     platform    = "linux"
-    usage       = "wifi_enum <id>"
+    usage       = "wifi <id>"
 
     def run(self) -> None:
         self.status("Analyzing Wi-Fi...")

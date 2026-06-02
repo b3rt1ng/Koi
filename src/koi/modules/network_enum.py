@@ -5,11 +5,11 @@ from koi.modules.blueprint import KoiModule
 
 
 class NetworkEnumModule(KoiModule):
-    name        = "network_enum"
+    name        = "netscan"
     description = "Enumerate interfaces, routes, connections, open ports, and discover live hosts."
     category    = "Enumeration"
     platform    = "linux"
-    usage       = "network_enum <id> [--no-scan] [-s CIDR] [-t N]"
+    usage       = "netscan <id> [--no-scan] [-s CIDR] [-t N]"
     arguments   = [
         {"flags": ["--no-scan"], "action": "store_true", "default": False,
          "help": "Skip live host discovery (ping sweep)."},

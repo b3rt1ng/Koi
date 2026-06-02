@@ -382,7 +382,7 @@ class Listener:
             data[key] = s._uptime()
         print_report_box("Sessions", data)
 
-    def _warn_log_accumulation(self, threshold: int = 10) -> None:
+    def _warn_log_accumulation(self, threshold: int = 30) -> None:
         from koi.utils.logger import list_logs
         logs = list_logs()
         if len(logs) > threshold:

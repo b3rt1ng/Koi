@@ -22,11 +22,11 @@ _WIN_LOLBINS      = {
 
 
 class GetProcessesModule(KoiModule):
-    name        = "get_processes"
+    name        = "ps"
     description = "List running processes and highlight interesting/privileged ones."
     category    = "Enumeration"
     platform    = ["linux", "windows_ps"]
-    usage       = "get_processes <id> [-a] [-f KEYWORD]"
+    usage       = "ps <id> [-a] [-f KEYWORD]"
     arguments   = [
         {
             "flags": ["-a", "--all"],

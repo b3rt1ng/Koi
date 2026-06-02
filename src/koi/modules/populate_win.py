@@ -19,9 +19,9 @@ TOOLS: dict[str, str] = {
 
 
 class PopulateWinModule(KoiModule):
-    name        = "populate_win"
+    name        = "armory"
     description = "Upload common exploitation tools (Rubeus, RunasCs, Certify, winPEAS, mimikatz) on the target."
-    usage       = "populate_win <id> [-o <remote_dir>]"
+    usage       = "armory <id> [-o <remote_dir>]"
     category    = "Post-Exploitation"
     platform    = "windows_ps"
     arguments   = [
@@ -94,4 +94,4 @@ class PopulateWinModule(KoiModule):
                 display[name] = _y(val)
 
         print()
-        self.box("populate_win results", display)
+        self.box("armory results", display)
