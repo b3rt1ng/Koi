@@ -95,8 +95,8 @@ class GetProcessesModule(KoiModule):
             procs,
             total=len(procs),
             is_interesting=self._is_interesting_linux,
-            key_fn=lambda p: f"PID {p['pid']}  ({p['user']})  CPU:{p['cpu']}%  MEM:{p['mem']}%",
-            val_fn=lambda p: p["cmd"],
+            headers=["PID", "User", "CPU", "MEM", "Command"],
+            row_fn=lambda p: [p["pid"], p["user"], f"{p['cpu']}%", f"{p['mem']}%", p["cmd"]],
         )
 
     _WIN_SYSTEM_USERS = frozenset({
@@ -152,11 +152,11 @@ class GetProcessesModule(KoiModule):
             procs,
             total=len(procs),
             is_interesting=self._is_interesting_windows,
-            key_fn=lambda p: f"PID {p['pid']}  {p['name']}  ({p['user']})",
-            val_fn=lambda p: f"session={p['session']}  mem={p['mem']}",
+            headers=["PID", "Name", "User", "Session", "Memory"],
+            row_fn=lambda p: [p["pid"], p["name"], p["user"], p["session"], p["mem"]],
         )
 
-    def _dispatch(self, procs, total, is_interesting, key_fn, val_fn) -> None:
+    def _dispatch(self, procs, total, is_interesting, headers, row_fn) -> None:
         keyword  = getattr(self.args, "filter", None)
         show_all = getattr(self.args, "all", False)
 
@@ -168,22 +168,25 @@ class GetProcessesModule(KoiModule):
                 or kw in p.get("name", p.get("cmd", "")).lower()
                 or kw in p.get("cmd", "").lower()
             ]
-            label = f"Processes matching '{keyword}'  ({len(matches)} of {total})"
-            self.box(label, {key_fn(p): val_fn(p) for p in matches})
+            self.table(
+                f"Processes matching '{keyword}'  ({len(matches)} of {total})",
+                headers,
+                [row_fn(p) for p in matches],
+            )
             return
 
         if show_all:
-            self.box(f"All processes  ({total})", {key_fn(p): val_fn(p) for p in procs})
+            self.table(f"All processes  ({total})", headers, [row_fn(p) for p in procs])
             return
 
         interesting = [p for p in procs if is_interesting(p)]
 
         if interesting:
-            label = (
-                f"Interesting processes  ({len(interesting)} of {total} total)"
-                f" use -a to show all"
+            self.table(
+                f"Interesting processes  ({len(interesting)} of {total})  -a to show all",
+                headers,
+                [row_fn(p) for p in interesting],
             )
-            self.box(label, {key_fn(p): val_fn(p) for p in interesting})
         else:
             self.ok(f"No noteworthy processes found ({total} total). Use -a to list all.")
 

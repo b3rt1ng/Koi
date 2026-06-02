@@ -226,6 +226,116 @@ def print_report_box(title, data_dict, top_left_color=PUMPKIN, bottom_right_colo
     bottom_line   = "".join(get_diag_color(r_idx, c) + char for c, char in enumerate(bottom_border))
     print(bottom_line + RST)
 
+def print_table(
+    title: str,
+    headers: list,
+    rows: list,
+    top_left_color=PUMPKIN,
+    bottom_right_color=CORAL,
+) -> None:
+    if not headers or not rows:
+        return
+
+    def _len(s): return len(_ANSI.sub("", str(s)))
+
+    terminal_width = shutil.get_terminal_size().columns
+    n_cols = len(headers)
+
+    col_widths = [_len(str(h)) for h in headers]
+    for row in rows:
+        for i in range(min(n_cols, len(row))):
+            col_widths[i] = max(col_widths[i], _len(str(row[i])))
+
+    inner_width = sum(w + 2 for w in col_widths) + (n_cols - 1)
+    max_inner   = terminal_width - 2
+    if inner_width > max_inner:
+        overhead = sum(w + 2 for w in col_widths[:-1]) + (n_cols - 1)
+        col_widths[-1] = max(3, max_inner - overhead - 2)
+        inner_width = sum(w + 2 for w in col_widths) + (n_cols - 1)
+
+    total_cols = inner_width + 2
+    total_rows = len(rows) + 4
+
+    def get_color(row, col):
+        ratio = (row + col) / max(total_rows + total_cols - 2, 1)
+        r = int(top_left_color[0] + ratio * (bottom_right_color[0] - top_left_color[0]))
+        g = int(top_left_color[1] + ratio * (bottom_right_color[1] - top_left_color[1]))
+        b = int(top_left_color[2] + ratio * (bottom_right_color[2] - top_left_color[2]))
+        return f"\033[38;2;{r};{g};{b}m"
+
+    r_idx = 0
+
+    header_label   = f" {title} "
+    header_padding = inner_width - len(header_label)
+    left_dashes    = "─" * (header_padding // 2)
+    right_dashes   = "─" * (header_padding - header_padding // 2)
+    colored_left   = "".join(get_color(0, c) + ch for c, ch in enumerate("╭" + left_dashes))
+    colored_right  = "".join(
+        get_color(0, 1 + len(left_dashes) + len(header_label) + c) + ch
+        for c, ch in enumerate(right_dashes + "╮")
+    )
+    print("\n" + colored_left + gradient_text(header_label, top_left_color, WHITE) + colored_right + RST)
+
+    white_start = f"\033[38;2;{WHITE[0]};{WHITE[1]};{WHITE[2]}m"
+
+    def render_row(cells, bold=False):
+        nonlocal r_idx
+        r_idx += 1
+        left    = get_color(r_idx, 0) + "│" + RST
+        right   = get_color(r_idx, total_cols - 1) + "│" + RST
+        content = ""
+        col_pos = 1
+        for i in range(n_cols):
+            cell    = str(cells[i]) if i < len(cells) else ""
+            visible = _len(cell)
+            if visible > col_widths[i]:
+                cell    = cell[:col_widths[i] - 1] + "…"
+                visible = col_widths[i]
+            pad = col_widths[i] - visible
+            if bold:
+                content += f" {BOLD}{white_start}{cell}{RST}" + " " * (pad + 1)
+            else:
+                content += f" {white_start}{cell}{RST}" + " " * (pad + 1)
+            col_pos += col_widths[i] + 2
+            if i < n_cols - 1:
+                content += get_color(r_idx, col_pos) + "│" + RST
+                col_pos += 1
+        print(f"{left}{content}{right}")
+
+    def render_hsep(left_ch="├", right_ch="┤", mid_ch="┼"):
+        nonlocal r_idx
+        r_idx += 1
+        line    = get_color(r_idx, 0) + left_ch
+        col_pos = 1
+        for i, w in enumerate(col_widths):
+            for j in range(w + 2):
+                line += get_color(r_idx, col_pos + j) + "─"
+            col_pos += w + 2
+            if i < n_cols - 1:
+                line += get_color(r_idx, col_pos) + mid_ch
+                col_pos += 1
+        line += get_color(r_idx, col_pos) + right_ch
+        print(line + RST)
+
+    render_row(headers, bold=True)
+    render_hsep()
+
+    for row in rows:
+        render_row(row)
+
+    r_idx += 1
+    line    = get_color(r_idx, 0) + "╰"
+    col_pos = 1
+    for i, w in enumerate(col_widths):
+        for j in range(w + 2):
+            line += get_color(r_idx, col_pos + j) + "─"
+        col_pos += w + 2
+        if i < n_cols - 1:
+            line += get_color(r_idx, col_pos) + "┴"
+            col_pos += 1
+    line += get_color(r_idx, col_pos) + "╯"
+    print(line + RST)
+
 def notify(msg_type, text):
     prefixes = {
         'new':     (PUMPKIN,  "▶", f"{BOLD}{color_signal(WHITE)}New session"),

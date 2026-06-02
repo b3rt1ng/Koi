@@ -44,19 +44,31 @@ class WinscalateModule(KoiModule):
         except Exception:
             return ""
 
+    def _emit(self, label: str, findings: dict) -> int:
+        if findings:
+            self.box(label, findings)
+        return len(findings)
+
     def run(self) -> None:
-        critical: dict[str, str] = {}
-        high:     dict[str, str] = {}
-        info:     dict[str, str] = {}
+        if not self.session.upgraded:
+            self.warn(
+                "Session is not upgraded, results may be incomplete or truncated. "
+                "Run upgrade first for accurate output."
+            )
+
+        print()
+        n_critical = n_high = n_info = 0
 
         with self.spinner("Checking privileges..."):
             raw = self._q(
                 "((whoami /priv) -match 'Enabled'"
                 " | ForEach-Object { (($_ -split '\\s{2,}')[0]).Trim() }) -join '§'"
             )
-        for priv in (p.strip() for p in raw.split("§") if p.strip()):
-            if priv in _DANGEROUS_PRIVS:
-                critical[priv] = _DANGEROUS_PRIVS[priv]
+        privs = {p: _DANGEROUS_PRIVS[p] for p in (x.strip() for x in raw.split("§")) if p in _DANGEROUS_PRIVS}
+        has_potato = any(p in privs for p in ("SeImpersonatePrivilege", "SeAssignPrimaryTokenPrivilege"))
+        if has_potato:
+            privs["Potato attack feasible"] = "SeImpersonate/SeAssignPrimaryToken enabled, try PrintSpoofer, GodPotato"
+        n_critical += self._emit("Critical - dangerous privileges", privs)
 
         with self.spinner("Checking AlwaysInstallElevated..."):
             hklm = self._q(
@@ -68,9 +80,13 @@ class WinscalateModule(KoiModule):
                 " -Name AlwaysInstallElevated -EA SilentlyContinue).AlwaysInstallElevated"
             )
         if hklm == "1" and hkcu == "1":
-            critical["AlwaysInstallElevated"] = "HKLM + HKCU both set, install any MSI as SYSTEM"
+            n_critical += self._emit("Critical - AlwaysInstallElevated", {
+                "AlwaysInstallElevated": "HKLM + HKCU both set, install any MSI as SYSTEM"
+            })
         elif hklm == "1" or hkcu == "1":
-            high["AlwaysInstallElevated (partial)"] = f"HKLM={hklm or '0'}  HKCU={hkcu or '0'}, only one key set"
+            n_high += self._emit("High - AlwaysInstallElevated (partial)", {
+                "AlwaysInstallElevated": f"HKLM={hklm or '0'}  HKCU={hkcu or '0'}, only one key set"
+            })
 
         with self.spinner("Checking UAC level..."):
             uac = self._q(
@@ -80,9 +96,9 @@ class WinscalateModule(KoiModule):
             )
         label = _UAC_LEVELS.get(uac, f"Level {uac}")
         if uac == "0":
-            critical["UAC disabled"] = label
+            n_critical += self._emit("Critical - UAC disabled", {"UAC": label})
         else:
-            info[f"UAC level {uac}"] = label
+            n_info += self._emit("Info - UAC", {f"UAC level {uac}": label})
 
         with self.spinner("Checking unquoted service paths..."):
             raw = self._q(
@@ -94,9 +110,11 @@ class WinscalateModule(KoiModule):
                 " | ForEach-Object { \"$($_.Name)|||$($_.PathName)\" }) -join '§'",
                 timeout=20,
             )
+        unquoted = {}
         for entry in (e for e in raw.split("§") if "|||" in e):
             name, path = entry.split("|||", 1)
-            high[f"Unquoted path: {name.strip()}"] = path.strip()
+            unquoted[f"Unquoted path: {name.strip()}"] = path.strip()
+        n_high += self._emit("High - unquoted service paths", unquoted)
 
         with self.spinner("Checking writable PATH directories..."):
             raw = self._q(
@@ -109,20 +127,20 @@ class WinscalateModule(KoiModule):
                 "   Remove-Item $t -EA SilentlyContinue; $d"
                 "  } catch {} } }) -join '§'"
             )
-        for d in (x.strip() for x in raw.split("§") if x.strip()):
-            high[f"Writable PATH: {d}"] = "DLL / binary hijack possible"
+        writable = {d: "DLL / binary hijack possible" for d in (x.strip() for x in raw.split("§") if x.strip())}
+        n_high += self._emit("High - writable PATH directories", writable)
 
         with self.spinner("Checking stored credentials..."):
             raw = self._q("(cmdkey /list) -join '§'")
         creds = [l.strip() for l in raw.split("§") if "Target:" in l or "User:" in l]
         if creds:
-            high["Stored credentials"] = "  |  ".join(creds)
+            n_high += self._emit("High - stored credentials", {"cmdkey": "  |  ".join(creds)})
 
         with self.spinner("Checking sensitive files..."):
             files_expr = "@(" + ",".join(f"'{f}'" for f in _SENSITIVE_FILES) + ")"
             raw = self._q(f"({files_expr} | Where-Object {{Test-Path $_}}) -join '§'")
-        for f in (x.strip() for x in raw.split("§") if x.strip()):
-            high[f"Sensitive file: {f}"] = "May contain plaintext credentials"
+        sensitive = {f: "May contain plaintext credentials" for f in (x.strip() for x in raw.split("§") if x.strip())}
+        n_high += self._emit("High - sensitive files", sensitive)
 
         with self.spinner("Checking scheduled tasks..."):
             raw = self._q(
@@ -136,11 +154,13 @@ class WinscalateModule(KoiModule):
                 " }) -join '§'",
                 timeout=20,
             )
+        tasks = {}
         for entry in (e for e in raw.split("§") if "|||" in e):
             name, exe = entry.split("|||", 1)
             name, exe = name.strip(), exe.strip()
-            if exe:
-                info[f"Task (SYSTEM): {name}"] = exe
+            if exe and not any(exe.lower().startswith(p) for p in ("%windir%\\system32", "%systemroot%\\system32", "c:\\windows\\system32")):
+                tasks[name] = exe
+        n_info += self._emit("Info - scheduled tasks (SYSTEM, non-system path)", tasks)
 
         with self.spinner("Checking AutoRun entries..."):
             raw = self._q(
@@ -153,29 +173,14 @@ class WinscalateModule(KoiModule):
                 "  | ForEach-Object { \"$($_.Name)|||$($_.Value)\" }"
                 " } catch {} }) -join '§'"
             )
+        autorun = {}
         for entry in (e for e in raw.split("§") if "|||" in e):
             name, val = entry.split("|||", 1)
-            info[f"AutoRun: {name.strip()}"] = val.strip()
+            autorun[name.strip()] = val.strip()
+        n_info += self._emit("Info - AutoRun entries", autorun)
 
-        has_potato = any(
-            p in critical
-            for p in ("SeImpersonatePrivilege", "SeAssignPrimaryTokenPrivilege")
-        )
-        if has_potato:
-            critical["Potato attack feasible"] = (
-                "SeImpersonate/SeAssignPrimaryToken enabled, try PrintSpoofer, GodPotato"
-            )
-
-        print()
-        if critical:
-            self.box("Critical - direct privesc vectors", critical)
-        if high:
-            self.box("High - notable findings", high)
-        if info:
-            self.box("Info", info)
-
-        total = len(critical) + len(high) + len(info)
+        total = n_critical + n_high + n_info
         if total == 0:
             self.ok("No obvious privilege escalation vectors found.")
         else:
-            self.status(f"{total} finding(s): {len(critical)} critical, {len(high)} high, {len(info)} info")
+            self.status(f"{total} finding(s): {n_critical} critical, {n_high} high, {n_info} info")

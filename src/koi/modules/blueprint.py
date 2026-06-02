@@ -178,6 +178,7 @@ class KoiModule(ABC):
         self.spinner = ui.Spinner
         self.breaker = ui.breaker_with_text
         self.box = ui.print_report_box
+        self.table = ui.print_table
 
     def _parse_args(self):
         if not self.arguments:
