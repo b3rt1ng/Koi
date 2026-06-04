@@ -135,38 +135,25 @@ class NetworkEnumModule(KoiModule):
         net_int = self._ip_to_int(ip_str) & mask
         return ".".join(str((net_int >> s) & 0xFF) for s in (24, 16, 8, 0)), prefix
 
-    def _in_network(self, ip: str, net: str, prefix: int) -> bool:
-        mask = (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF
-        return (self._ip_to_int(ip) & mask) == (self._ip_to_int(net) & mask)
-
-    def _parse_arp_table(self, raw: str, net: str, prefix: int) -> dict[str, str]:
-        hosts: dict[str, str] = {}
-        for line in raw.splitlines():
-            line = self._clean(line)
-            m = re.match(r'(\d+\.\d+\.\d+\.\d+)\s+dev\s+(\S+)\s+lladdr\s+([0-9a-fA-F:]{17})\s+(\S+)', line)
-            if m:
-                ip, dev, mac, state = m.groups()
-                if state not in ("FAILED", "INCOMPLETE") and self._in_network(ip, net, prefix):
-                    hosts[ip] = f"{mac}  [{state}]  dev={dev}"
-                continue
-            m = re.search(r'\((\d+\.\d+\.\d+\.\d+)\)\s+at\s+([0-9a-fA-F:]{17}).*on\s+(\S+)', line)
-            if m:
-                ip, mac, dev = m.groups()
-                if self._in_network(ip, net, prefix):
-                    hosts[ip] = f"{mac}  dev={dev}"
-        return hosts
-
     def _ping_sweep(self, network: str, host_count: int, t: int, net: str, prefix: int) -> dict[str, str]:
-        with self.spinner(f"Pinging {host_count} hosts..."):
-            self._try_exec(
-                f"python3 -c 'import ipaddress,subprocess;"
-                f'net=ipaddress.ip_network("{network}",strict=False);'
-                f'procs=[subprocess.Popen(["ping","-c1","-W","{t}",str(h)],'
-                f"stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL) for h in net.hosts()];"
-                f"[p.wait() for p in procs]' 2>/dev/null",
-                timeout=host_count * t + 20,
-            )
-        return self._parse_arp_table(self._try_exec("ip neigh show 2>/dev/null; arp -a 2>/dev/null", timeout=10), net, prefix)
+        net_int  = self._ip_to_int(net)
+        ip_list  = " ".join(
+            ".".join(str(((net_int + i) >> s) & 0xFF) for s in (24, 16, 8, 0))
+            for i in range(1, host_count + 1)
+        )
+        cmd = (
+            f"for ip in {ip_list}; do "
+            f"(ping -c 1 -W {t} \"$ip\" 2>/dev/null | grep -q 'bytes from' && echo \"$ip\") & "
+            f"done; wait"
+        )
+        with self.spinner(f"Ping sweeping {network} ({host_count} hosts)..."):
+            raw = self._try_exec(cmd, timeout=t * 2 + 30)
+        live: dict[str, str] = {}
+        for line in raw.splitlines():
+            ip = line.strip()
+            if re.match(r'^\d+\.\d+\.\d+\.\d+$', ip):
+                live[ip] = "ICMP reply"
+        return live
 
     def _discover_hosts(self, ifaces: list[tuple[str, str]], subnet_override: str | None, t: int) -> None:
         cidrs = [("user-specified", subnet_override)] if subnet_override else ifaces

@@ -4,7 +4,7 @@ from koi.modules.blueprint import KoiModule
 
 _DANGEROUS_PRIVS: dict[str, str] = {
     "SeImpersonatePrivilege":        "Potato attacks (PrintSpoofer, RoguePotato, GodPotato)",
-    "SeAssignPrimaryTokenPrivilege": "Potato attacks / token assignment",
+    "SeAssignPrimaryTokenPrivilege": "Primary token assignment (requires SeIncreaseQuotaPrivilege for full privesc)",
     "SeDebugPrivilege":              "Process injection, LSASS dump",
     "SeTakeOwnershipPrivilege":      "Take ownership of any object",
     "SeLoadDriverPrivilege":         "Load malicious kernel driver (BYOVD)",
@@ -60,14 +60,10 @@ class WinscalateModule(KoiModule):
         n_critical = n_high = n_info = 0
 
         with self.spinner("Checking privileges..."):
-            raw = self._q(
-                "((whoami /priv) -match 'Enabled'"
-                " | ForEach-Object { (($_ -split '\\s{2,}')[0]).Trim() }) -join '§'"
-            )
-        privs = {p: _DANGEROUS_PRIVS[p] for p in (x.strip() for x in raw.split("§")) if p in _DANGEROUS_PRIVS}
-        has_potato = any(p in privs for p in ("SeImpersonatePrivilege", "SeAssignPrimaryTokenPrivilege"))
-        if has_potato:
-            privs["Potato attack feasible"] = "SeImpersonate/SeAssignPrimaryToken enabled, try PrintSpoofer, GodPotato"
+            raw = self._q("((whoami /priv) -match 'Enabled') -join '§'")
+        privs = {p: _DANGEROUS_PRIVS[p] for p in _DANGEROUS_PRIVS if p in raw}
+        if "SeImpersonatePrivilege" in privs:
+            privs["Potato attack feasible"] = "SeImpersonatePrivilege enabled, try PrintSpoofer, GodPotato, RoguePotato"
         n_critical += self._emit("Critical - dangerous privileges", privs)
 
         with self.spinner("Checking AlwaysInstallElevated..."):
