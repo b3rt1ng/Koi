@@ -129,7 +129,7 @@ _CS_SIGNAL_LITERALS: list[tuple[str, str]] = [
     ('"File"',                 "File"),
 ]
 
-def ps_base64_encode(payload: str) -> str:
+def _ps_base64_encode(payload: str) -> str:
     b64 = base64.b64encode(payload.encode("utf-16-le")).decode("ascii")
     return f"powershell -enc {b64}"
 

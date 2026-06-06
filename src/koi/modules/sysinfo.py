@@ -10,7 +10,7 @@ class SysInfoModule(KoiModule):
     platform    = ["linux", "windows_ps"]
 
     def _get(self, cmd: str, fallback: str = "unknown") -> str:
-        lines = [l for l in self._try_exec(cmd, timeout=10).splitlines() if l.strip()]
+        lines = [ln for ln in self._try_exec(cmd, timeout=10).splitlines() if ln.strip()]
         return lines[-1] if lines else fallback
 
     def _wget(self, expr: str, fallback: str = "unknown") -> str:

@@ -7,6 +7,7 @@ import urllib.request
 import zipfile
 
 from koi.modules.blueprint import KoiModule
+from koi.utils.ui import _y, _r, _gr
 
 MIMIKATZ_ZIP_URL = "https://github.com/gentilkiwi/mimikatz/releases/download/2.2.0-20220919/mimikatz_trunk.zip"
 
@@ -85,7 +86,6 @@ class PopulateWinModule(KoiModule):
         if "mimikatz.exe" not in results:
             results["mimikatz.exe"] = dest if ok else "FAILED"
 
-        from koi.utils.ui import _y, _r, _gr
         display = {}
         for name, val in results.items():
             if val == "FAILED" or val.startswith("error"):

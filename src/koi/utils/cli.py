@@ -22,30 +22,38 @@ readline.parse_and_bind("tab: complete")
 readline.parse_and_bind(r'"\C-t": "\C-e\C-u_koi_screenable_\n"')
 
 
+def _match(text: str, candidates: list[str]) -> list[str]:
+    """Prefix matches first, then substring matches (case-insensitive)."""
+    if not text:
+        return list(candidates)
+    t = text.lower()
+    prefix = [c for c in candidates if c.lower().startswith(t)]
+    substr = [c for c in candidates if t in c.lower() and not c.lower().startswith(t)]
+    return prefix + substr
+
+
 def completer(text: str, state: int):
     line = readline.get_line_buffer()
     parts = line.strip().split()
 
     if len(parts) == 0 or (len(parts) == 1 and not line.endswith(" ")):
-        options = [cmd for cmd in COMMANDS if cmd.startswith(text)]
+        options = _match(text, COMMANDS)
 
     elif parts[0] in ("payload", "p", "obfuscator", "obs") and (
         len(parts) == 1 or (len(parts) == 2 and not line.endswith(" "))
     ):
-        interfaces = list(get_interfaces().keys())
-        options = [iface for iface in interfaces if iface.startswith(text)]
+        options = _match(text, list(get_interfaces().keys()))
 
     elif parts[0] == "run" and (
         len(parts) == 1 or (len(parts) == 2 and not line.endswith(" "))
     ):
-        modules = load_modules()
-        options = [name for name in modules if name.startswith(text)]
+        options = _match(text, list(load_modules().keys()))
 
-    elif parts[0] == "setshell" and len(parts) >= 2 and line.endswith(" "):
-        if len(parts) == 2 or (len(parts) == 3 and not line.endswith(" ")):
-            options = [o for o in _OS_TYPES if o.startswith(text)]
-        else:
-            options = []
+    elif parts[0] == "setshell" and (
+        (len(parts) == 2 and line.endswith(" ")) or
+        (len(parts) == 3 and not line.endswith(" "))
+    ):
+        options = _match(text, _OS_TYPES)
 
     else:
         options = []

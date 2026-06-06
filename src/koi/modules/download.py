@@ -3,7 +3,6 @@ import ntpath
 import os
 import posixpath
 import shlex
-import uuid
 from koi.modules.blueprint import KoiModule, TCPReceiveServer
 
 
@@ -42,12 +41,7 @@ class DownloadModule(KoiModule):
 
         with self.spinner("Checking if file exists..."):
             if os_type == "linux":
-                token_ok  = uuid.uuid4().hex
-                token_err = uuid.uuid4().hex
-                result = self.exec(
-                    f"test -f {quoted} && echo {token_ok} || echo {token_err}"
-                )
-                exists = result.stdout.count(token_err) < 2
+                exists = self.exec(f"test -f {quoted}").success
             else:
                 raw = self._win_query(f"(Test-Path '{remote_path}').ToString()")
                 exists = raw.lower() == "true"

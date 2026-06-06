@@ -48,11 +48,6 @@ def main():
 
     listener = Listener(host=args.host, port=args.port)
 
-    signal.signal(
-        signal.SIGINT,
-        lambda *_: (print(), notify('warning', f"Use {_b('exit')} to quit cleanly."))
-    )
-
     try:
         listener.start()
     except PermissionError:
@@ -61,6 +56,8 @@ def main():
     except OSError as e:
         notify('error', f"Cannot start listener: {e}")
         sys.exit(1)
+    except KeyboardInterrupt:
+        sys.exit(0)
 
 
 def koireview():
@@ -73,12 +70,6 @@ def koireview():
                         help="Log file to review (name or path). Omit to list available logs.")
     parser.add_argument("-c", "--clear", action="store_true", help="Clear the specified log or all logs if none specified")
     args = parser.parse_args()
-
-    if args.log is None:
-        from koi.utils.logger import print_log_list
-        print_log_list()
-    else:
-        _review(args.log)
 
     if args.clear:
         if args.log is None:
@@ -96,6 +87,13 @@ def koireview():
                 print(f"Log not found: {args.log}", file=sys.stderr)
                 sys.exit(1)
             _clear_log(log_path)
+        return
+
+    if args.log is None:
+        from koi.utils.logger import print_log_list
+        print_log_list()
+    else:
+        _review(args.log)
 
 def obfuscator():
     parser = argparse.ArgumentParser(

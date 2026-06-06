@@ -232,16 +232,27 @@ class Listener:
         return re.sub(r'\033\[[^m]*m', lambda m: f'\001{m.group()}\002', raw)
 
     def _main_loop(self):
+        _ctrlc = 0
         while self._running:
             try:
                 r, _, _ = select.select([self._notify_r], [], [], 0)
                 if r:
                     os.read(self._notify_r, 4096)
                 raw = input(self._prompt()).strip()
+                _ctrlc = 0
             except EOFError:
                 break
             except KeyboardInterrupt:
+                import readline as _rl
+                had_text = bool(_rl.get_line_buffer().strip())
                 print()
+                if had_text:
+                    _ctrlc = 0
+                else:
+                    _ctrlc += 1
+                    if _ctrlc >= 3:
+                        notify('info', f"Use {_b('exit')} to quit cleanly.")
+                        _ctrlc = 0
                 continue
 
             if not raw:

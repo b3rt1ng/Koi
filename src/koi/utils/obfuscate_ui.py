@@ -15,7 +15,7 @@ from koi.utils.ps_obfuscate import (
     _ps_syntax_obfuscate,
     _ps_format_obfuscate,
     _ps_xor_obfuscate,
-    ps_base64_encode,
+    _ps_base64_encode,
 )
 from koi.utils.ui import (
     _b, _p, _d, _gr, _c,
@@ -29,7 +29,7 @@ WIN_METHODS: list[tuple[str, str, Callable[[str], str]]] = [
     ("syntax", "cmdlet name split concatenation",            _ps_syntax_obfuscate),
     ("format", "-f string format interpolation",             _ps_format_obfuscate),
     ("xor",    "XOR encoding with random key",               _ps_xor_obfuscate),
-    ("base64", "UTF-16LE base64 → powershell -enc  [FINAL]", ps_base64_encode),
+    ("base64", "UTF-16LE base64 -> powershell -enc  [FINAL]", _ps_base64_encode),
 ]
 
 _HIDE    = "\033[?25l"
@@ -97,7 +97,7 @@ def _render_obfuscator(
         sys.stdout.write(f"{indent}Chain: {_d('none')}\n\n")
 
     locked = "base64" in chain
-    sys.stdout.write(indent + (_gr("Methods:") if not locked else _p("Payload locked — base64 applied. Press r to reset or q to quit.")) + "\n")
+    sys.stdout.write(indent + (_gr("Methods:") if not locked else _p("Payload locked - base64 applied. Press r to reset or q to quit.")) + "\n")
     name_w = max(len(n) for n, _, _ in methods) + 2
     for i, (name, desc, _) in enumerate(methods):
         if locked:

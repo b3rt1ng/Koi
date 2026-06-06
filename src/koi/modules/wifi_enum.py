@@ -20,10 +20,19 @@ class WifiEnumModule(KoiModule):
         if nmcli_res and "SSID" in nmcli_res:
             lines = nmcli_res.splitlines()
             scanned_networks = {}
-            for idx, line in enumerate(lines[1:]):
+            for line in lines[1:]:
                 line_clean = line.strip()
-                if line_clean:
-                    scanned_networks[f"Network_{idx}"] = line_clean
+                if not line_clean:
+                    continue
+                parts = re.split(r'\s{2,}', line_clean)
+                ssid = parts[1].strip() if len(parts) > 1 else ""
+                if not ssid or ssid == "--":
+                    ssid = "hidden"
+                key, n = ssid, 1
+                while key in scanned_networks:
+                    n += 1
+                    key = f"{ssid} ({n})"
+                scanned_networks[key] = line_clean
             if scanned_networks:
                 self.box("Detected networks (via nmcli)", scanned_networks)
         else:
