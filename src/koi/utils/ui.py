@@ -29,14 +29,12 @@ def muted(t):  return colored_text(t, SILVER)
 def cyan(t):   return colored_text(t, BLUE)
 
 MOTD = ["The serene shell handler", 
-        "This has to be legal, right?",
         "La root est longue mais la voie est libre ;)",
-        "Don't tell my mom I'm doing this.",
         "流れに逆らう鯉のように",
         "¯＼(º_o)/¯",
         "Do not download and run random modules...",
         "AD is not that scary, I promise!",
-        "Defender have sunglasses because he's cool...",
+        "(⌐▨_▨)",
         "don't forget to star the repo <3",
         "Use koireview to see your shells history",
         "You can use \"koifuscator\" to directly use the obfuscator"
@@ -134,11 +132,24 @@ def print_status_line(text):
     print(f"\r{ERASE_LINE}{output}", end="", flush=True)
 
 
+def _vlen(s) -> int:
+    return len(_ANSI.sub("", str(s)))
+
+
+def _make_color_fn(total_rows, total_cols, tl, br):
+    denom = max(total_rows + total_cols - 2, 1)
+    def _color(row, col):
+        ratio = (row + col) / denom
+        r = int(tl[0] + ratio * (br[0] - tl[0]))
+        g = int(tl[1] + ratio * (br[1] - tl[1]))
+        b = int(tl[2] + ratio * (br[2] - tl[2]))
+        return f"\033[38;2;{r};{g};{b}m"
+    return _color
+
+
 def print_report_box(title, data_dict, top_left_color=PUMPKIN, bottom_right_color=CORAL):
     if not data_dict:
         return
-
-    def _len(s): return len(_ANSI.sub("", str(s)))
 
     categorized = any(isinstance(v, dict) for v in data_dict.values())
 
@@ -148,9 +159,9 @@ def print_report_box(title, data_dict, top_left_color=PUMPKIN, bottom_right_colo
         all_items = list(data_dict.items())
 
     terminal_width = shutil.get_terminal_size().columns
-    max_key_len    = max(_len(k) for k, _ in all_items) if all_items else 0
+    max_key_len    = max(_vlen(k) for k, _ in all_items) if all_items else 0
 
-    max_inner_width = max((7 + max_key_len + _len(str(v))) for _, v in all_items) if all_items else 0
+    max_inner_width = max((7 + max_key_len + _vlen(str(v))) for _, v in all_items) if all_items else 0
 
     header_text = f" {title} "
     inner_width = max(len(header_text) + 4, max_inner_width)
@@ -164,12 +175,7 @@ def print_report_box(title, data_dict, top_left_color=PUMPKIN, bottom_right_colo
     else:
         total_rows = len(all_items) + 2
 
-    def get_diag_color(row, col):
-        ratio = (row + col) / max((total_rows + total_cols - 2), 1)
-        r = int(top_left_color[0] + ratio * (bottom_right_color[0] - top_left_color[0]))
-        g = int(top_left_color[1] + ratio * (bottom_right_color[1] - top_left_color[1]))
-        b = int(top_left_color[2] + ratio * (bottom_right_color[2] - top_left_color[2]))
-        return f"\033[38;2;{r};{g};{b}m"
+    get_diag_color = _make_color_fn(total_rows, total_cols, top_left_color, bottom_right_color)
 
     white_start = f"\033[38;2;{WHITE[0]};{WHITE[1]};{WHITE[2]}m"
 
@@ -192,9 +198,9 @@ def print_report_box(title, data_dict, top_left_color=PUMPKIN, bottom_right_colo
         r_idx += 1
         left_char  = get_diag_color(r_idx, 0) + "│" + RST
         right_char = get_diag_color(r_idx, total_cols - 1) + "│" + RST
-        pad_len      = max_key_len - _len(key)
+        pad_len      = max_key_len - _vlen(key)
         line_content = f"  {key}{' ' * pad_len} : {value}"
-        right_pad    = " " * max(0, inner_width - _len(line_content))
+        right_pad    = " " * max(0, inner_width - _vlen(line_content))
         print(f"{left_char}{white_start}{line_content}{right_pad}{RST}{right_char}")
         
     def print_separator(label: str):
@@ -235,15 +241,13 @@ def print_table(
     if not headers or not rows:
         return
 
-    def _len(s): return len(_ANSI.sub("", str(s)))
-
     terminal_width = shutil.get_terminal_size().columns
     n_cols = len(headers)
 
-    col_widths = [_len(str(h)) for h in headers]
+    col_widths = [_vlen(str(h)) for h in headers]
     for row in rows:
         for i in range(min(n_cols, len(row))):
-            col_widths[i] = max(col_widths[i], _len(str(row[i])))
+            col_widths[i] = max(col_widths[i], _vlen(str(row[i])))
 
     inner_width = sum(w + 2 for w in col_widths) + (n_cols - 1)
     max_inner   = terminal_width - 2
@@ -255,12 +259,7 @@ def print_table(
     total_cols = inner_width + 2
     total_rows = len(rows) + 4
 
-    def get_color(row, col):
-        ratio = (row + col) / max(total_rows + total_cols - 2, 1)
-        r = int(top_left_color[0] + ratio * (bottom_right_color[0] - top_left_color[0]))
-        g = int(top_left_color[1] + ratio * (bottom_right_color[1] - top_left_color[1]))
-        b = int(top_left_color[2] + ratio * (bottom_right_color[2] - top_left_color[2]))
-        return f"\033[38;2;{r};{g};{b}m"
+    get_color = _make_color_fn(total_rows, total_cols, top_left_color, bottom_right_color)
 
     r_idx = 0
 
@@ -286,7 +285,7 @@ def print_table(
         col_pos = 1
         for i in range(n_cols):
             cell    = str(cells[i]) if i < len(cells) else ""
-            visible = _len(cell)
+            visible = _vlen(cell)
             if visible > col_widths[i]:
                 cell    = cell[:col_widths[i] - 1] + "…"
                 visible = col_widths[i]

@@ -59,15 +59,11 @@ def _interact_raw(sess: Session, logger=None) -> str:
                 if CTRL_Z in key:
                     before = key[: key.index(CTRL_Z)]
                     if before:
-                        if logger:
-                            logger.log_input(before)
                         sess.send(before)
                     result[0] = "backgrounded"
                     stop_event.set()
                     break
 
-                if logger:
-                    logger.log_input(key)
                 if not sess.send(key):
                     result[0] = "disconnected"
                     stop_event.set()
@@ -158,8 +154,6 @@ def _interact_windows(sess: Session, logger=None) -> str:
                 break
 
             line = (cmd + "\r\n").encode(enc, errors="replace")
-            if logger:
-                logger.log_input(line)
             if not sess.send(line):
                 result[0] = "disconnected"
                 break

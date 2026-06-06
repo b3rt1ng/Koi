@@ -47,9 +47,9 @@ class Session:
         return f"{h:02d}:{m:02d}:{s:02d}"
 
     def os_label(self) -> str:
-        colors = {"linux": _y, "windows_cmd": _bl, "windows_ps": _bl}
+        colors = {"linux": alert, "windows_cmd": cyan, "windows_ps": cyan}
         key = self.os_type or ""
-        fn = colors.get(key, _gr)
+        fn = colors.get(key, muted)
         return fn(OS_LABEL_NAMES.get(key, "?"))
 
     def status_dot(self) -> str:

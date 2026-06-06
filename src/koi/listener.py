@@ -32,6 +32,7 @@ _IPV4_TEXT  = re.compile(r'(?<!\d)(?:25[0-5]|2[0-4]\d|[01]?\d\d?)(?:\.(?:25[0-5]
 _IPV4_BYTES = re.compile(rb'(?<!\d)(?:25[0-5]|2[0-4]\d|[01]?\d\d?)(?:\.(?:25[0-5]|2[0-4]\d|[01]?\d\d?)){3}(?!\d)')
 _MAC_TEXT   = re.compile(r'(?<![0-9a-fA-F])(?:[0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]{2}(?![0-9a-fA-F])')
 _MAC_BYTES  = re.compile(rb'(?<![0-9a-fA-F])(?:[0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]{2}(?![0-9a-fA-F])')
+_PROMPT_ARROW = gradient_text(" ❯ ", PUMPKIN, CORAL)
 
 
 class _MaskBinary:
@@ -205,10 +206,13 @@ class Listener:
             except OSError:
                 pass
         with Spinner("Closing sessions..."):
-            for s in list(self._sessions.values()):
+            sessions = list(self._sessions.values())
+            for s in sessions:
                 if s.upgraded:
                     s.send(b"exit\n")
-                    time.sleep(0.5)
+            if any(s.upgraded for s in sessions):
+                time.sleep(0.5)
+            for s in sessions:
                 s.close()
         print()
 
@@ -227,7 +231,7 @@ class Listener:
             + muted("(")
             + count
             + muted(f" {noun})")
-            + gradient_text(" ❯ ", PUMPKIN, CORAL)
+            + _PROMPT_ARROW
         )
         return re.sub(r'\033\[[^m]*m', lambda m: f'\001{m.group()}\002', raw)
 
