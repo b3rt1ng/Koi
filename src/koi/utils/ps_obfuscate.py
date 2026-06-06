@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import random
 import re
 import string
@@ -127,6 +128,11 @@ _CS_SIGNAL_LITERALS: list[tuple[str, str]] = [
     ('"CreatePseudoConsole"',  "CreatePseudoConsole"),
     ('"File"',                 "File"),
 ]
+
+def ps_base64_encode(payload: str) -> str:
+    b64 = base64.b64encode(payload.encode("utf-16-le")).decode("ascii")
+    return f"powershell -enc {b64}"
+
 
 def obfuscate_conptyshell(ps1_data: bytes) -> tuple[bytes, str]:
     """Obfuscate a ConPtyShell PS1 script in-memory before serving it.

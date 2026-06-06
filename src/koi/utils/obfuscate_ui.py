@@ -15,6 +15,7 @@ from koi.utils.ps_obfuscate import (
     _ps_syntax_obfuscate,
     _ps_format_obfuscate,
     _ps_xor_obfuscate,
+    ps_base64_encode,
 )
 from koi.utils.ui import (
     _b, _p, _d, _gr, _c,
@@ -24,10 +25,11 @@ from koi.utils.ui import (
 )
 
 WIN_METHODS: list[tuple[str, str, Callable[[str], str]]] = [
-    ("hex",    "hex byte array encoding",           _ps_hex_obfuscate),
-    ("syntax", "cmdlet name split concatenation",   _ps_syntax_obfuscate),
-    ("format", "-f string format interpolation",    _ps_format_obfuscate),
-    ("xor",    "XOR encoding with random key",      _ps_xor_obfuscate),
+    ("hex",    "hex byte array encoding",                    _ps_hex_obfuscate),
+    ("syntax", "cmdlet name split concatenation",            _ps_syntax_obfuscate),
+    ("format", "-f string format interpolation",             _ps_format_obfuscate),
+    ("xor",    "XOR encoding with random key",               _ps_xor_obfuscate),
+    ("base64", "UTF-16LE base64 → powershell -enc  [FINAL]", ps_base64_encode),
 ]
 
 _HIDE    = "\033[?25l"
@@ -94,10 +96,13 @@ def _render_obfuscator(
     else:
         sys.stdout.write(f"{indent}Chain: {_d('none')}\n\n")
 
-    sys.stdout.write(indent + _gr("Methods:") + "\n")
+    locked = "base64" in chain
+    sys.stdout.write(indent + (_gr("Methods:") if not locked else _p("Payload locked — base64 applied. Press r to reset or q to quit.")) + "\n")
     name_w = max(len(n) for n, _, _ in methods) + 2
     for i, (name, desc, _) in enumerate(methods):
-        if i == cursor:
+        if locked:
+            sys.stdout.write(f"    {_d(f'{name:<{name_w}}')} {_d(desc)}\n")
+        elif i == cursor:
             sys.stdout.write(f"  {_p('►')} {_b(_p(f'{name:<{name_w}}'))} {_d(desc)}\n")
         else:
             sys.stdout.write(f"    {_c(f'{name:<{name_w}}')} {_d(desc)}\n")
@@ -131,9 +136,12 @@ def _run_obfuscator_loop(
         elif ch == b'\x1b[B':
             cursor = (cursor + 1) % len(methods)
         elif ch in (b'\r', b'\n'):
-            _, _, fn = methods[cursor]
-            current = fn(current)
-            chain.append(methods[cursor][0])
+            if "base64" in chain:
+                pass
+            else:
+                _, _, fn = methods[cursor]
+                current = fn(current)
+                chain.append(methods[cursor][0])
         elif ch in (b'r', b'R'):
             current = base
             chain = []
