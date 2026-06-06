@@ -18,7 +18,7 @@ from koi.utils.ps_obfuscate import (
     _ps_base64_encode,
 )
 from koi.utils.ui import (
-    _b, _p, _d, _gr, _c,
+    bold, accent, dim, muted, plain,
     gradient_text,
     PUMPKIN, CORAL,
     notify,
@@ -60,10 +60,10 @@ def _render_menu(title: str, options: list[str], cursor: int) -> None:
     sys.stdout.write("  " + gradient_text(title, PUMPKIN, CORAL) + "\n\n")
     for i, opt in enumerate(options):
         if i == cursor:
-            sys.stdout.write(f"  {_p('►')} {_b(_p(opt))}\n")
+            sys.stdout.write(f"  {accent('►')} {bold(accent(opt))}\n")
         else:
-            sys.stdout.write(f"    {_d(opt)}\n")
-    sys.stdout.write(f"\n  {_d('↑/↓')} navigate  {_d('Enter')} select  {_d('q')} cancel\n")
+            sys.stdout.write(f"    {dim(opt)}\n")
+    sys.stdout.write(f"\n  {dim('↑/↓')} navigate  {dim('Enter')} select  {dim('q')} cancel\n")
     sys.stdout.flush()
 
 
@@ -83,35 +83,35 @@ def _render_obfuscator(
     sys.stdout.write(indent + gradient_text(title, PUMPKIN, CORAL) + "\n\n")
 
     chunks = [payload[i:i + chunk_w] for i in range(0, len(payload), chunk_w)]
-    sys.stdout.write(_gr("─" * cols + "\n"))
+    sys.stdout.write(muted("─" * cols + "\n"))
     for line in chunks[:15]:
-        sys.stdout.write(f"{_d(line)}\n")
+        sys.stdout.write(f"{dim(line)}\n")
     if len(chunks) > 15:
         extra = len(payload) - 15 * chunk_w
-        sys.stdout.write(f"{_gr(f'... +{extra} chars')}\n")
-    sys.stdout.write(_gr("─" * cols + "\n\n"))
+        sys.stdout.write(f"{muted(f'... +{extra} chars')}\n")
+    sys.stdout.write(muted("─" * cols + "\n\n"))
 
     if chain:
-        sys.stdout.write(f"{indent}Chain: {' & '.join(_p(m) for m in chain)}\n\n")
+        sys.stdout.write(f"{indent}Chain: {' & '.join(accent(m) for m in chain)}\n\n")
     else:
-        sys.stdout.write(f"{indent}Chain: {_d('none')}\n\n")
+        sys.stdout.write(f"{indent}Chain: {dim('none')}\n\n")
 
     locked = "base64" in chain
-    sys.stdout.write(indent + (_gr("Methods:") if not locked else _p("Payload locked - base64 applied. Press r to reset or q to quit.")) + "\n")
+    sys.stdout.write(indent + (muted("Methods:") if not locked else accent("Payload locked - base64 applied. Press r to reset or q to quit.")) + "\n")
     name_w = max(len(n) for n, _, _ in methods) + 2
     for i, (name, desc, _) in enumerate(methods):
         if locked:
-            sys.stdout.write(f"    {_d(f'{name:<{name_w}}')} {_d(desc)}\n")
+            sys.stdout.write(f"    {dim(f'{name:<{name_w}}')} {dim(desc)}\n")
         elif i == cursor:
-            sys.stdout.write(f"  {_p('►')} {_b(_p(f'{name:<{name_w}}'))} {_d(desc)}\n")
+            sys.stdout.write(f"  {accent('►')} {bold(accent(f'{name:<{name_w}}'))} {dim(desc)}\n")
         else:
-            sys.stdout.write(f"    {_c(f'{name:<{name_w}}')} {_d(desc)}\n")
+            sys.stdout.write(f"    {plain(f'{name:<{name_w}}')} {dim(desc)}\n")
 
     sys.stdout.write(
-        f"\n{indent}{_d('↑/↓')} navigate  "
-        f"{_d('Enter')} apply  "
-        f"{_d('r')} reset  "
-        f"{_d('q')} quit & print\n"
+        f"\n{indent}{dim('↑/↓')} navigate  "
+        f"{dim('Enter')} apply  "
+        f"{dim('r')} reset  "
+        f"{dim('q')} quit & print\n"
     )
     sys.stdout.flush()
 
@@ -230,6 +230,6 @@ def run_obfuscate_ui(iface: str | None, port: int) -> None:
         return
 
     label = final_label + " with " + " -> ".join(final_chain) if final_chain else final_label
-    print(f"Final obfuscated payload ({_p(label)}):\n")
+    print(f"Final obfuscated payload ({accent(label)}):\n")
     print(final_payload)
     print("\n\n")

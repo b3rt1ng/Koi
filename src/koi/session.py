@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Literal, Optional
 import socket
 
-from koi.utils.ui import _gr, _p, _r, _y, _bl
+from koi.utils.ui import muted, accent, alert, cyan
 
 
 OsType = Literal["linux", "windows_cmd", "windows_ps"] | None
@@ -54,8 +54,8 @@ class Session:
 
     def status_dot(self) -> str:
         if not self.alive:
-            return _gr("○")
-        return _p("◆") if self.upgraded else _r("●")
+            return muted("○")
+        return accent("◆") if self.upgraded else alert("●")
 
     def send(self, data: bytes) -> bool:
         try:

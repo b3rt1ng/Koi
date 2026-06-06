@@ -6,7 +6,7 @@ from koi.modules.loader import load_modules, get_module
 from koi.utils.payloads import get_interfaces
 from koi.utils.ui import (
     print_report_box, notify,
-    _b, _p, _y,
+    bold, accent, alert,
 )
 
 COMMANDS = [
@@ -67,26 +67,26 @@ readline.set_completer(completer)
 def print_help() -> None:
     data = {
         "Commands": {
-            f"{_p('ls')}": "List all active sessions",
-            f"{_p('go')} {_b('<id>')}": "Enter a session interactively",
-            f"{_p('upgrade')} {_b('<id>')}": "Upgrade session to a full PTY",
-            f"{_p('kill')} {_b('<id>')}": "Terminate and remove a session",
-            f"{_p('payload')} {_b('[iface]')}": "Show reverse shell payloads",
-            f"{_p('obfuscator')} {_b('[iface]')}": "Interactive payload obfuscator",
-            f"{_p('modules')}": "List available modules",
-            f"{_p('reload')}": "Reload modules from disk (useful during development)",
-            f"{_p('run')} {_b('<module>')} {_b('<id>')} {_b('[args...]')}": "Run a module against a session",
-            f"{_p('setshell')} {_b('<id>')} {_b('<os_type>')}": "Manually set the OS type of a session",
-            f"{_p('stop')}": "Pause the listener, refuse new connections",
-            f"{_p('logs')}": "List recorded session logs",
-            f"{_p('start')}": "Resume the listener, accept new connections again",
-            f"{_p('help')}": "Show this message",
-            f"{_p('exit')}": "Shut down the listener",
+            f"{accent('ls')}": "List all active sessions",
+            f"{accent('go')} {bold('<id>')}": "Enter a session interactively",
+            f"{accent('upgrade')} {bold('<id>')}": "Upgrade session to a full PTY",
+            f"{accent('kill')} {bold('<id>')}": "Terminate and remove a session",
+            f"{accent('payload')} {bold('[iface]')}": "Show reverse shell payloads",
+            f"{accent('obfuscator')} {bold('[iface]')}": "Interactive payload obfuscator",
+            f"{accent('modules')}": "List available modules",
+            f"{accent('reload')}": "Reload modules from disk (useful during development)",
+            f"{accent('run')} {bold('<module>')} {bold('<id>')} {bold('[args...]')}": "Run a module against a session",
+            f"{accent('setshell')} {bold('<id>')} {bold('<os_type>')}": "Manually set the OS type of a session",
+            f"{accent('stop')}": "Pause the listener, refuse new connections",
+            f"{accent('logs')}": "List recorded session logs",
+            f"{accent('start')}": "Resume the listener, accept new connections again",
+            f"{accent('help')}": "Show this message",
+            f"{accent('exit')}": "Shut down the listener",
         },
         "Session Signals": {
-            f"{_y('Ctrl+Z')}": "Background, return to listener shell",
-            f"{_y('Ctrl+C')}": "Send SIGINT to remote (keeps session alive)",
-            f"{_y('Ctrl+T')}": "Toggle screenable mode, masks IPs for screenshots",
+            f"{alert('Ctrl+Z')}": "Background, return to listener shell",
+            f"{alert('Ctrl+C')}": "Send SIGINT to remote (keeps session alive)",
+            f"{alert('Ctrl+T')}": "Toggle screenable mode, masks IPs for screenshots",
         },
     }
     print_report_box("help", data)

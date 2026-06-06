@@ -21,7 +21,7 @@ from koi.utils.ui import (
     breaker_with_text, notify, Spinner, print_payloads,
     platform_badge,
     PUMPKIN, WHITE, SILVER, CORAL,
-    _b, _c, _gr, _p, _r,
+    bold, plain, muted, accent, alert,
     gradient_text, yesno,
 )
 from koi.utils.obfuscate_ui import run_obfuscate_ui
@@ -93,7 +93,7 @@ class Listener:
 
     def _toggle_screenable(self) -> None:
         self.screenable_mode = not self.screenable_mode
-        state = _c("ON") if self.screenable_mode else _gr("OFF")
+        state = plain("ON") if self.screenable_mode else muted("OFF")
         sys.stdout.write("\033[F\033[2K")
         notify('info', f"Screenable mode {state}")
         sys.stdout.flush()
@@ -160,9 +160,9 @@ class Listener:
         if not sess.alive:
             return
 
-        os_tag = f" {_gr('[')} {sess.os_label()} {_gr(']')}" if sess.os_type else ""
+        os_tag = f" {muted('[')} {sess.os_label()} {muted(']')}" if sess.os_type else ""
         masked_ip = self._mask_ip(sess.addr[0])
-        msg = f"{_b(_c(f'#{sess.id}'))}  {_c(masked_ip)}{_gr(f':{sess.addr[1]}')}{os_tag}"
+        msg = f"{bold(plain(f'#{sess.id}'))}  {plain(masked_ip)}{muted(f':{sess.addr[1]}')}{os_tag}"
         os.write(self._notify_w, b"1\n")
 
         if self._in_session:
@@ -191,7 +191,7 @@ class Listener:
 
         display_art()
         print()
-        notify('info', f"Listening on {_b(self.host)}:{_b(self.port)}")
+        notify('info', f"Listening on {bold(self.host)}:{bold(self.port)}")
         self._warn_log_accumulation()
         print()
 
@@ -224,9 +224,9 @@ class Listener:
             + colored_text("koi", WHITE)
             + anon_tag
             + pause_tag
-            + _gr("(")
+            + muted("(")
             + count
-            + _gr(f" {noun})")
+            + muted(f" {noun})")
             + gradient_text(" ❯ ", PUMPKIN, CORAL)
         )
         return re.sub(r'\033\[[^m]*m', lambda m: f'\001{m.group()}\002', raw)
@@ -251,7 +251,7 @@ class Listener:
                 else:
                     _ctrlc += 1
                     if _ctrlc >= 3:
-                        notify('info', f"Use {_b('exit')} to quit cleanly.")
+                        notify('info', f"Use {bold('exit')} to quit cleanly.")
                         _ctrlc = 0
                 continue
 
@@ -288,7 +288,7 @@ class Listener:
 
             elif cmd in ("go", "g", "interact"):
                 if len(parts) < 2:
-                    notify('error', f"Usage: go {_p('<id>')}")
+                    notify('error', f"Usage: go {accent('<id>')}")
                 else:
                     try:
                         self._cmd_go(int(parts[1]))
@@ -297,7 +297,7 @@ class Listener:
 
             elif cmd in ("upgrade", "u"):
                 if len(parts) < 2:
-                    notify('error', f"Usage: upgrade {_p('<id>')}")
+                    notify('error', f"Usage: upgrade {accent('<id>')}")
                 else:
                     try:
                         self._cmd_upgrade(int(parts[1]))
@@ -306,7 +306,7 @@ class Listener:
 
             elif cmd == "kill":
                 if len(parts) < 2:
-                    notify('error', f"Usage: kill {_p('<id>')}")
+                    notify('error', f"Usage: kill {accent('<id>')}")
                 else:
                     try:
                         self._cmd_kill(int(parts[1]))
@@ -333,7 +333,7 @@ class Listener:
 
             elif cmd in ("setshell", "sh"):
                 if len(parts) < 3:
-                    notify('error', f"Usage: setshell {_p('<id>')} {_p('<linux|windows_ps|windows_cmd>')}")
+                    notify('error', f"Usage: setshell {accent('<id>')} {accent('<linux|windows_ps|windows_cmd>')}")
                 else:
                     try:
                         self._cmd_setshell(int(parts[1]), parts[2])
@@ -341,20 +341,20 @@ class Listener:
                         notify('error', "Session id must be an integer.")
 
             else:
-                notify('error', f"Unknown command: {_p(cmd)}, type {_b('help')}")
+                notify('error', f"Unknown command: {accent(cmd)}, type {bold('help')}")
 
     def _dispatch_run(self, parts: list) -> None:
         if len(parts) < 3:
             if len(parts) == 2:
                 mod_cls = get_module(parts[1])
                 if mod_cls and mod_cls.usage:
-                    notify('error', f"Usage: run {_p(mod_cls.usage)}")
+                    notify('error', f"Usage: run {accent(mod_cls.usage)}")
                 elif mod_cls:
-                    notify('error', f"Usage: run {_p(mod_cls.name)} {_p('<id>')}")
+                    notify('error', f"Usage: run {accent(mod_cls.name)} {accent('<id>')}")
                 else:
-                    notify('error', f"Unknown module {_p(parts[1])}, type {_b('modules')}")
+                    notify('error', f"Unknown module {accent(parts[1])}, type {bold('modules')}")
             else:
-                notify('error', f"Usage: run {_p('<module>')} {_p('<id>')} {_p('[args...]')}")
+                notify('error', f"Usage: run {accent('<module>')} {accent('<id>')} {accent('[args...]')}")
             return
 
         mod_name = parts[1]
@@ -370,26 +370,26 @@ class Listener:
             notify('warning', "Listener is already paused.")
             return
         self._accepting = False
-        notify('warning', f"Listener {_b('paused')}, new connections refused.")
+        notify('warning', f"Listener {bold('paused')}, new connections refused.")
 
     def _cmd_start_accepting(self) -> None:
         if self._accepting:
             notify('info', "Listener is already accepting connections.")
             return
         self._accepting = True
-        notify('success', f"Listener {_b('resumed')}, accepting new connections.")
+        notify('success', f"Listener {bold('resumed')}, accepting new connections.")
 
     def _cmd_ls(self) -> None:
         self._prune()
         if not self._sessions:
             print()
-            notify('status', _gr('No active sessions.'))
+            notify('status', muted('No active sessions.'))
             print()
             return
         data = {}
         for s in sorted(self._sessions.values(), key=lambda x: x.id):
             masked_ip = self._mask_ip(s.addr[0])
-            key = f"#{s.id}  {s.status_dot()}  {_c(masked_ip)}{_gr(f':{s.addr[1]}')} [{s.os_label()}]"
+            key = f"#{s.id}  {s.status_dot()}  {plain(masked_ip)}{muted(f':{s.addr[1]}')} [{s.os_label()}]"
             data[key] = s._uptime()
         print_report_box("Sessions", data)
 
@@ -398,8 +398,8 @@ class Listener:
         logs = list_logs()
         if len(logs) > threshold:
             notify('warning',
-                f"{_p(str(len(logs)))} logs stored, "
-                f"use {_r('koireview')} to check them out or {_r('koireview --clear')} to clear them."
+                f"{accent(str(len(logs)))} logs stored, "
+                f"use {alert('koireview')} to check them out or {alert('koireview --clear')} to clear them."
             )
 
     def _cmd_logs(self) -> None:
@@ -409,20 +409,20 @@ class Listener:
     def _cmd_reload(self) -> None:
         with Spinner("Reloading modules..."):
             modules = load_modules(reload=True)
-        notify('info', f"Loaded {_p(str(len(modules)))} modules.")
+        notify('info', f"Loaded {accent(str(len(modules)))} modules.")
 
     def _cmd_upgrade(self, sid: int) -> None:
         self._prune()
         sess = self._get(sid)
         if sess is None:
-            notify('error', f"Session {_p(f'#{sid}')} not found.")
+            notify('error', f"Session {accent(f'#{sid}')} not found.")
             return
         if not sess.alive:
-            notify('error', f"Session {_p(f'#{sid}')} is no longer alive.")
+            notify('error', f"Session {accent(f'#{sid}')} is no longer alive.")
             self._remove(sid)
             return
         if sess.upgraded:
-            notify('warning', f"Session {_p(f'#{sid}')} is already upgraded.")
+            notify('warning', f"Session {accent(f'#{sid}')} is already upgraded.")
             if not yesno("Do you want to try upgrading again?"):
                 return
 
@@ -432,7 +432,7 @@ class Listener:
                 lg = start_logger(sess)
                 self._loggers[sess.id] = lg
                 sess.log_path = str(lg.path)
-                notify('info', f"Logging to {_gr(lg.path.name)}")
+                notify('info', f"Logging to {muted(lg.path.name)}")
             upgrade_windows_conptyshell(
                 sess, self._sessions, self.port,
                 self._pending_conpty, self._conpty_staging, self._conpty_lock,
@@ -445,7 +445,7 @@ class Listener:
             lg = start_logger(sess)
             self._loggers[sess.id] = lg
             sess.log_path = str(lg.path)
-            notify('info', f"Logging to {_gr(lg.path.name)}")
+            notify('info', f"Logging to {muted(lg.path.name)}")
         logger = self._loggers[sess.id]
         sess.attach_logger(logger)
 
@@ -465,7 +465,7 @@ class Listener:
             self._drain(sess, 0.8)
 
             if not sess.alive:
-                notify('error', f"Session {_p(f'#{sid}')} died during upgrade.")
+                notify('error', f"Session {accent(f'#{sid}')} died during upgrade.")
                 return
 
             sess.send(b"export TERM=xterm-256color HISTSIZE=0 HISTFILESIZE=0\n")
@@ -477,28 +477,28 @@ class Listener:
             sess.upgraded = True
             logger.log_event("upgrade_done")
 
-        notify('success', f"Shell {_p(f'#{sid}')} upgraded successfully.")
+        notify('success', f"Shell {accent(f'#{sid}')} upgraded successfully.")
 
     def _cmd_kill(self, sid: int) -> None:
         sess = self._get(sid)
         if sess is None:
-            notify('error', f"Session {_p(f'#{sid}')} not found.")
+            notify('error', f"Session {accent(f'#{sid}')} not found.")
             return
         with Spinner(f"Terminating session #{sid}..."):
             if sess.upgraded:
                 sess.send(b"exit\n")
                 time.sleep(0.5)
             self._remove(sid)
-        notify('success', f"Session {_p(f'#{sid}')} terminated.")
+        notify('success', f"Session {accent(f'#{sid}')} terminated.")
 
     def _cmd_go(self, sid: int) -> None:
         self._prune()
         sess = self._get(sid)
         if sess is None:
-            notify('error', f"Session {_p(f'#{sid}')} not found.")
+            notify('error', f"Session {accent(f'#{sid}')} not found.")
             return
         if not sess.alive:
-            notify('error', f"Session {_p(f'#{sid}')} is no longer alive.")
+            notify('error', f"Session {accent(f'#{sid}')} is no longer alive.")
             self._remove(sid)
             return
 
@@ -506,11 +506,11 @@ class Listener:
         is_windows_pty = sess.os_type in ("windows_cmd", "windows_ps") and sess.upgraded
 
         print()
-        notify('info', f"Entering session {_b(_r(f'#{sid}'))} {_c(self._mask_ip(ip))}{_gr(f':{port}')}")
+        notify('info', f"Entering session {bold(alert(f'#{sid}'))} {plain(self._mask_ip(ip))}{muted(f':{port}')}")
         if sess.os_type in ("windows_cmd", "windows_ps") and not sess.upgraded:
-            notify('status', _gr('Ctrl+Z to background  ·  line-by-line mode'))
+            notify('status', muted('Ctrl+Z to background  ·  line-by-line mode'))
         else:
-            notify('status', _gr('Ctrl+Z to background  ·  Ctrl+C sends SIGINT to remote'))
+            notify('status', muted('Ctrl+Z to background  ·  Ctrl+C sends SIGINT to remote'))
         print()
 
         if sess.upgraded:
@@ -536,7 +536,7 @@ class Listener:
             lg = start_logger(sess)
             self._loggers[sess.id] = lg
             sess.log_path = str(lg.path)
-            notify('info', f"Logging to {_gr(lg.path.name)}")
+            notify('info', f"Logging to {muted(lg.path.name)}")
 
         self._in_session = True
         logger = self._loggers[sess.id]
@@ -552,11 +552,11 @@ class Listener:
 
         if reason == "backgrounded":
             print()
-            notify('warning', f"Session {_b(_c(f'#{sid}'))} backgrounded. Back at listener shell.")
+            notify('warning', f"Session {bold(plain(f'#{sid}'))} backgrounded. Back at listener shell.")
             print()
         elif reason == "disconnected":
             print()
-            notify('error', f"Session {_b(_c(f'#{sid}'))} disconnected.")
+            notify('error', f"Session {bold(plain(f'#{sid}'))} disconnected.")
             print()
             self._remove(sid)
 
@@ -565,7 +565,7 @@ class Listener:
     def _cmd_modules(self) -> None:
         modules = load_modules()
         if not modules:
-            notify('status', _gr("No modules found in src/koi/modules/."))
+            notify('status', muted("No modules found in src/koi/modules/."))
             return
 
         has_categories = any(cls.category for cls in modules.values())
@@ -574,37 +574,37 @@ class Listener:
             grouped = {}
             for name, cls in modules.items():
                 cat = cls.category or "Other"
-                grouped.setdefault(cat, {})[_p(name)] = f"{cls.description}  {platform_badge(cls.platform)}"
+                grouped.setdefault(cat, {})[accent(name)] = f"{cls.description}  {platform_badge(cls.platform)}"
             print_report_box("Modules", grouped)
         else:
-            data = {_p(name): f"{cls.description}  {platform_badge(cls.platform)}" for name, cls in modules.items()}
+            data = {accent(name): f"{cls.description}  {platform_badge(cls.platform)}" for name, cls in modules.items()}
             print_report_box("Modules", data)
 
     def _cmd_run(self, mod_name: str, sid: int, mod_args: list) -> None:
         self._prune()
         sess = self._get(sid)
         if sess is None:
-            notify('error', f"Session {_p(f'#{sid}')} not found.")
+            notify('error', f"Session {accent(f'#{sid}')} not found.")
             return
         if not sess.alive:
-            notify('error', f"Session {_p(f'#{sid}')} is no longer alive.")
+            notify('error', f"Session {accent(f'#{sid}')} is no longer alive.")
             self._remove(sid)
             return
 
         mod_cls = get_module(mod_name)
         if mod_cls is None:
             available = ", ".join(load_modules().keys()) or "none"
-            notify('error', f"Module {_p(mod_name)} not found.")
-            notify('status', _gr(f"Available: {available}"))
+            notify('error', f"Module {accent(mod_name)} not found.")
+            notify('status', muted(f"Available: {available}"))
             return
 
         if not mod_cls.supports(sess.os_type):
             badge = platform_badge(mod_cls.platform)
             os_label = sess.os_label()
-            notify('error', f"Module {_p(mod_name)} {badge} is not compatible with session {_p(f'#{sid}')} ({os_label}).")
+            notify('error', f"Module {accent(mod_name)} {badge} is not compatible with session {accent(f'#{sid}')} ({os_label}).")
             return
 
-        notify('info', f"Running module {_p(mod_name)} on session {_p(f'#{sid}')}...")
+        notify('info', f"Running module {accent(mod_name)} on session {accent(f'#{sid}')}...")
         print()
         old_handler = signal.getsignal(signal.SIGINT)
         signal.signal(signal.SIGINT, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
@@ -639,13 +639,13 @@ class Listener:
         self._prune()
         sess = self._get(sid)
         if sess is None:
-            notify('error', f"Session {_p(f'#{sid}')} not found.")
+            notify('error', f"Session {accent(f'#{sid}')} not found.")
             return
 
         os_type = self._OS_ALIASES.get(os_arg.lower())
         if os_type is None:
             valid = ", ".join(sorted(set(self._OS_ALIASES.values())))
-            notify('error', f"Unknown OS type {_p(os_arg)!r}.  Valid: {_gr(valid)}")
+            notify('error', f"Unknown OS type {accent(os_arg)!r}.  Valid: {muted(valid)}")
             return
 
         old = sess.os_label()
@@ -659,7 +659,7 @@ class Listener:
             sess.eol      = "\r\n"
 
         notify('success',
-            f"Session {_p(f'#{sid}')} OS set: {old} -> {sess.os_label()}")
+            f"Session {accent(f'#{sid}')} OS set: {old} -> {sess.os_label()}")
 
     def _cmd_payload(self, iface: Optional[str] = None) -> None:
         print_payloads(iface, self.port)

@@ -20,14 +20,13 @@ BOLD = "\033[1m"
 
 __version__ = importlib.metadata.version("koi-handler")
 
-def _b(t):  return f"{BOLD}{t}{RST}"
-def _d(t):  return f"{DIM}{t}{RST}"
-def _r(t):  return colored_text(t, CORAL)
-_y = _r
-def _c(t):  return colored_text(t, WHITE)
-def _p(t):  return colored_text(t, PUMPKIN)
-def _gr(t): return colored_text(t, SILVER)
-def _bl(t): return colored_text(t, BLUE)
+def bold(t):   return f"{BOLD}{t}{RST}"
+def dim(t):    return f"{DIM}{t}{RST}"
+def alert(t):  return colored_text(t, CORAL)
+def plain(t):  return colored_text(t, WHITE)
+def accent(t): return colored_text(t, PUMPKIN)
+def muted(t):  return colored_text(t, SILVER)
+def cyan(t):   return colored_text(t, BLUE)
 
 MOTD = ["The serene shell handler", 
         "This has to be legal, right?",
@@ -339,7 +338,7 @@ def print_table(
 def notify(msg_type, text):
     prefixes = {
         'new':     (PUMPKIN,  "▶", f"{BOLD}{color_signal(WHITE)}New session"),
-        'info':    (WHITE,  "ℹ", "Info"),
+        'info':    (WHITE,  "?", "Info"),
         'error':   (CORAL,  "✖", "Error"),
         'warning': (CORAL,  "!", "Warning"),
         'status':  (SILVER, "⚡", "Status"),
@@ -463,18 +462,18 @@ def platform_badge(platform) -> str:
         "any":         "any",
     }
     _COLORS = {
-        "linux":       _y,
-        "windows_cmd": _bl,
-        "windows_ps":  _bl,
-        "any":         _gr,
+        "linux":       alert,
+        "windows_cmd": cyan,
+        "windows_ps":  cyan,
+        "any":         muted,
     }
 
     def _os_tag(p: str) -> str:
-        return _COLORS.get(p, _gr)(_NAMES.get(p, p))
+        return _COLORS.get(p, muted)(_NAMES.get(p, p))
 
-    ob, cb = _gr("["), _gr("]")
+    ob, cb = muted("["), muted("]")
     if isinstance(platform, list):
-        inner = _gr(", ").join(_os_tag(p) for p in platform)
+        inner = muted(", ").join(_os_tag(p) for p in platform)
         return f"{ob}{inner}{cb}"
     return f"{ob}{_os_tag(platform)}{cb}"
 
@@ -487,7 +486,7 @@ def print_payloads(iface: str | None, port: int) -> None:
         print()
         breaker_with_text(label)
         for name, payload in payloads.items():
-            print(f"  {_b(_p(name))}: {_gr(payload)}")
+            print(f"  {bold(accent(name))}: {muted(payload)}")
             print()
         breaker_with_text()
 
@@ -502,7 +501,7 @@ def print_payloads(iface: str | None, port: int) -> None:
     else:
         payloads = gen.for_interface(iface)
         if payloads is None:
-            notify('error', f"Interface {_p(iface)} not found.")
-            notify('status', _gr("Available: " + ", ".join(gen.get_interfaces().keys())))
+            notify('error', f"Interface {accent(iface)} not found.")
+            notify('status', muted("Available: " + ", ".join(gen.get_interfaces().keys())))
             return
         _show(iface, payloads)

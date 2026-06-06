@@ -7,7 +7,7 @@ import signal
 import sys
 
 from koi.listener import Listener
-from koi.utils.ui import notify, _b, _p, _c, display_art, print_payloads
+from koi.utils.ui import notify, display_art, print_payloads
 from koi.utils.obfuscate_ui import run_obfuscate_ui
 from koi.utils.logger import review as _review
 from koi.utils.logger import clear_log as _clear_log
