@@ -191,7 +191,6 @@ class Listener:
         threading.Thread(target=self._accept_loop, daemon=True, name="accept").start()
 
         display_art()
-        print()
         notify('info', f"Listening on {bold(self.host)}:{bold(self.port)}")
         self._warn_log_accumulation()
         print()

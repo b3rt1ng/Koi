@@ -36,7 +36,14 @@ def main():
                         help="Print payloads for all interfaces (or a specific one) and exit")
     parser.add_argument("--obfuscator", "--cook", nargs="?", const="__all__", metavar="IFACE",
                         help="Open the payload obfuscator (optionally for a specific interface) and exit")
+    parser.add_argument("--purge-cache", "-pc", action="store_true", help="removes all files in cache")
     args = parser.parse_args()
+    
+    if args.purge_cache:
+        from koi.utils.cache import purge_cache
+        purge_cache()
+        print("Cache purged.")
+        sys.exit(0)
 
     if args.payloads is not None:
         print_payloads(None if args.payloads == "__all__" else args.payloads, args.port)

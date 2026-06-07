@@ -22,10 +22,15 @@ class PeasModule(KoiModule):
 
     def _fetch_tool(self, url: str, cache_name: str) -> tuple[bytes, str]:
         """Return *cache_name* from the local cache, downloading it from *url* if absent."""
-        with urllib.request.urlopen(url, timeout=60) as resp:
-            data = resp.read()
-        if not has_cache(cache_name):
-            put_cache(cache_name, data)
+        try:
+            with urllib.request.urlopen(url, timeout=60) as resp:
+                data = resp.read()
+            if not has_cache(cache_name):
+                put_cache(cache_name, data)
+        except:
+            data = get_cache(cache_name)
+            if data is None:
+                raise RuntimeError(f"Failed to fetch {cache_name} from {url} and no cache available")
         return data, "remote"
 
     def run(self) -> None:
@@ -48,7 +53,7 @@ class PeasModule(KoiModule):
         if source == "cache":
             self.ok(f"Using cached {name} ({cache_path(name)})")
         else:
-            self.ok(f"{name} fetched from PEASS-ng releases and cached locally")
+            self.ok(f"{name} fetched from PEASS-ng releases")
 
         total = len(raw)
         bar = self.ui.ProgressBar(total=total)
