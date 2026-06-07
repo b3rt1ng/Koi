@@ -23,7 +23,7 @@ class PopulateWinModule(KoiModule):
     name        = "armory"
     description = "Upload common exploitation tools (Rubeus, RunasCs, Certify, winPEAS, mimikatz) on the target."
     usage       = "armory <id> [-o <remote_dir>]"
-    category    = "Post-Exploitation"
+    category    = "Privilege Escalation"
     platform    = "windows_ps"
     arguments   = [
         {

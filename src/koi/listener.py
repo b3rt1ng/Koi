@@ -386,9 +386,7 @@ class Listener:
     def _cmd_ls(self) -> None:
         self._prune()
         if not self._sessions:
-            print()
             notify('status', muted('No active sessions.'))
-            print()
             return
         data = {}
         for s in sorted(self._sessions.values(), key=lambda x: x.id):
@@ -557,11 +555,9 @@ class Listener:
         if reason == "backgrounded":
             print()
             notify('warning', f"Session {bold(plain(f'#{sid}'))} backgrounded. Back at listener shell.")
-            print()
         elif reason == "disconnected":
             print()
             notify('error', f"Session {bold(plain(f'#{sid}'))} disconnected.")
-            print()
             self._remove(sid)
 
         self._flush_pending_notifications()
