@@ -10,6 +10,7 @@ import uuid
 import zipfile
 
 from koi.modules.blueprint import KoiModule, TCPReceiveServer
+from koi.utils.config import TIMEOUTS
 
 
 _RELEASE_API = "https://api.github.com/repos/SpecterOps/SharpHound/releases/latest"
@@ -34,7 +35,7 @@ class SharpHoundModule(KoiModule):
             _RELEASE_API,
             headers={"User-Agent": "koi-sharphound"},
         )
-        with urllib.request.urlopen(req, timeout=20) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUTS["http_fetch"]) as resp:
             return json.load(resp)
 
     def _find_asset(self, release: dict) -> tuple[str, str] | None:
@@ -46,7 +47,7 @@ class SharpHoundModule(KoiModule):
 
     def _download_zip(self, url: str) -> bytes:
         req = urllib.request.Request(url, headers={"User-Agent": "koi-sharphound"})
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUTS["http_fetch"]) as resp:
             return resp.read()
 
     def _extract_payload(self, zip_bytes: bytes) -> dict[str, bytes]:
@@ -160,7 +161,7 @@ class SharpHoundModule(KoiModule):
         for name, blob in files.items():
             dest = f"{work}\\{name}"
             bar = self.ui.ProgressBar(total=len(blob), prefix=name)
-            ok = self._upload_bytes(blob, dest, timeout=120, on_progress=bar.update)
+            ok = self._upload_bytes(blob, dest, timeout=TIMEOUTS["upload"], on_progress=bar.update)
             bar.done()
             print()
             if not ok:

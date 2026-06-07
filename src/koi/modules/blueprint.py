@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Callable, List, Literal, Optional, Union
 if TYPE_CHECKING:
     from koi.session import Session
 
+from koi.utils.config import TIMEOUTS
 from koi.utils.models import CommandResult, StreamLine
 from koi.utils import ui
 from koi.utils.tcp import get_local_ip, spawn_recv_server, spawn_send_server
@@ -30,7 +31,7 @@ PlatformSpec = Union[
 class TCPReceiveServer:
     """One-shot TCP server that collects bytes from the first incoming connection."""
 
-    def __init__(self, timeout: float = 30.0, on_progress=None):
+    def __init__(self, timeout: float = TIMEOUTS["download"], on_progress=None):
         self._timeout     = timeout
         self._on_progress = on_progress
         self._sock        = None
@@ -202,7 +203,7 @@ class KoiModule(ABC):
         """Return the local IP that routes toward the current session."""
         return get_local_ip(self.session.addr[0])
 
-    def _win_query(self, ps_expr: str, timeout: float = 10.0) -> str:
+    def _win_query(self, ps_expr: str, timeout: float = TIMEOUTS["exec_query"]) -> str:
         """
         Evaluate a PowerShell expression on the remote Windows target and return
         its string output.
@@ -264,7 +265,7 @@ class KoiModule(ABC):
             self._logger.log_output(result.encode("utf-8", errors="replace"))
         return result
 
-    def _win_query_sidechannel(self, ps_expr: str, timeout: float = 10.0) -> str:
+    def _win_query_sidechannel(self, ps_expr: str, timeout: float = TIMEOUTS["exec_query"]) -> str:
         """
         Variant of _win_query for upgraded (ConPtyShell) sessions.
         Opens a local TCP socket and asks PowerShell to push its result there,
@@ -288,7 +289,7 @@ class KoiModule(ABC):
             self._logger.log_output(result.encode("utf-8", errors="replace"))
         return result
 
-    def _exec_clean(self, cmd: str, timeout: float = 10.0) -> str:
+    def _exec_clean(self, cmd: str, timeout: float = TIMEOUTS["exec_query"]) -> str:
         """Run a Linux command and collect its stdout via a side TCP channel."""
         local_ip = self._get_local_ip()
         port, collect = spawn_recv_server(timeout=timeout)
@@ -300,7 +301,7 @@ class KoiModule(ABC):
                 self._logger.log_output(result.encode("utf-8", errors="replace"))
         return result
 
-    def _try_exec(self, cmd: str, timeout: float = 10.0) -> str:
+    def _try_exec(self, cmd: str, timeout: float = TIMEOUTS["exec_query"]) -> str:
         """Run a Linux command via the side channel; return empty string on any error."""
         try:
             return self._exec_clean(cmd, timeout=timeout)
@@ -325,7 +326,7 @@ class KoiModule(ABC):
         self,
         raw: bytes,
         dest: str,
-        timeout: float = 30.0,
+        timeout: float = TIMEOUTS["upload"],
         on_progress: Optional[Callable[[int], None]] = None,
     ) -> bool:
         """Transfer *raw* bytes to *dest* on a Linux target via /dev/tcp."""
@@ -347,7 +348,7 @@ class KoiModule(ABC):
         self,
         raw: bytes,
         dest: str,
-        timeout: float = 30.0,
+        timeout: float = TIMEOUTS["upload"],
         on_progress: Optional[Callable[[int], None]] = None,
     ) -> bool:
         """Transfer *raw* bytes to *dest* on a Windows target via a PS TCP client."""
@@ -369,7 +370,7 @@ class KoiModule(ABC):
         self,
         raw: bytes,
         dest: str,
-        timeout: float = 30.0,
+        timeout: float = TIMEOUTS["upload"],
         on_progress: Optional[Callable[[int], None]] = None,
     ) -> bool:
         """Transfer *raw* bytes to *dest*, dispatching to the right platform."""
@@ -403,7 +404,7 @@ class KoiModule(ABC):
         self.session          -> Session dataclass (id, conn, addr, upgraded, ...)
         self.args             -> list[str] from the CLI
         """
-    def exec(self, command: str, timeout: float = 30.0, _silent: bool = False):
+    def exec(self, command: str, timeout: float = TIMEOUTS["exec_command"], _silent: bool = False):
         sentinel = uuid.uuid4().hex
         marker = f"__KOI_DONE_{sentinel}__"
         wrapped = (
@@ -460,7 +461,7 @@ class KoiModule(ABC):
                 self._logger.log_output(result.stdout.encode("utf-8", errors="replace"))
         return result
 
-    def exec_stream(self, command: str, timeout: float = 30.0):
+    def exec_stream(self, command: str, timeout: float = TIMEOUTS["exec_command"]):
         """
         Stream output of *command* line-by-line from the remote session as
         :class:`~koi.shell_handler.result.StreamLine` objects.

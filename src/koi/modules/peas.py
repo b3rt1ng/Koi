@@ -5,6 +5,7 @@ import urllib.request
 
 from koi.modules.blueprint import KoiModule
 from koi.utils.cache import cache_path, get_cache, has_cache, put_cache
+from koi.utils.config import TIMEOUTS
 
 LINPEAS_URL = "https://github.com/peass-ng/PEASS-ng/releases/latest/download/linpeas.sh"
 WINPEAS_URL = "https://github.com/peass-ng/PEASS-ng/releases/latest/download/winPEASx64.exe"
@@ -23,7 +24,7 @@ class PeasModule(KoiModule):
     def _fetch_tool(self, url: str, cache_name: str) -> tuple[bytes, str]:
         """Return *cache_name* from the local cache, downloading it from *url* if absent."""
         try:
-            with urllib.request.urlopen(url, timeout=60) as resp:
+            with urllib.request.urlopen(url, timeout=TIMEOUTS["http_fetch"]) as resp:
                 data = resp.read()
             if not has_cache(cache_name):
                 put_cache(cache_name, data)
@@ -58,7 +59,7 @@ class PeasModule(KoiModule):
         total = len(raw)
         bar = self.ui.ProgressBar(total=total)
         self.status(f"Uploading {name} -> {dest} ({total} bytes)...")
-        ok = self._upload_bytes(raw, dest, timeout=60, on_progress=bar.update)
+        ok = self._upload_bytes(raw, dest, timeout=TIMEOUTS["upload"], on_progress=bar.update)
         bar.done()
         print()
 

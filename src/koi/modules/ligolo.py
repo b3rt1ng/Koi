@@ -9,6 +9,7 @@ import urllib.request
 import zipfile
 
 from koi.modules.blueprint import KoiModule
+from koi.utils.config import TIMEOUTS
 
 _GITHUB_API = "https://api.github.com/repos/nicocha30/ligolo-ng/releases/latest"
 
@@ -58,7 +59,7 @@ class LigoloModule(KoiModule):
             _GITHUB_API,
             headers={"User-Agent": "koi/ligolo-module", "Accept": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUTS["http_fetch"]) as resp:
             data = json.loads(resp.read())
         return data["tag_name"], data["assets"]
 
@@ -82,7 +83,7 @@ class LigoloModule(KoiModule):
         name = asset["name"].lower()
 
         req = urllib.request.Request(url, headers={"User-Agent": "koi/ligolo-module"})
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUTS["http_fetch"]) as resp:
             archive_data = resp.read()
 
         if name.endswith(".zip"):

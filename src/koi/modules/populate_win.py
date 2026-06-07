@@ -7,6 +7,7 @@ import urllib.request
 import zipfile
 
 from koi.modules.blueprint import KoiModule
+from koi.utils.config import TIMEOUTS
 from koi.utils.ui import alert, accent, muted
 
 MIMIKATZ_ZIP_URL = "https://github.com/gentilkiwi/mimikatz/releases/download/2.2.0-20220919/mimikatz_trunk.zip"
@@ -35,7 +36,7 @@ class PopulateWinModule(KoiModule):
 
     def _fetch_url(self, url: str) -> bytes:
         """Download *url* locally and return its raw bytes."""
-        with urllib.request.urlopen(url, timeout=30) as resp:
+        with urllib.request.urlopen(url, timeout=TIMEOUTS["http_fetch"]) as resp:
             return resp.read()
 
     def _fetch_mimikatz_exe(self) -> bytes:

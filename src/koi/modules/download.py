@@ -4,6 +4,7 @@ import os
 import posixpath
 import shlex
 from koi.modules.blueprint import KoiModule, TCPReceiveServer
+from koi.utils.config import TIMEOUTS
 
 
 def _remote_basename(path: str) -> str:
@@ -65,7 +66,7 @@ class DownloadModule(KoiModule):
                     remote_size = None
 
         bar = self.ui.ProgressBar(total=remote_size or 0)
-        srv  = TCPReceiveServer(timeout=60*5, on_progress=bar.update).start()
+        srv  = TCPReceiveServer(timeout=TIMEOUTS["download"], on_progress=bar.update).start()
         port = srv.port
 
         self.status(
@@ -77,7 +78,7 @@ class DownloadModule(KoiModule):
         if os_type == "linux":
             self.exec(
                 f"cat {quoted} > /dev/tcp/{local_ip}/{port}",
-                timeout=60*5,
+                timeout=TIMEOUTS["download"],
             )
         else:
             ps_cmd = (

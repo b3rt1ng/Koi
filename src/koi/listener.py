@@ -11,6 +11,7 @@ import threading
 import time
 from typing import Dict, Optional
 
+from koi.utils.config import CONFIG
 from koi.utils.cli import print_help
 from koi.utils.powerupgrade import upgrade_windows_conptyshell
 from koi.utils.interact import interact
@@ -190,7 +191,8 @@ class Listener:
 
         threading.Thread(target=self._accept_loop, daemon=True, name="accept").start()
 
-        display_art()
+        if CONFIG["display_art"]:
+            display_art()
         notify('info', f"Listening on {bold(self.host)}:{bold(self.port)}")
         self._warn_log_accumulation()
         print()

@@ -7,6 +7,7 @@ import signal
 import sys
 
 from koi.listener import Listener
+from koi.utils.config import CONFIG
 from koi.utils.ui import notify, display_art, print_payloads
 from koi.utils.obfuscate_ui import run_obfuscate_ui
 from koi.utils.logger import review as _review
@@ -30,8 +31,8 @@ def main():
         add_help=False,
     )
     parser.add_argument("-h", "--help", action=_ArtHelpAction, help="show this help message and exit")
-    parser.add_argument("--host", default="0.0.0.0", help="Bind address (default: 0.0.0.0)")
-    parser.add_argument("--port", "-p", type=int, default=4010, help="Listen port (default: 4010)")
+    parser.add_argument("--host", default=CONFIG["host"], help=f"Bind address (default: {CONFIG['host']})")
+    parser.add_argument("--port", "-p", type=int, default=CONFIG["port"], help=f"Listen port (default: {CONFIG['port']})")
     parser.add_argument("--payloads", nargs="?", const="__all__", metavar="IFACE",
                         help="Print payloads for all interfaces (or a specific one) and exit")
     parser.add_argument("--obfuscator", "--cook", nargs="?", const="__all__", metavar="IFACE",

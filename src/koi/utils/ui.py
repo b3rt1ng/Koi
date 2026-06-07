@@ -6,14 +6,16 @@ import time
 import importlib.metadata
 from random import choice
 
+from koi.utils.config import color
+
 _ANSI = re.compile(r"\033\[[^m]*m")
 
-PUMPKIN     = (248, 101, 70)
-WHITE       = (255, 255, 255)
-SILVER      = (169, 169, 169)
-CORAL       = (235, 111,  92)
-UMBER       = (123,  62,   0)
-BLUE        = (118, 241, 245)
+PUMPKIN     = color("pumpkin")
+WHITE       = color("white")
+SILVER      = color("silver")
+CORAL       = color("coral")
+UMBER       = color("umber")
+BLUE        = color("blue")
 RST = "\033[0m"
 DIM = "\033[2m"
 BOLD = "\033[1m"

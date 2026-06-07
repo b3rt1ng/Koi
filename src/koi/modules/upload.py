@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 from koi.modules.blueprint import KoiModule
+from koi.utils.config import TIMEOUTS
 
 
 class UploadModule(KoiModule):
@@ -38,7 +39,7 @@ class UploadModule(KoiModule):
         total = len(raw)
         bar = self.ui.ProgressBar(total=total)
         self.status(f"Uploading {local_path} -> {remote_path} ({total} bytes)...")
-        ok = self._upload_bytes(raw, remote_path, timeout=30, on_progress=bar.update)
+        ok = self._upload_bytes(raw, remote_path, timeout=TIMEOUTS["upload"], on_progress=bar.update)
         bar.done()
         print()
 

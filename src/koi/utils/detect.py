@@ -10,9 +10,11 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from koi.session import Session
 
+from koi.utils.config import TIMEOUTS
+
 logger = logging.getLogger("koi.detect")
 
-_TIMEOUT = 4.0
+_TIMEOUT = TIMEOUTS["session_detect"]
 _SELECT_TIMEOUT = 0.1
 
 
