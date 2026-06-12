@@ -202,6 +202,37 @@ def _wrap_ansi(text: str, width: int) -> list[str]:
     return lines
 
 
+def _fit_columns(natural: list[int], budget: int, min_w: int = 3) -> list[int]:
+    widths = list(natural)
+    n = len(widths)
+    if sum(widths) <= budget:
+        return widths
+    if budget < n * min_w:                     # can't even fit the minimums
+        return [min_w] * n
+
+    lo, hi = min_w, max(widths)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if sum(min(w, mid) for w in widths) <= budget:
+            lo = mid
+        else:
+            hi = mid - 1
+    widths = [min(w, lo) for w in widths]
+
+    leftover = budget - sum(widths)
+    while leftover > 0:
+        progressed = False
+        for k in range(n):
+            if leftover <= 0:
+                break
+            if widths[k] < natural[k]:
+                widths[k] += 1
+                leftover -= 1
+                progressed = True
+        if not progressed:
+            break
+    return widths
+
 def _make_color_fn(total_rows, total_cols, tl, br):
     denom = max(total_rows + total_cols - 2, 1)
     def _color(row, col):
@@ -329,15 +360,26 @@ def print_table(
         for i in range(min(n_cols, len(row))):
             col_widths[i] = max(col_widths[i], _vlen(str(row[i])))
 
+    # inner_width = sum(w + 2 padding) + (n_cols - 1 separators) = sum(w) + 3*n_cols - 1
+    max_inner = terminal_width - 2
+    col_widths = _fit_columns(col_widths, max_inner - (3 * n_cols - 1))
     inner_width = sum(w + 2 for w in col_widths) + (n_cols - 1)
-    max_inner   = terminal_width - 2
-    if inner_width > max_inner:
-        overhead = sum(w + 2 for w in col_widths[:-1]) + (n_cols - 1)
-        col_widths[-1] = max(3, max_inner - overhead - 2)
-        inner_width = sum(w + 2 for w in col_widths) + (n_cols - 1)
+
+    # pre-wrap every cell so a row can span several physical lines
+    def wrap_cells(cells):
+        return [
+            _wrap_ansi(str(cells[i]) if i < len(cells) else "", col_widths[i])
+            for i in range(n_cols)
+        ]
+
+    header_wrapped = wrap_cells(headers)
+    rows_wrapped   = [wrap_cells(row) for row in rows]
+
+    def row_height(wrapped):
+        return max(len(cell) for cell in wrapped)
 
     total_cols = inner_width + 2
-    total_rows = len(rows) + 4
+    total_rows = 2 + row_height(header_wrapped) + 1 + sum(row_height(w) for w in rows_wrapped)
 
     get_color = _make_color_fn(total_rows, total_cols, top_left_color, bottom_right_color)
 
@@ -356,29 +398,26 @@ def print_table(
 
     white_start = f"\033[38;2;{WHITE[0]};{WHITE[1]};{WHITE[2]}m"
 
-    def render_row(cells, bold=False):
+    def render_row(wrapped, bold=False):
         nonlocal r_idx
-        r_idx += 1
-        left    = get_color(r_idx, 0) + "│" + RST
-        right   = get_color(r_idx, total_cols - 1) + "│" + RST
-        content = ""
-        col_pos = 1
-        for i in range(n_cols):
-            cell    = str(cells[i]) if i < len(cells) else ""
-            visible = _vlen(cell)
-            if visible > col_widths[i]:
-                cell    = cell[:col_widths[i] - 1] + "…"
-                visible = col_widths[i]
-            pad = col_widths[i] - visible
-            if bold:
-                content += f" {BOLD}{white_start}{cell}{RST}" + " " * (pad + 1)
-            else:
-                content += f" {white_start}{cell}{RST}" + " " * (pad + 1)
-            col_pos += col_widths[i] + 2
-            if i < n_cols - 1:
-                content += get_color(r_idx, col_pos) + "│" + RST
-                col_pos += 1
-        print(f"{left}{content}{right}")
+        for line_idx in range(row_height(wrapped)):
+            r_idx += 1
+            left    = get_color(r_idx, 0) + "│" + RST
+            right   = get_color(r_idx, total_cols - 1) + "│" + RST
+            content = ""
+            col_pos = 1
+            for i in range(n_cols):
+                chunk = wrapped[i][line_idx] if line_idx < len(wrapped[i]) else ""
+                pad   = col_widths[i] - _vlen(chunk)
+                if bold:
+                    content += f" {BOLD}{white_start}{chunk}{RST}" + " " * (pad + 1)
+                else:
+                    content += f" {white_start}{chunk}{RST}" + " " * (pad + 1)
+                col_pos += col_widths[i] + 2
+                if i < n_cols - 1:
+                    content += get_color(r_idx, col_pos) + "│" + RST
+                    col_pos += 1
+            print(f"{left}{content}{right}")
 
     def render_hsep(left_ch="├", right_ch="┤", mid_ch="┼"):
         nonlocal r_idx
@@ -395,11 +434,11 @@ def print_table(
         line += get_color(r_idx, col_pos) + right_ch
         print(line + RST)
 
-    render_row(headers, bold=True)
+    render_row(header_wrapped, bold=True)
     render_hsep()
 
-    for row in rows:
-        render_row(row)
+    for wrapped in rows_wrapped:
+        render_row(wrapped)
 
     r_idx += 1
     line    = get_color(r_idx, 0) + "╰"
