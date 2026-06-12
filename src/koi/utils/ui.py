@@ -138,10 +138,75 @@ def _vlen(s) -> int:
     return len(_ANSI.sub("", str(s)))
 
 
+def _ansi_tokens(text: str):
+    tokens = []
+    pos = 0
+    for m in _ANSI.finditer(text):
+        tokens.extend((False, ch) for ch in text[pos:m.start()])
+        tokens.append((True, m.group()))
+        pos = m.end()
+    tokens.extend((False, ch) for ch in text[pos:])
+    return tokens
+
+
+def _hardbreak_word(word, width):
+    chunks, cur, cur_vis = [], "", 0
+    for is_ansi, piece in word:
+        if is_ansi:
+            cur += piece
+            continue
+        if cur_vis + 1 > width:
+            chunks.append(cur)
+            cur, cur_vis = "", 0
+        cur += piece
+        cur_vis += 1
+    chunks.append(cur)
+    return chunks
+
+
+def _wrap_ansi(text: str, width: int) -> list[str]:
+    text = str(text)
+    if width < 1:
+        width = 1
+    if _vlen(text) <= width:
+        return [text]
+
+    words, cur_word = [], []
+    for is_ansi, piece in _ansi_tokens(text):
+        if not is_ansi and piece == " ":
+            if cur_word:
+                words.append(cur_word)
+                cur_word = []
+        else:
+            cur_word.append((is_ansi, piece))
+    if cur_word:
+        words.append(cur_word)
+
+    lines, line, line_vis = [], "", 0
+    for word in words:
+        wstr = "".join(p for _, p in word)
+        wvis = sum(1 for is_ansi, _ in word if not is_ansi)
+        if line_vis == 0:
+            chunks = _hardbreak_word(word, width)
+            lines.extend(chunks[:-1])
+            line, line_vis = chunks[-1], _vlen(chunks[-1])
+        elif line_vis + 1 + wvis <= width:
+            line += " " + wstr
+            line_vis += 1 + wvis
+        else:
+            lines.append(line)
+            chunks = _hardbreak_word(word, width)
+            lines.extend(chunks[:-1])
+            line, line_vis = chunks[-1], _vlen(chunks[-1])
+    lines.append(line)
+    return lines
+
+
 def _make_color_fn(total_rows, total_cols, tl, br):
     denom = max(total_rows + total_cols - 2, 1)
     def _color(row, col):
         ratio = (row + col) / denom
+        ratio = 0.0 if ratio < 0 else 1.0 if ratio > 1 else ratio
         r = int(tl[0] + ratio * (br[0] - tl[0]))
         g = int(tl[1] + ratio * (br[1] - tl[1]))
         b = int(tl[2] + ratio * (br[2] - tl[2]))
@@ -170,12 +235,25 @@ def print_report_box(title, data_dict, top_left_color=PUMPKIN, bottom_right_colo
     if inner_width + 2 > terminal_width:
         inner_width = terminal_width - 2
 
+    prefix_len  = max_key_len + 5            # "  " + key + " : "
+    value_width = max(1, inner_width - prefix_len)
+
+    def wrap_value(value):
+        return _wrap_ansi(str(value), value_width)
+
     total_cols = inner_width + 2
 
+    # build a render plan up front so we can count physical rows for the gradient
     if categorized:
-        total_rows = sum(len(items) for items in data_dict.values()) + len(data_dict) + 2
+        plan = []
+        for category, items in data_dict.items():
+            plan.append(("sep", category, None))
+            for k, v in items.items():
+                plan.append(("row", k, wrap_value(v)))
     else:
-        total_rows = len(all_items) + 2
+        plan = [("row", k, wrap_value(v)) for k, v in data_dict.items()]
+
+    total_rows = 2 + sum(len(chunks) if kind == "row" else 1 for kind, _, chunks in plan)
 
     get_diag_color = _make_color_fn(total_rows, total_cols, top_left_color, bottom_right_color)
 
@@ -195,16 +273,20 @@ def print_report_box(title, data_dict, top_left_color=PUMPKIN, bottom_right_colo
 
     r_idx = 0
 
-    def print_row(key, value):
+    def print_row(key, chunks):
         nonlocal r_idx
-        r_idx += 1
-        left_char  = get_diag_color(r_idx, 0) + "│" + RST
-        right_char = get_diag_color(r_idx, total_cols - 1) + "│" + RST
-        pad_len      = max_key_len - _vlen(key)
-        line_content = f"  {key}{' ' * pad_len} : {value}"
-        right_pad    = " " * max(0, inner_width - _vlen(line_content))
-        print(f"{left_char}{white_start}{line_content}{right_pad}{RST}{right_char}")
-        
+        pad_len = max_key_len - _vlen(key)
+        for i, chunk in enumerate(chunks):
+            r_idx += 1
+            left_char  = get_diag_color(r_idx, 0) + "│" + RST
+            right_char = get_diag_color(r_idx, total_cols - 1) + "│" + RST
+            if i == 0:
+                line_content = f"  {key}{' ' * pad_len} : {chunk}"
+            else:
+                line_content = f"{' ' * prefix_len}{chunk}"
+            right_pad = " " * max(0, inner_width - _vlen(line_content))
+            print(f"{left_char}{white_start}{line_content}{right_pad}{RST}{right_char}")
+
     def print_separator(label: str):
         nonlocal r_idx
         r_idx += 1
@@ -218,15 +300,11 @@ def print_report_box(title, data_dict, top_left_color=PUMPKIN, bottom_right_colo
         colored_right = "".join(get_diag_color(r_idx, len(left_dashes) + len(label_text) + c) + ch for c, ch in enumerate(right_dashes))
         print(f"{left_char}{colored_left}{gradient_text(label_text, PUMPKIN, WHITE)}{colored_right}{RST}{right_char}")
 
-    if categorized:
-        categories = list(data_dict.items())
-        for cat_idx, (category, items) in enumerate(categories):
-            print_separator(category)
-            for key, value in items.items():
-                print_row(key, value)
-    else:
-        for key, value in data_dict.items():
-            print_row(key, value)
+    for kind, key, chunks in plan:
+        if kind == "sep":
+            print_separator(key)
+        else:
+            print_row(key, chunks)
 
     r_idx += 1
     bottom_border = "╰" + "─" * inner_width + "╯"

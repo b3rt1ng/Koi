@@ -22,17 +22,19 @@ class PeasModule(KoiModule):
     ]
 
     def _fetch_tool(self, url: str, cache_name: str) -> tuple[bytes, str]:
-        """Return *cache_name* from the local cache, downloading it from *url* if absent."""
         try:
             with urllib.request.urlopen(url, timeout=TIMEOUTS["http_fetch"]) as resp:
                 data = resp.read()
             if not has_cache(cache_name):
                 put_cache(cache_name, data)
-        except:
+            return data, "remote"
+        except Exception:
             data = get_cache(cache_name)
             if data is None:
-                raise RuntimeError(f"Failed to fetch {cache_name} from {url} and no cache available")
-        return data, "remote"
+                raise RuntimeError(
+                    f"Failed to fetch {cache_name} from {url} and no cache available"
+                )
+            return data, "cache"
 
     def run(self) -> None:
         os_type = self.session.os_type
