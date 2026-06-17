@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from koi.modules.blueprint import KoiModule
+from koi.utils.config import TIMEOUTS
 
 # Linux: process names worth flagging
 _LINUX_NETWORK    = {"nc", "ncat", "netcat", "socat", "nmap"}
@@ -83,7 +84,7 @@ class GetProcessesModule(KoiModule):
         with self.spinner("Collecting processes..."):
             raw = self._exec_clean(
                 "ps aux --no-headers 2>/dev/null || ps aux 2>/dev/null",
-                timeout=15,
+                timeout=TIMEOUTS["exec_query"],
             )
 
         procs = self._parse_linux(raw)
@@ -141,7 +142,7 @@ class GetProcessesModule(KoiModule):
     def _run_windows(self) -> None:
         ps_expr = "(tasklist /fo csv /nh /v) -join '§'"
         with self.spinner("Collecting processes via tasklist..."):
-            raw = self._win_query(ps_expr, timeout=30)
+            raw = self._win_query(ps_expr, timeout=TIMEOUTS["exec_query"])
 
         procs = self._parse_windows_tasklist(raw)
         if not procs:

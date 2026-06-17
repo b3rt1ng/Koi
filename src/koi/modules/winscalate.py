@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from koi.modules.blueprint import KoiModule
+from koi.utils.config import TIMEOUTS
 
 _DANGEROUS_PRIVS: dict[str, str] = {
     "SeImpersonatePrivilege":        "Potato attacks (PrintSpoofer, RoguePotato, GodPotato)",
@@ -38,7 +39,8 @@ class WinscalateModule(KoiModule):
     platform    = "windows_ps"
     usage       = "winscalate <id>"
 
-    def _q(self, expr: str, timeout: float = 15.0) -> str:
+    def _q(self, expr: str, timeout: float | None = None) -> str:
+        timeout = timeout or TIMEOUTS["exec_query"]
         try:
             return self._win_query(expr, timeout=timeout).strip()
         except Exception:
@@ -104,7 +106,7 @@ class WinscalateModule(KoiModule):
                 " -and $_.PathName -notmatch '^\"'"
                 " -and $_.PathName -notmatch '^C:\\\\Windows\\\\' }"
                 " | ForEach-Object { \"$($_.Name)|||$($_.PathName)\" }) -join '§'",
-                timeout=20,
+                timeout=TIMEOUTS["exec_query"],
             )
         unquoted = {}
         for entry in (e for e in raw.split("§") if "|||" in e):
@@ -148,7 +150,7 @@ class WinscalateModule(KoiModule):
                 "  $a = $_.Actions | Where-Object { $_.Execute } | Select-Object -First 1;"
                 "  if($a){ \"$($_.TaskName)|||$($a.Execute)\" }"
                 " }) -join '§'",
-                timeout=20,
+                timeout=TIMEOUTS["exec_query"],
             )
         tasks = {}
         for entry in (e for e in raw.split("§") if "|||" in e):

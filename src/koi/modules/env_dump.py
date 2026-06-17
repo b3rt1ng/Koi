@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from koi.modules.blueprint import KoiModule
+from koi.utils.config import TIMEOUTS
 
 # Substrings that make a variable name worth flagging (case-insensitive)
 _SENSITIVE_KEY_PARTS = (
@@ -76,7 +77,7 @@ class EnvDumpModule(KoiModule):
 
     def _run_linux(self) -> None:
         with self.spinner("Dumping environment..."):
-            raw = self._exec_clean("printenv 2>/dev/null || env 2>/dev/null", timeout=10)
+            raw = self._exec_clean("printenv 2>/dev/null || env 2>/dev/null", timeout=TIMEOUTS["exec_query"])
 
         env: dict[str, str] = {}
         for line in raw.splitlines():
@@ -102,7 +103,7 @@ class EnvDumpModule(KoiModule):
             "}) -join '§'"
         )
         with self.spinner("Dumping environment..."):
-            raw = self._win_query(ps_expr, timeout=15)
+            raw = self._win_query(ps_expr, timeout=TIMEOUTS["exec_query"])
 
         env: dict[str, str] = {}
         for entry in raw.split("§"):

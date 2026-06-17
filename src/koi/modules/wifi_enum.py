@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from koi.modules.blueprint import KoiModule
+from koi.utils.config import TIMEOUTS
 
 
 class WifiEnumModule(KoiModule):
@@ -15,7 +16,7 @@ class WifiEnumModule(KoiModule):
         self.status("Analyzing Wi-Fi...")
 
         with self.spinner("Scanning Wi-Fi networks..."):
-            nmcli_res = self._try_exec("nmcli --fields BARS,SSID,SECURITY device wifi list 2>/dev/null", timeout=8)
+            nmcli_res = self._try_exec("nmcli --fields BARS,SSID,SECURITY device wifi list 2>/dev/null", timeout=TIMEOUTS["exec_query"])
 
         if nmcli_res and "SSID" in nmcli_res:
             lines = nmcli_res.splitlines()
@@ -40,7 +41,7 @@ class WifiEnumModule(KoiModule):
 
         self.status("Checking Wi-Fi configuration files...")
 
-        wpa_conf = self._try_exec("cat /etc/wpa_supplicant/wpa_supplicant.conf 2>/dev/null", timeout=8)
+        wpa_conf = self._try_exec("cat /etc/wpa_supplicant/wpa_supplicant.conf 2>/dev/null", timeout=TIMEOUTS["exec_query"])
         creds = {}
 
         if wpa_conf and "network=" in wpa_conf:

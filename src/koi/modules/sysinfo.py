@@ -1,5 +1,6 @@
 from __future__ import annotations
 from koi.modules.blueprint import KoiModule
+from koi.utils.config import TIMEOUTS
 
 
 class SysInfoModule(KoiModule):
@@ -10,7 +11,7 @@ class SysInfoModule(KoiModule):
     platform    = ["linux", "windows_ps"]
 
     def _get(self, cmd: str, fallback: str = "unknown") -> str:
-        lines = [ln for ln in self._try_exec(cmd, timeout=10).splitlines() if ln.strip()]
+        lines = [ln for ln in self._try_exec(cmd, timeout=TIMEOUTS["exec_query"]).splitlines() if ln.strip()]
         return lines[-1] if lines else fallback
 
     def _wget(self, expr: str, fallback: str = "unknown") -> str:

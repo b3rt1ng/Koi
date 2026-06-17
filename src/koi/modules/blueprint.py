@@ -290,16 +290,26 @@ class KoiModule(ABC):
         return result
 
     def _exec_clean(self, cmd: str, timeout: float = TIMEOUTS["exec_query"]) -> str:
-        """Run a Linux command and collect its stdout via a side TCP channel."""
-        local_ip = self._get_local_ip()
-        port, collect = spawn_recv_server(timeout=timeout)
-        self.exec(f"( {cmd} ) > /dev/tcp/{local_ip}/{port}", timeout=timeout, _silent=True)
-        result = collect().decode("utf-8", errors="replace").strip()
+        """Run a Linux command and collect its stdout via delimiter-based capture."""
+        token = uuid.uuid4().hex[:16]
+        wrapped = f"N={token}; echo S_$N; ({cmd}); echo E_$N:$?"
+        result = self.exec(wrapped, timeout=timeout, _silent=True)
+
+        marker_start = f"S_{token}"
+        marker_end = f"E_{token}"
+        start_idx = result.stdout.find(marker_start)
+        end_idx = result.stdout.find(marker_end)
+        if start_idx == -1 or end_idx == -1:
+            raise ValueError(f"Markers not found in output for command: {cmd}")
+
+        start = result.stdout.find('\n', start_idx) + 1
+        clean = result.stdout[start:end_idx].strip()
+
         if self._logger:
             self._logger.log_event(f"exec  {cmd}")
-            if result:
-                self._logger.log_output(result.encode("utf-8", errors="replace"))
-        return result
+            if clean:
+                self._logger.log_output(clean.encode("utf-8", errors="replace"))
+        return clean
 
     def _try_exec(self, cmd: str, timeout: float = TIMEOUTS["exec_query"]) -> str:
         """Run a Linux command via the side channel; return empty string on any error."""
