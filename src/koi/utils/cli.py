@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import readline
 
-from koi.modules.loader import load_modules, get_module
+from koi.modules.loader import load_modules
 from koi.utils.payloads import get_interfaces
 from koi.utils.ui import (
-    print_report_box, notify,
+    print_report_box,
     bold, accent, alert,
 )
 
@@ -20,6 +20,7 @@ _OS_TYPES = ["linux", "windows_ps", "windows_cmd"]
 readline.set_history_length(200)
 readline.parse_and_bind("tab: complete")
 readline.parse_and_bind(r'"\C-t": "\C-e\C-u_koi_screenable_\n"')
+readline.parse_and_bind(r'"\C-w": "\C-e\C-u_koi_toggle_\n"')
 
 
 def _match(text: str, candidates: list[str]) -> list[str]:
@@ -77,9 +78,8 @@ def print_help() -> None:
             f"{accent('reload')}": "Reload modules from disk (useful during development)",
             f"{accent('run')} {bold('<module>')} {bold('<id>')} {bold('[args...]')}": "Run a module against a session",
             f"{accent('setshell')} {bold('<id>')} {bold('<os_type>')}": "Manually set the OS type of a session",
-            f"{accent('stop')}": "Pause the listener, refuse new connections",
             f"{accent('logs')}": "List recorded session logs",
-            f"{accent('start')}": "Resume the listener, accept new connections again",
+            f"{accent('start/stop')}": "Start or stop the listener",
             f"{accent('help')}": "Show this message",
             f"{accent('exit')}": "Shut down the listener",
         },
@@ -87,6 +87,7 @@ def print_help() -> None:
             f"{alert('Ctrl+Z')}": "Background, return to listener shell",
             f"{alert('Ctrl+C')}": "Send SIGINT to remote (keeps session alive)",
             f"{alert('Ctrl+T')}": "Toggle screenable mode, masks IPs for screenshots",
+            f"{alert('Ctrl+W')}": "Toggle listener on/off (pause/resume accepting connections)",
         },
     }
     print_report_box("help", data)

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import signal
 import sys
 
 from koi.listener import Listener

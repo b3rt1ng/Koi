@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 import select
-import socket
 import threading
 import time
 import uuid
@@ -16,6 +15,7 @@ from koi.utils.config import TIMEOUTS
 from koi.utils.models import CommandResult, StreamLine
 from koi.utils import ui
 from koi.utils.tcp import get_local_ip, spawn_recv_server, spawn_send_server
+from koi.utils.tcp import _bind_side_channel_port
 
 import argparse
 
@@ -41,12 +41,9 @@ class TCPReceiveServer:
         self.port: int    = 0
 
     def start(self) -> "TCPReceiveServer":
-        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._sock.bind(("0.0.0.0", 0))
+        self._sock, self.port = _bind_side_channel_port()
         self._sock.listen(1)
         self._sock.settimeout(self._timeout)
-        self.port = self._sock.getsockname()[1]
         threading.Thread(target=self._run, daemon=True).start()
         return self
 

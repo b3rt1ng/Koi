@@ -28,6 +28,8 @@ DEFAULTS = {
         "http_fetch":     60,
         "session_detect": 4.0,
     },
+
+    "sidetcps": [5985, 5986, 445, 3389],
 }
 
 
@@ -65,6 +67,7 @@ def _load() -> dict:
 CONFIG   = _load()
 COLORS   = CONFIG["colors"]
 TIMEOUTS = CONFIG["timeouts"]
+SIDETCPS = CONFIG.get("sidetcps", DEFAULTS["sidetcps"])
 
 
 def color(name: str) -> tuple[int, int, int]:

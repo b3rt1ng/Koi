@@ -9,7 +9,7 @@ import socket
 import sys
 import threading
 import time
-from typing import Dict, Optional
+from typing import Callable, Dict, Optional
 
 from koi.utils.config import CONFIG
 from koi.utils.cli import print_help
@@ -96,9 +96,7 @@ class Listener:
     def _toggle_screenable(self) -> None:
         self.screenable_mode = not self.screenable_mode
         state = plain("ON") if self.screenable_mode else muted("OFF")
-        sys.stdout.write("\033[F\033[2K")
-        notify('info', f"Screenable mode {state}")
-        sys.stdout.flush()
+        self._execute_hidden_command(lambda: notify('info', f"Screenable mode {state}"))
 
     def _add(self, conn, addr) -> Session:
         with self._id_lock:
@@ -215,7 +213,6 @@ class Listener:
                 time.sleep(0.5)
             for s in sessions:
                 s.close()
-        print()
 
     def _prompt(self) -> str:
         alive = sum(1 for s in self._sessions.values() if s.alive)
@@ -270,6 +267,15 @@ class Listener:
                 except Exception:
                     pass
                 self._toggle_screenable()
+                continue
+
+            if raw == "_koi_toggle_":
+                import readline as _rl
+                try:
+                    _rl.remove_history_item(_rl.get_current_history_length() - 1)
+                except Exception:
+                    pass
+                self._toggle_accepting()
                 continue
 
             parts = raw.split()
@@ -383,6 +389,17 @@ class Listener:
             return
         self._accepting = True
         notify('success', f"Listener {bold('resumed')}, accepting new connections.")
+
+    def _execute_hidden_command(self, callback: Callable[[], None]) -> None:
+        sys.stdout.write("\033[F\033[2K")
+        callback()
+        sys.stdout.flush()
+
+    def _toggle_accepting(self) -> None:
+        if self._accepting:
+            self._execute_hidden_command(self._cmd_stop_accepting)
+        else:
+            self._execute_hidden_command(self._cmd_start_accepting)
 
     def _cmd_ls(self) -> None:
         self._prune()
@@ -606,7 +623,6 @@ class Listener:
             return
 
         notify('info', f"Running module {accent(mod_name)} on session {accent(f'#{sid}')}...")
-        print()
         old_handler = signal.getsignal(signal.SIGINT)
         signal.signal(signal.SIGINT, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
         logger = self._loggers.get(sess.id)
@@ -625,7 +641,6 @@ class Listener:
                 logger.log_event(f"module_error  {mod_name}  {exc}")
         finally:
             signal.signal(signal.SIGINT, old_handler)
-        print()
 
     _OS_ALIASES: dict[str, str] = {
         "linux":       "linux",

@@ -4,6 +4,44 @@ import http.server
 import socket
 import threading
 from typing import Callable, Optional
+import random
+
+
+def _try_bind_port(port: int) -> tuple[socket.socket, int] | None:
+    """Try to bind to a specific port. Returns (socket, port) or None if port is in use."""
+    try:
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind(("0.0.0.0", port))
+        return (srv, port)
+    except OSError:
+        return None
+
+
+def _bind_side_channel_port() -> tuple[socket.socket, int]:
+    """
+    Try to bind to a configured side-channel port.
+    Falls back to port 0 (OS-assigned) if all configured ports fail.
+    Returns (socket, port).
+    """
+    from koi.utils.config import SIDETCPS, DEFAULTS
+    ports = SIDETCPS if SIDETCPS else DEFAULTS["sidetcps"]
+
+    if not ports or not isinstance(ports, list):
+        ports = DEFAULTS["sidetcps"]
+
+    attempts = list(ports)
+    random.shuffle(attempts)
+
+    for port in attempts:
+        result = _try_bind_port(port)
+        if result:
+            return result
+
+    fallback = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    fallback.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    fallback.bind(("0.0.0.0", 0))
+    return (fallback, fallback.getsockname()[1])
 
 
 def get_local_ip(remote_addr: str) -> str:
@@ -29,12 +67,9 @@ def spawn_send_server(
     - *errors* is a list that will contain an error string if the transfer fails.
     - *on_progress*: optional ``callback(bytes_sent)`` called after each chunk.
     """
-    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    srv.bind(("0.0.0.0", 0))
+    srv, port = _bind_side_channel_port()
     srv.listen(1)
     srv.settimeout(timeout)
-    port = srv.getsockname()[1]
 
     errors: list[str] = []
 
@@ -102,12 +137,9 @@ def spawn_recv_server(
     Call ``collect()`` to block until the connection is received and all data is read;
     returns the raw bytes (empty on timeout or error).
     """
-    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    srv.bind(("0.0.0.0", 0))
+    srv, port = _bind_side_channel_port()
     srv.listen(1)
     srv.settimeout(timeout)
-    port = srv.getsockname()[1]
 
     def collect() -> bytes:
         try:

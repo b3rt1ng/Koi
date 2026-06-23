@@ -8,7 +8,7 @@ import zipfile
 
 from koi.modules.blueprint import KoiModule
 from koi.utils.config import TIMEOUTS
-from koi.utils.ui import alert, accent, muted
+from koi.utils.ui import alert, accent
 
 MIMIKATZ_ZIP_URL = "https://github.com/gentilkiwi/mimikatz/releases/download/2.2.0-20220919/mimikatz_trunk.zip"
 

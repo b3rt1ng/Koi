@@ -457,9 +457,9 @@ def notify(msg_type, text):
     prefixes = {
         'new':     (PUMPKIN,  "▶", f"{BOLD}{color_signal(WHITE)}New session"),
         'info':    (WHITE,  "?", "Info"),
-        'error':   (CORAL,  "✖", "Error"),
+        'error':   (CORAL,  "X", "Error"),
         'warning': (CORAL,  "!", "Warning"),
-        'status':  (SILVER, "⚡", "Status"),
+        'status':  (SILVER, "~", "Status"),
         'success': (PUMPKIN,  "✔", "Success"),
     }
     
