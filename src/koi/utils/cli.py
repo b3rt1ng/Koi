@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import readline
+from typing import Callable, Optional
 
 from koi.modules.loader import load_modules
 from koi.utils.payloads import get_interfaces
@@ -10,12 +11,25 @@ from koi.utils.ui import (
 )
 
 COMMANDS = [
-    "ls", "go", "upgrade", "kill", "setshell", "help", "exit",
+    "ls", "go", "upgrade", "kill", "tag", "setshell", "help", "exit",
     "quit", "interact", "payload", "obfuscator", "run", "modules",
     "reload", "start", "stop", "logs",
 ]
 
 _OS_TYPES = ["linux", "windows_ps", "windows_cmd"]
+_SESSION_ARG1_CMDS = {"go", "g", "interact", "upgrade", "u", "kill", "tag"}
+
+_session_provider: Optional[Callable[[], list[str]]] = None
+
+
+def set_session_provider(fn: Callable[[], list[str]]) -> None:
+    global _session_provider
+    _session_provider = fn
+
+
+def _session_refs() -> list[str]:
+    return _session_provider() if _session_provider else []
+
 
 readline.set_history_length(200)
 readline.parse_and_bind("tab: complete")
@@ -50,7 +64,25 @@ def completer(text: str, state: int):
     ):
         options = _match(text, list(load_modules().keys()))
 
-    elif parts[0] == "setshell" and (
+    elif parts[0] == "run" and (
+        (len(parts) == 2 and line.endswith(" ")) or
+        (len(parts) == 3 and not line.endswith(" "))
+    ):
+        options = _match(text, _session_refs())
+
+    elif parts[0] in _SESSION_ARG1_CMDS and (
+        (len(parts) == 1 and line.endswith(" ")) or
+        (len(parts) == 2 and not line.endswith(" "))
+    ):
+        options = _match(text, _session_refs())
+
+    elif parts[0] in ("setshell", "sh") and (
+        (len(parts) == 1 and line.endswith(" ")) or
+        (len(parts) == 2 and not line.endswith(" "))
+    ):
+        options = _match(text, _session_refs())
+
+    elif parts[0] in ("setshell", "sh") and (
         (len(parts) == 2 and line.endswith(" ")) or
         (len(parts) == 3 and not line.endswith(" "))
     ):
@@ -69,9 +101,10 @@ def print_help() -> None:
     data = {
         "Commands": {
             f"{accent('ls')}": "List all active sessions",
-            f"{accent('go')} {bold('<id>')}": "Enter a session interactively",
-            f"{accent('upgrade')} {bold('<id>')}": "Upgrade session to a full PTY",
-            f"{accent('kill')} {bold('<id>')}": "Terminate and remove a session",
+            f"{accent('go')} {bold('<id|tag>')}": "Enter a session interactively",
+            f"{accent('upgrade')} {bold('<id|tag>')}": "Upgrade session to a full PTY",
+            f"{accent('kill')} {bold('<id|tag>')}": "Terminate and remove a session",
+            f"{accent('tag')} {bold('<id|tag>')} {bold('[name]')}": "Assign or clear a tag on a session",
             f"{accent('payload')} {bold('[iface]')}": "Show reverse shell payloads",
             f"{accent('obfuscator')} {bold('[iface]')}": "Interactive payload obfuscator",
             f"{accent('modules')}": "List available modules",

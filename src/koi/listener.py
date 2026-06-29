@@ -12,7 +12,7 @@ import time
 from typing import Callable, Dict, Optional
 
 from koi.utils.config import CONFIG
-from koi.utils.cli import print_help
+from koi.utils.cli import print_help, set_session_provider
 from koi.utils.powerupgrade import upgrade_windows_conptyshell
 from koi.utils.interact import interact
 from koi.modules.loader import load_modules, get_module
@@ -106,8 +106,20 @@ class Listener:
         self._sessions[sid] = sess
         return sess
 
-    def _get(self, sid: int) -> Optional[Session]:
-        return self._sessions.get(sid)
+    def _resolve_session(self, ref: str) -> Optional[Session]:
+        try:
+            return self._sessions.get(int(ref))
+        except ValueError:
+            return next((s for s in self._sessions.values() if s.tag == ref), None)
+
+    def _session_refs(self) -> list[str]:
+        refs = []
+        for s in self._sessions.values():
+            if s.alive:
+                refs.append(str(s.id))
+                if s.tag:
+                    refs.append(s.tag)
+        return refs
 
     def _remove(self, sid: int) -> None:
         sess = self._sessions.pop(sid, None)
@@ -184,6 +196,7 @@ class Listener:
         self._server_sock.listen(16)
         self._running = True
 
+        set_session_provider(self._session_refs)
         sys.stdout = _MaskStream(sys.stdout, lambda: self.screenable_mode)
         sys.stderr = _MaskStream(sys.stderr, lambda: self.screenable_mode)
 
@@ -299,30 +312,21 @@ class Listener:
 
             elif cmd in ("go", "g", "interact"):
                 if len(parts) < 2:
-                    notify('error', f"Usage: go {accent('<id>')}")
+                    notify('error', f"Usage: go {accent('<id|tag>')}")
                 else:
-                    try:
-                        self._cmd_go(int(parts[1]))
-                    except ValueError:
-                        notify('error', "Session id must be an integer.")
+                    self._cmd_go(parts[1])
 
             elif cmd in ("upgrade", "u"):
                 if len(parts) < 2:
-                    notify('error', f"Usage: upgrade {accent('<id>')}")
+                    notify('error', f"Usage: upgrade {accent('<id|tag>')}")
                 else:
-                    try:
-                        self._cmd_upgrade(int(parts[1]))
-                    except ValueError:
-                        notify('error', "Session id must be an integer.")
+                    self._cmd_upgrade(parts[1])
 
             elif cmd == "kill":
                 if len(parts) < 2:
-                    notify('error', f"Usage: kill {accent('<id>')}")
+                    notify('error', f"Usage: kill {accent('<id|tag>')}")
                 else:
-                    try:
-                        self._cmd_kill(int(parts[1]))
-                    except ValueError:
-                        notify('error', "Session id must be an integer.")
+                    self._cmd_kill(parts[1])
 
             elif cmd in ("payload", "p"):
                 self._cmd_payload(parts[1] if len(parts) > 1 else None)
@@ -344,12 +348,15 @@ class Listener:
 
             elif cmd in ("setshell", "sh"):
                 if len(parts) < 3:
-                    notify('error', f"Usage: setshell {accent('<id>')} {accent('<linux|windows_ps|windows_cmd>')}")
+                    notify('error', f"Usage: setshell {accent('<id|tag>')} {accent('<linux|windows_ps|windows_cmd>')}")
                 else:
-                    try:
-                        self._cmd_setshell(int(parts[1]), parts[2])
-                    except ValueError:
-                        notify('error', "Session id must be an integer.")
+                    self._cmd_setshell(parts[1], parts[2])
+
+            elif cmd == "tag":
+                if len(parts) < 2:
+                    notify('error', f"Usage: tag {accent('<id|tag>')} {accent('[name]')}")
+                else:
+                    self._cmd_tag(parts[1], parts[2] if len(parts) > 2 else None)
 
             else:
                 notify('error', f"Unknown command: {accent(cmd)}, type {bold('help')}")
@@ -369,12 +376,7 @@ class Listener:
             return
 
         mod_name = parts[1]
-        try:
-            sid = int(parts[2])
-        except ValueError:
-            notify('error', "Session id must be an integer.")
-            return
-        self._cmd_run(mod_name, sid, parts[3:])
+        self._cmd_run(mod_name, parts[2], parts[3:])
 
     def _cmd_stop_accepting(self) -> None:
         if not self._accepting:
@@ -409,7 +411,8 @@ class Listener:
         data = {}
         for s in sorted(self._sessions.values(), key=lambda x: x.id):
             masked_ip = self._mask_ip(s.addr[0])
-            key = f"#{s.id}  {s.status_dot()}  {plain(masked_ip)}{muted(f':{s.addr[1]}')} [{s.os_label()}]"
+            tag_part = f" {muted('[')}{accent(s.tag)}{muted(']')}" if s.tag else ""
+            key = f"#{s.id}{tag_part}  {s.status_dot()}  {plain(masked_ip)}{muted(f':{s.addr[1]}')} [{s.os_label()}]"
             data[key] = s._uptime()
         print_report_box("Sessions", data)
 
@@ -431,12 +434,13 @@ class Listener:
             modules = load_modules(reload=True)
         notify('info', f"Loaded {accent(str(len(modules)))} modules.")
 
-    def _cmd_upgrade(self, sid: int) -> None:
+    def _cmd_upgrade(self, ref: str) -> None:
         self._prune()
-        sess = self._get(sid)
+        sess = self._resolve_session(ref)
         if sess is None:
-            notify('error', f"Session {accent(f'#{sid}')} not found.")
+            notify('error', f"Session {accent(ref)} not found.")
             return
+        sid = sess.id
         if not sess.alive:
             notify('error', f"Session {accent(f'#{sid}')} is no longer alive.")
             self._remove(sid)
@@ -499,11 +503,12 @@ class Listener:
 
         notify('success', f"Shell {accent(f'#{sid}')} upgraded successfully.")
 
-    def _cmd_kill(self, sid: int) -> None:
-        sess = self._get(sid)
+    def _cmd_kill(self, ref: str) -> None:
+        sess = self._resolve_session(ref)
         if sess is None:
-            notify('error', f"Session {accent(f'#{sid}')} not found.")
+            notify('error', f"Session {accent(ref)} not found.")
             return
+        sid = sess.id
         with Spinner(f"Terminating session #{sid}..."):
             if sess.upgraded:
                 sess.send(b"exit\n")
@@ -511,12 +516,13 @@ class Listener:
             self._remove(sid)
         notify('success', f"Session {accent(f'#{sid}')} terminated.")
 
-    def _cmd_go(self, sid: int) -> None:
+    def _cmd_go(self, ref: str) -> None:
         self._prune()
-        sess = self._get(sid)
+        sess = self._resolve_session(ref)
         if sess is None:
-            notify('error', f"Session {accent(f'#{sid}')} not found.")
+            notify('error', f"Session {accent(ref)} not found.")
             return
+        sid = sess.id
         if not sess.alive:
             notify('error', f"Session {accent(f'#{sid}')} is no longer alive.")
             self._remove(sid)
@@ -598,12 +604,13 @@ class Listener:
             data = {accent(name): f"{cls.description}  {platform_badge(cls.platform)}" for name, cls in modules.items()}
             print_report_box("Modules", data)
 
-    def _cmd_run(self, mod_name: str, sid: int, mod_args: list) -> None:
+    def _cmd_run(self, mod_name: str, ref: str, mod_args: list) -> None:
         self._prune()
-        sess = self._get(sid)
+        sess = self._resolve_session(ref)
         if sess is None:
-            notify('error', f"Session {accent(f'#{sid}')} not found.")
+            notify('error', f"Session {accent(ref)} not found.")
             return
+        sid = sess.id
         if not sess.alive:
             notify('error', f"Session {accent(f'#{sid}')} is no longer alive.")
             self._remove(sid)
@@ -651,12 +658,13 @@ class Listener:
         "cmd":         "windows_cmd",
     }
 
-    def _cmd_setshell(self, sid: int, os_arg: str) -> None:
+    def _cmd_setshell(self, ref: str, os_arg: str) -> None:
         self._prune()
-        sess = self._get(sid)
+        sess = self._resolve_session(ref)
         if sess is None:
-            notify('error', f"Session {accent(f'#{sid}')} not found.")
+            notify('error', f"Session {accent(ref)} not found.")
             return
+        sid = sess.id
 
         os_type = self._OS_ALIASES.get(os_arg.lower())
         if os_type is None:
@@ -676,6 +684,22 @@ class Listener:
 
         notify('success',
             f"Session {accent(f'#{sid}')} OS set: {old} -> {sess.os_label()}")
+
+    def _cmd_tag(self, ref: str, tag: Optional[str]) -> None:
+        sess = self._resolve_session(ref)
+        if sess is None:
+            notify('error', f"Session {accent(ref)} not found.")
+            return
+        if tag is None:
+            sess.tag = None
+            notify('success', f"Tag cleared for session {accent(f'#{sess.id}')}.")
+            return
+        conflict = next((s for s in self._sessions.values() if s.tag == tag and s.id != sess.id), None)
+        if conflict:
+            notify('error', f"Tag {accent(tag)!r} already used by session {accent(f'#{conflict.id}')}.")
+            return
+        sess.tag = tag
+        notify('success', f"Session {accent(f'#{sess.id}')} tagged as {accent(tag)}.")
 
     def _cmd_payload(self, iface: Optional[str] = None) -> None:
         print_payloads(iface, self.port)

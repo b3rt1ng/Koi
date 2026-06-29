@@ -4,7 +4,7 @@ import shlex
 import urllib.request
 
 from koi.modules.blueprint import KoiModule
-from koi.utils.cache import cache_path, get_cache, has_cache, put_cache
+from koi.utils.cache import cache_path, get_cache, put_cache
 from koi.utils.config import TIMEOUTS
 
 LINPEAS_URL = "https://github.com/peass-ng/PEASS-ng/releases/latest/download/linpeas.sh"
@@ -25,8 +25,7 @@ class PeasModule(KoiModule):
         try:
             with urllib.request.urlopen(url, timeout=TIMEOUTS["http_fetch"]) as resp:
                 data = resp.read()
-            if not has_cache(cache_name):
-                put_cache(cache_name, data)
+            put_cache(cache_name, data)
             return data, "remote"
         except Exception:
             data = get_cache(cache_name)

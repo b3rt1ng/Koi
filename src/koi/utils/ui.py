@@ -207,7 +207,7 @@ def _fit_columns(natural: list[int], budget: int, min_w: int = 3) -> list[int]:
     n = len(widths)
     if sum(widths) <= budget:
         return widths
-    if budget < n * min_w:                     # can't even fit the minimums
+    if budget < n * min_w:
         return [min_w] * n
 
     lo, hi = min_w, max(widths)
@@ -257,34 +257,42 @@ def print_report_box(title, data_dict, top_left_color=PUMPKIN, bottom_right_colo
         all_items = list(data_dict.items())
 
     terminal_width = shutil.get_terminal_size().columns
-    max_key_len    = max(_vlen(k) for k, _ in all_items) if all_items else 0
+    natural_key_len = max(_vlen(k) for k, _ in all_items) if all_items else 0
 
-    max_inner_width = max((7 + max_key_len + _vlen(str(v))) for _, v in all_items) if all_items else 0
+    max_inner_width = max((7 + natural_key_len + _vlen(str(v))) for _, v in all_items) if all_items else 0
 
     header_text = f" {title} "
     inner_width = max(len(header_text) + 4, max_inner_width)
     if inner_width + 2 > terminal_width:
         inner_width = terminal_width - 2
 
-    prefix_len  = max_key_len + 5            # "  " + key + " : "
+    avail = max(1, inner_width - 5)
+    key_col = min(natural_key_len, max(3, (avail * 3) // 5))
+    key_col = max(1, min(key_col, avail - 1))
+    prefix_len  = key_col + 5
     value_width = max(1, inner_width - prefix_len)
 
     def wrap_value(value):
         return _wrap_ansi(str(value), value_width)
 
+    def wrap_key(key):
+        return _wrap_ansi(str(key), key_col)
+
     total_cols = inner_width + 2
 
-    # build a render plan up front so we can count physical rows for the gradient
     if categorized:
         plan = []
         for category, items in data_dict.items():
             plan.append(("sep", category, None))
             for k, v in items.items():
-                plan.append(("row", k, wrap_value(v)))
+                plan.append(("row", wrap_key(k), wrap_value(v)))
     else:
-        plan = [("row", k, wrap_value(v)) for k, v in data_dict.items()]
+        plan = [("row", wrap_key(k), wrap_value(v)) for k, v in data_dict.items()]
 
-    total_rows = 2 + sum(len(chunks) if kind == "row" else 1 for kind, _, chunks in plan)
+    total_rows = 2 + sum(
+        1 if kind == "sep" else max(len(a), len(b))
+        for kind, a, b in plan
+    )
 
     get_diag_color = _make_color_fn(total_rows, total_cols, top_left_color, bottom_right_color)
 
@@ -304,17 +312,18 @@ def print_report_box(title, data_dict, top_left_color=PUMPKIN, bottom_right_colo
 
     r_idx = 0
 
-    def print_row(key, chunks):
+    def print_row(key_chunks, value_chunks):
         nonlocal r_idx
-        pad_len = max_key_len - _vlen(key)
-        for i, chunk in enumerate(chunks):
+        nlines = max(len(key_chunks), len(value_chunks))
+        for i in range(nlines):
             r_idx += 1
             left_char  = get_diag_color(r_idx, 0) + "│" + RST
             right_char = get_diag_color(r_idx, total_cols - 1) + "│" + RST
-            if i == 0:
-                line_content = f"  {key}{' ' * pad_len} : {chunk}"
-            else:
-                line_content = f"{' ' * prefix_len}{chunk}"
+            kc = key_chunks[i]   if i < len(key_chunks)   else ""
+            vc = value_chunks[i] if i < len(value_chunks) else ""
+            kpad = " " * max(0, key_col - _vlen(kc))
+            sep  = " : " if i == 0 else "   "
+            line_content = f"  {kc}{kpad}{sep}{vc}"
             right_pad = " " * max(0, inner_width - _vlen(line_content))
             print(f"{left_char}{white_start}{line_content}{right_pad}{RST}{right_char}")
 
@@ -331,11 +340,11 @@ def print_report_box(title, data_dict, top_left_color=PUMPKIN, bottom_right_colo
         colored_right = "".join(get_diag_color(r_idx, len(left_dashes) + len(label_text) + c) + ch for c, ch in enumerate(right_dashes))
         print(f"{left_char}{colored_left}{gradient_text(label_text, PUMPKIN, WHITE)}{colored_right}{RST}{right_char}")
 
-    for kind, key, chunks in plan:
+    for kind, a, b in plan:
         if kind == "sep":
-            print_separator(key)
+            print_separator(a)
         else:
-            print_row(key, chunks)
+            print_row(a, b)
 
     r_idx += 1
     bottom_border = "╰" + "─" * inner_width + "╯"
@@ -360,12 +369,10 @@ def print_table(
         for i in range(min(n_cols, len(row))):
             col_widths[i] = max(col_widths[i], _vlen(str(row[i])))
 
-    # inner_width = sum(w + 2 padding) + (n_cols - 1 separators) = sum(w) + 3*n_cols - 1
     max_inner = terminal_width - 2
     col_widths = _fit_columns(col_widths, max_inner - (3 * n_cols - 1))
     inner_width = sum(w + 2 for w in col_widths) + (n_cols - 1)
 
-    # pre-wrap every cell so a row can span several physical lines
     def wrap_cells(cells):
         return [
             _wrap_ansi(str(cells[i]) if i < len(cells) else "", col_widths[i])

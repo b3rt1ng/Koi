@@ -41,8 +41,7 @@ def _fetch_conptyshell() -> tuple[bytes, str]:
     try:
         with urllib.request.urlopen(_CONPTYSHELL_URL, timeout=TIMEOUTS["http_fetch"]) as resp:
             ps1_data = resp.read()
-        if not get_cache(_CONPTY_CACHE_NAME):
-            put_cache(_CONPTY_CACHE_NAME, ps1_data)
+        put_cache(_CONPTY_CACHE_NAME, ps1_data)
         return ps1_data, "remote"
     except Exception as exc:
         cached = get_cache(_CONPTY_CACHE_NAME)

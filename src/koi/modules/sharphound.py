@@ -10,11 +10,13 @@ import uuid
 import zipfile
 
 from koi.modules.blueprint import KoiModule, TCPReceiveServer
+from koi.utils.cache import cache_path, get_cache, put_cache
 from koi.utils.config import TIMEOUTS
 
 
 _RELEASE_API = "https://api.github.com/repos/SpecterOps/SharpHound/releases/latest"
 _ASSET_RE   = re.compile(r"^SharpHound_v[\d\.]+_windows_x86\.zip$", re.I)
+_RELEASE_CACHE_NAME = "sharphound_release.json"
 
 
 class SharpHoundModule(KoiModule):
@@ -30,13 +32,21 @@ class SharpHoundModule(KoiModule):
          "help":  "Local path for the BloodHound zip"},
     ]
 
-    def _fetch_release(self) -> dict:
+    def _fetch_release(self) -> tuple[dict, str]:
         req = urllib.request.Request(
             _RELEASE_API,
             headers={"User-Agent": "koi-sharphound"},
         )
-        with urllib.request.urlopen(req, timeout=TIMEOUTS["http_fetch"]) as resp:
-            return json.load(resp)
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUTS["http_fetch"]) as resp:
+                release = json.load(resp)
+            put_cache(_RELEASE_CACHE_NAME, json.dumps(release).encode("utf-8"))
+            return release, "remote"
+        except Exception as exc:
+            cached = get_cache(_RELEASE_CACHE_NAME)
+            if cached is None:
+                raise exc
+            return json.loads(cached.decode("utf-8")), "cache"
 
     def _find_asset(self, release: dict) -> tuple[str, str] | None:
         for asset in release.get("assets", []):
@@ -45,10 +55,18 @@ class SharpHoundModule(KoiModule):
                 return name, asset["browser_download_url"]
         return None
 
-    def _download_zip(self, url: str) -> bytes:
+    def _download_zip(self, url: str, cache_name: str) -> tuple[bytes, str]:
         req = urllib.request.Request(url, headers={"User-Agent": "koi-sharphound"})
-        with urllib.request.urlopen(req, timeout=TIMEOUTS["http_fetch"]) as resp:
-            return resp.read()
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUTS["http_fetch"]) as resp:
+                zip_bytes = resp.read()
+            put_cache(cache_name, zip_bytes)
+            return zip_bytes, "remote"
+        except Exception:
+            cached = get_cache(cache_name)
+            if cached is None:
+                raise
+            return cached, "cache"
 
     def _extract_payload(self, zip_bytes: bytes) -> dict[str, bytes]:
         """Extract every file in the zip; return {basename: bytes}."""
@@ -125,10 +143,13 @@ class SharpHoundModule(KoiModule):
 
         with self.spinner("Fetching latest SharpHound release info..."):
             try:
-                release = self._fetch_release()
+                release, release_source = self._fetch_release()
             except Exception as exc:
                 self.err(f"GitHub API request failed: {exc}")
                 return
+
+        if release_source == "cache":
+            self.ok(f"Using cached SharpHound release info ({cache_path(_RELEASE_CACHE_NAME)})")
 
         version = release.get("tag_name", "?")
         match = self._find_asset(release)
@@ -139,13 +160,17 @@ class SharpHoundModule(KoiModule):
         asset_name, asset_url = match
         self.ok(f"Found {asset_name} ({version})")
 
+        asset_cache_name = f"sharphound_{asset_name}"
         with self.spinner(f"Downloading {asset_name}..."):
             try:
-                zip_bytes = self._download_zip(asset_url)
+                zip_bytes, asset_source = self._download_zip(asset_url, asset_cache_name)
                 files     = self._extract_payload(zip_bytes)
             except Exception as exc:
                 self.err(f"Download or extraction failed: {exc}")
                 return
+
+        if asset_source == "cache":
+            self.ok(f"Using cached SharpHound asset ({cache_path(asset_cache_name)})")
 
         token  = uuid.uuid4().hex[:8]
         work   = f".\\sh_{token}"

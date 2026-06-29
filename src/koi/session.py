@@ -34,6 +34,7 @@ class Session:
     encoding: str = field(default="utf-8")
     eol: str = field(default="\n")
     log_path: Optional[str] = field(default=None)
+    tag: Optional[str] = field(default=None)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
     _logger: object = field(default=None, repr=False)  # SessionLogger | None
 
