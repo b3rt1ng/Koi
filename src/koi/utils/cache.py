@@ -30,11 +30,9 @@ def has_cache(name: str) -> bool:
 def purge_cache() -> None:
     try:
         for file in _cache_dir().glob("*"):
-            notify('info', f"Removing cache file: {file.name}")
             if file.is_file():
+                notify('info', f"Removing cache file: {file.name}")
                 file.unlink()
-        return True
     except Exception as e:
         notify('error', f"Error purging cache: {e}")
-        return False
         

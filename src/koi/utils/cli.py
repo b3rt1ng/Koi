@@ -54,7 +54,7 @@ def completer(text: str, state: int):
     if len(parts) == 0 or (len(parts) == 1 and not line.endswith(" ")):
         options = _match(text, COMMANDS)
 
-    elif parts[0] in ("payload", "p", "obfuscator", "obs") and (
+    elif parts[0] in ("payload", "p", "obfuscator", "obs", "cook") and (
         len(parts) == 1 or (len(parts) == 2 and not line.endswith(" "))
     ):
         options = _match(text, list(get_interfaces().keys()))

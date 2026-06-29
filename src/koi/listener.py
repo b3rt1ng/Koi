@@ -392,6 +392,15 @@ class Listener:
         self._accepting = True
         notify('success', f"Listener {bold('resumed')}, accepting new connections.")
 
+    def _ensure_logger(self, sess: "Session"):
+        if sess.id not in self._loggers:
+            from koi.utils.logger import start_logger
+            lg = start_logger(sess)
+            self._loggers[sess.id] = lg
+            sess.log_path = str(lg.path)
+            notify('info', f"Logging to {muted(lg.path.name)}")
+        return self._loggers[sess.id]
+
     def _execute_hidden_command(self, callback: Callable[[], None]) -> None:
         sys.stdout.write("\033[F\033[2K")
         callback()
@@ -412,8 +421,8 @@ class Listener:
         for s in sorted(self._sessions.values(), key=lambda x: x.id):
             masked_ip = self._mask_ip(s.addr[0])
             tag_part = f" {muted('[')}{accent(s.tag)}{muted(']')}" if s.tag else ""
-            key = f"#{s.id}{tag_part}  {s.status_dot()}  {plain(masked_ip)}{muted(f':{s.addr[1]}')} [{s.os_label()}]"
-            data[key] = s._uptime()
+            key = f"#{s.id}{tag_part}  {s.status_dot()}  {plain(masked_ip)}{muted(f':{s.addr[1]}')}"
+            data[key] = f"{s.os_label()}  {s._uptime()}"
         print_report_box("Sessions", data)
 
     def _warn_log_accumulation(self, threshold: int = 30) -> None:
@@ -451,34 +460,20 @@ class Listener:
                 return
 
         if sess.os_type in ("windows_cmd", "windows_ps"):
-            if sess.id not in self._loggers:
-                from koi.utils.logger import start_logger
-                lg = start_logger(sess)
-                self._loggers[sess.id] = lg
-                sess.log_path = str(lg.path)
-                notify('info', f"Logging to {muted(lg.path.name)}")
             upgrade_windows_conptyshell(
                 sess, self._sessions, self.port,
                 self._pending_conpty, self._conpty_staging, self._conpty_lock,
-                self._mask_ip, logger=self._loggers[sess.id],
+                self._mask_ip, logger=self._ensure_logger(sess),
             )
             return
 
-        if sess.id not in self._loggers:
-            from koi.utils.logger import start_logger
-            lg = start_logger(sess)
-            self._loggers[sess.id] = lg
-            sess.log_path = str(lg.path)
-            notify('info', f"Logging to {muted(lg.path.name)}")
-        logger = self._loggers[sess.id]
+        logger = self._ensure_logger(sess)
         sess.attach_logger(logger)
 
         with Spinner("Upgrading shell..."):
             pty_payload = (
                 'if command -v script >/dev/null 2>&1; then '
                     'exec script -qc /bin/bash /dev/null 2>/dev/null || exec script -q /dev/null /bin/bash 2>/dev/null; '
-                'elif command -v socat >/dev/null 2>&1; then '
-                    'exec socat file:$(tty),raw,echo=0 tcp-listen:4444; '
                 'else '
                     'exec /bin/bash -i 2>/dev/null || exec /bin/sh -i 2>/dev/null; '
                 'fi\n'
@@ -557,15 +552,8 @@ class Listener:
             sys.stdout.write("\033[2J\033[H")
             sys.stdout.flush()
 
-        if sess.id not in self._loggers:
-            from koi.utils.logger import start_logger
-            lg = start_logger(sess)
-            self._loggers[sess.id] = lg
-            sess.log_path = str(lg.path)
-            notify('info', f"Logging to {muted(lg.path.name)}")
-
         self._in_session = True
-        logger = self._loggers[sess.id]
+        logger = self._ensure_logger(sess)
         sess.attach_logger(logger)
         logger.log_event(f"enter {self._mask_ip(ip)}:{port}")
         reason = interact(sess, logger=logger)

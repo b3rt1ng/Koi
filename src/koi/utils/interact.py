@@ -150,15 +150,13 @@ def _interact_windows(sess: Session, logger=None) -> str:
             if cmd.strip().lower() in ("exit", "quit"):
                 sess.send(b"exit\r\n")
                 time.sleep(0.2)
-                result[0] = "backgrounded"
+                result[0] = "disconnected"
                 break
 
             line = (cmd + "\r\n").encode(enc, errors="replace")
             if not sess.send(line):
                 result[0] = "disconnected"
                 break
-
-            time.sleep(0.5)
 
     except Exception:
         pass

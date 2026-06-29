@@ -267,7 +267,10 @@ def print_report_box(title, data_dict, top_left_color=PUMPKIN, bottom_right_colo
         inner_width = terminal_width - 2
 
     avail = max(1, inner_width - 5)
-    key_col = min(natural_key_len, max(3, (avail * 3) // 5))
+    if max_inner_width + 2 <= terminal_width:
+        key_col = natural_key_len
+    else:
+        key_col = min(natural_key_len, max(3, (avail * 3) // 5))
     key_col = max(1, min(key_col, avail - 1))
     prefix_len  = key_col + 5
     value_width = max(1, inner_width - prefix_len)
