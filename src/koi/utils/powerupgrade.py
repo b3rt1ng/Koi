@@ -11,7 +11,7 @@ from koi.session import Session
 from koi.utils.cache import put_cache, get_cache, cache_path
 from koi.utils.config import TIMEOUTS
 from koi.utils.ps_obfuscate import obfuscate_conptyshell, _obfuscate_call
-from koi.utils.tcp import spawn_http_server
+from koi.utils.tcp import spawn_http_server, get_local_ip
 from koi.utils.ui import Spinner, notify, bold, accent
 
 _CONPTYSHELL_URL = (
@@ -67,7 +67,7 @@ def upgrade_windows_conptyshell(
 
     local_ip = sess.conn.getsockname()[0]
     if local_ip in ("0.0.0.0", ""):
-        local_ip = "127.0.0.1"
+        local_ip = get_local_ip(sess.addr[0])
 
     with Spinner("Fetching ConPtyShell..."):
         try:
