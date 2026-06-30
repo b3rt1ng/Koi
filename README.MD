@@ -4,7 +4,7 @@
 
 This project is my shot at making a fast, easy to use (yet feature rich) shell handler with a pretty interface.
 
-Disclaimer: please note that this is still under development, and I am still working on some of the key features, which is talked about in [this section](#-wip).
+Disclaimer: please note that this is still under development, and I am still working on some of the key features, talked about in [this section](#-wip).
 
 #### NEW WIKI [HERE](https://b3rt1ng.github.io/koi-wiki/) !!
 
@@ -24,17 +24,18 @@ Disclaimer: please note that this is still under development, and I am still wor
 
 ## ✨ Features
 
-* **Multi-session**: Handle multiple reverse shells simultaneously — list, switch, and background sessions without dropping any.
-* **PTY Upgrade**: Upgrade a raw shell to a full PTY (Linux via `script`/`socat`, Windows via obfuscated ConPtyShell) for tab completion, Ctrl+C forwarding, and terminal resizing.
-* **Modules**: Automate post-exploitation tasks — file transfer, enumeration, pivoting, AD collection, and more. Easily extensible with your own modules.
-* **Obfuscator**: Built-in payload obfuscator with chainable techniques (XOR, hex, format strings, char-array) to evade Defender and EDR solutions.
-* **Session logging**: Every session is logged automatically. Replay any session with `koireview`.
-* **Screenable mode**: Masks IPs and MAC addresses from output for safe screen sharing during CTFs or live demos.
-* **Clean signals**: `Ctrl+Z` backgrounds the session, `Ctrl+C` sends `SIGINT` to the remote — never kills your listener by accident.
+* **Multi-session**: handle multiple reverse shells simultaneously. List, switch, and background sessions without dropping any.
+* **PTY Upgrade**: upgrade a raw shell to a full PTY (Linux via `script`/`socat`, Windows via obfuscated ConPtyShell) for tab completion, Ctrl+C forwarding, and terminal resizing.
+* **Modules**: automate post-exploitation tasks, file transfer, enumeration, pivoting, AD collection, and more. Easily extensible with your own modules.
+* **Obfuscator**: built-in payload obfuscator with chainable techniques (XOR, hex, format strings, char-array) to evade Defender and EDR solutions.
+* **Session logging**: every session is logged automatically. Replay any session with `koireview`.
+* **Screenable mode**: masks IPs and MAC addresses from output for safe screen sharing during CTFs or live demos.
+* **Clean signals**: `Ctrl+Z` backgrounds the session, `Ctrl+C` sends `SIGINT` to the remote, never kills your listener by accident.
 
 ## 🚧 WIP
-* **Tunneling**: Once you have your shell, a simple way to tunnel into that network with minimal input would be very convenient. The `ligolo` module automates agent deployment, but native tunnel management is planned.
+* **Tunneling**: once you have your shell, a simple way to tunnel into that network with minimal input would be very convenient. The `ligolo` module automates agent deployment, but native tunnel management is planned.
 * **EDR evasion**: Koi bypasses casual and mid-tier EDR solutions, but more aggressive environments (expensive commercial EDR, heavily monitored networks) may still flag activity. Further improvements (TLS transport, HTTP C2) are under consideration.
+* **go online**: It woul be nice to make koi work on remote networks rather than local networks, technically with a ngrok tunnel it's possible but since it uses side TCPs some features wont work. Currently a relay to put on a server or on your machine is on the work, it will work as a way to handle the requests remotely.
 ---
 
 ## 🚀 Installation
@@ -57,7 +58,7 @@ _This installation comes with `koifuscator` and `koireview`_
 `koifuscator` is the direct shortcut to the obfuscator module.
 
 `koireview` is your way to see the logs of your sessions.
-> 
+
 To upgrade:
 ```
 pipx upgrade koi-handler
@@ -80,7 +81,7 @@ koi -p 9001
 
 #### Catch a shell
 
-Send a reverse shell yourself or by typing `payloads *interface*` to get pregenerated payloads. do note that it needs to be a terminal like shell, as Koi is manipulating linux shs, powershells and cmd.
+Send a reverse shell yourself or by typing `payloads *interface*` to get pregenerated payloads. Do note that it needs to be a terminal like shell, as Koi is manipulating linux shs, powershells and cmd.
 
 ##### Bypass Windows Defender
 
@@ -94,7 +95,7 @@ The obfuscator also works for Linux payloads. While most Linux environments don'
 
 ## 🔧 PTY Upgrade
 
-Raw shells lack proper terminal support, no tab completion, broken `Ctrl+C`, mangled output. The `upgrade` command fixes this:
+Raw shells lack proper terminal support: no tab completion, broken `Ctrl+C`, mangled output. The `upgrade` command fixes this:
 
 ```
 koi> upgrade 1
@@ -112,7 +113,7 @@ python3 -c 'import pty; pty.spawn("/bin/bash")'
 with `TERM=xterm-256color` and some resizing info
 
 ##### For windows:
-I did not bothered making one for CMD but for powershell, the technique uses an obfuscated [conptyshell](https://github.com/antoniococo/conptyshell) to gather a fully implemented shell:
+I did not bother making one for CMD, but for powershell the technique uses an obfuscated [conptyshell](https://github.com/antoniococo/conptyshell) to gather a fully implemented shell:
 
 ```
 1) ConPtyShell is fetched from GitHub and cached locally for offline reuse
@@ -125,13 +126,11 @@ I did not bothered making one for CMD but for powershell, the technique uses an 
 
 ---
 
-
-
 ### 🤖 Modules
 
 <a href="https://asciinema.org/a/quY43wqm0jhsoypj"><img src="https://asciinema.org/a/quY43wqm0jhsoypj.svg" alt="koi module download on powershell" width="100%" /></a>
 
-Modules are basically a way to automate actions on your instances. you can run commands, and take advantage of your python backend.
+Modules are basically a way to automate actions on your instances. You can run commands and take advantage of your python backend.
 
 If you want to make your own modules, I recommend cloning this repo and installing it with the `--editable` flag. Once you have a shell, you can dev your payload and use the `reload` command to update all modules including the one you're working on.
 

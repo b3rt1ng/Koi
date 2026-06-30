@@ -201,3 +201,12 @@ def obfuscate_conptyshell(ps1_data: bytes) -> tuple[bytes, str]:
     payload = ps_part + payload[ps_end:]
 
     return payload.encode("utf-8"), new_fn
+
+def _ps_variable_obfuscate(payload: str) -> str:
+    """Obfuscate variable names in a PowerShell script."""
+    var_pattern = re.compile(r'\$[a-zA-Z_][a-zA-Z0-9_]*')
+    variables = set(var_pattern.findall(payload))
+    obfuscated_vars = {var: f"${_rand_ident(8)}" for var in variables}
+    for old_var, new_var in obfuscated_vars.items():
+        payload = payload.replace(old_var, new_var)
+    return payload

@@ -172,7 +172,7 @@ class Listener:
         if not sess.alive:
             return
 
-        os_tag = f" {muted('[')} {sess.os_label()} {muted(']')}" if sess.os_type else ""
+        os_tag = f" {muted('[')}{sess.os_label()}{muted(']')}" if sess.os_type else ""
         masked_ip = self._mask_ip(sess.addr[0])
         msg = f"{bold(plain(f'#{sess.id}'))}  {plain(masked_ip)}{muted(f':{sess.addr[1]}')}{os_tag}"
         os.write(self._notify_w, b"1\n")
@@ -422,7 +422,7 @@ class Listener:
             masked_ip = self._mask_ip(s.addr[0])
             tag_part = f" {muted('[')}{accent(s.tag)}{muted(']')}" if s.tag else ""
             key = f"#{s.id}{tag_part}  {s.status_dot()}  {plain(masked_ip)}{muted(f':{s.addr[1]}')}"
-            data[key] = f"{s.os_label()}  {s._uptime()}"
+            data[key] = f"[{s.os_label()}]  {s._uptime()}"
         print_report_box("Sessions", data)
 
     def _warn_log_accumulation(self, threshold: int = 30) -> None:
