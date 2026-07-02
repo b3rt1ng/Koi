@@ -41,49 +41,56 @@ class GetUsersModule(KoiModule):
             username, _, uid, _, _, _, shell = parts[:7]
             users.append([username, uid, shell])
 
+        if not users:
+            self.err("No users parsed from /etc/passwd.")
+            return
+
         shells = ["/bin/bash", "/bin/sh", "/bin/zsh", "/bin/dash"]
         interesting_users = [u for u in users if any(shell in u[2] for shell in shells)]
 
-        if self.args.all:
-            self.table("All users", ["Username", "UID", "Shell"], users)
+        headers = ["Username", "UID", "Shell"]
+        if self.args.all or not interesting_users:
+            self.table("All users", headers, users)
         if interesting_users:
-            self.table("Interesting users", ["Username", "UID", "Shell"], interesting_users)
+            self.table("Interesting users", headers, interesting_users)
 
     def _run_windows(self) -> None:
-        ps_cmd = (
-            "Get-LocalUser | Select-Object @{"
-            "Name='User';Expression={$_.Name}}, "
-            "@{Name='SID';Expression={$_.SID.Value}}, "
-            "@{Name='Enabled';Expression={$_.Enabled}}, "
-            "@{Name='LastLogon';Expression={$_.LastLogon}} | "
-            "ConvertTo-Json"
+        # ASCII-only separators: a non-ASCII separator (e.g. '§') does not
+        # survive the command's cp1252 -> UTF-8 console round-trip on an
+        # upgraded ConPtyShell, which collapses the joined output into a single
+        # record. 'KOISEP' / '|||' are ASCII and pass through unchanged.
+        ps_expr = (
+            "(Get-LocalUser | ForEach-Object {"
+            "\"$($_.Name)|||$($_.SID.Value)|||$($_.Enabled)|||$($_.LastLogon)\""
+            "}) -join 'KOISEP'"
         )
 
-        try:
-            import json
-            result = self._win_query(ps_cmd)
-            if not result:
-                self.err("Failed to enumerate users")
-                return
+        raw = self._win_query(ps_expr)
+        if not raw:
+            self.err("Failed to enumerate users")
+            return
 
-            users_data = json.loads(result)
-            if not isinstance(users_data, list):
-                users_data = [users_data]
+        users = []
+        for entry in raw.split("KOISEP"):
+            entry = self._clean(entry)
+            if "|||" not in entry:
+                continue
+            fields = entry.split("|||")
+            if len(fields) < 4:
+                continue
+            username, sid, enabled, lastlogon = (f.strip() for f in fields[:4])
+            if not username:
+                continue
+            users.append([username, sid, enabled, lastlogon or "Never"])
 
-            users = []
-            for user in users_data:
-                username = user.get("User", "?")
-                sid = user.get("SID", "?")
-                enabled = str(user.get("Enabled", "?"))
-                lastlogon = str(user.get("LastLogon", "Never"))
-                users.append([username, sid, enabled, lastlogon])
+        if not users:
+            self.err("Failed to enumerate users")
+            return
 
-            enabled_users = [u for u in users if u[2] == "True"]
+        headers = ["Username", "SID", "Enabled", "LastLogon"]
+        enabled_users = [u for u in users if u[2] == "True"]
 
-            if self.args.all:
-                self.table("All users", ["Username", "SID", "Enabled", "LastLogon"], users)
-            if enabled_users:
-                self.table("Enabled users", ["Username", "SID", "Enabled", "LastLogon"], enabled_users)
-
-        except Exception as e:
-            self.err(f"Error parsing user data: {e}")
+        if self.args.all or not enabled_users:
+            self.table("All users", headers, users)
+        if enabled_users:
+            self.table("Enabled users", headers, enabled_users)

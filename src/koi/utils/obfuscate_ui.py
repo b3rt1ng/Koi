@@ -16,7 +16,8 @@ from koi.utils.ps_obfuscate import (
     _ps_format_obfuscate,
     _ps_xor_obfuscate,
     _ps_base64_encode,
-    _ps_variable_obfuscate
+    _ps_variable_obfuscate,
+    _ps_bullshit_obfuscate
     
 )
 from koi.utils.ui import (
@@ -33,6 +34,7 @@ WIN_METHODS: list[tuple[str, str, Callable[[str], str]]] = [
     ("xor",    "XOR encoding with random key",                _ps_xor_obfuscate),
     ("variable", "obfuscate variable names",                  _ps_variable_obfuscate),
     ("base64", "UTF-16LE base64 -> powershell -enc  [FINAL]", _ps_base64_encode),
+    ("bullshit", "insert random no-op statements",            _ps_bullshit_obfuscate),
 ]
 
 _HIDE    = "\033[?25l"

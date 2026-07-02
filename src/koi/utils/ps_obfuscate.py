@@ -202,11 +202,92 @@ def obfuscate_conptyshell(ps1_data: bytes) -> tuple[bytes, str]:
 
     return payload.encode("utf-8"), new_fn
 
+_PS_RESERVED_VARS = frozenset({
+    "$_", "$args", "$input", "$this", "$psitem", "$true", "$false", "$null",
+    "$host", "$pwd", "$pid", "$home", "$error", "$foreach", "$switch",
+    "$lastexitcode", "$matches", "$myinvocation", "$pscommandpath",
+    "$psscriptroot", "$executioncontext", "$stacktrace", "$ofs", "$profile",
+    "$shellid", "$pshome", "$nestedpromptlevel", "$consolefilename", "$event",
+    "$eventargs", "$eventsubscriber", "$sender", "$allnodes", "$pscmdlet",
+    "$psboundparameters", "$psculture", "$psuiculture", "$psversiontable",
+    "$psdebugcontext", "$iscoreclr", "$islinux", "$ismacos", "$iswindows",
+    "$env", "$global", "$script", "$local", "$private", "$using",
+    "$variable", "$function", "$alias", "$workflow",
+})
+
+_PS_VAR_RE = re.compile(r'\$[a-zA-Z_][a-zA-Z0-9_]*')
+
+
 def _ps_variable_obfuscate(payload: str) -> str:
-    """Obfuscate variable names in a PowerShell script."""
-    var_pattern = re.compile(r'\$[a-zA-Z_][a-zA-Z0-9_]*')
-    variables = set(var_pattern.findall(payload))
-    obfuscated_vars = {var: f"${_rand_ident(8)}" for var in variables}
-    for old_var, new_var in obfuscated_vars.items():
-        payload = payload.replace(old_var, new_var)
-    return payload
+    """Rename user-defined PowerShell variables in a single regex pass.
+
+    Matching full variable tokens (not substrings) avoids prefix-collision
+    corruption such as $a mangling $ab. Automatic/reserved variables and scope
+    qualifiers are left untouched, and PowerShell's case-insensitivity is
+    honoured so $Data and $data map to the same new name.
+    """
+    mapping: dict[str, str] = {}
+
+    def _repl(m: "re.Match[str]") -> str:
+        name = m.group(0)
+        key = name.lower()
+        if key in _PS_RESERVED_VARS:
+            return name
+        if key not in mapping:
+            mapping[key] = f"${_rand_ident(8)}"
+        return mapping[key]
+
+    return _PS_VAR_RE.sub(_repl, payload)
+
+
+def _ps_bullshit_obfuscate(payload: str) -> str:
+    """
+    Insert random no-op statements into a PowerShell payload to make it harder
+    """
+    def generate_noise_chain():
+        rands1 = ''.join(random.choices(string.ascii_letters, k=5))
+        rands2 = ''.join(random.choices(string.ascii_letters, k=5))
+        
+        noops = [
+            "&{}", 
+            "$()", 
+            f"${rands1}=$null",
+            f"[void]${rands2}"
+        ]
+        
+        chosen = random.sample(noops, k=random.randint(2, 4))
+        return ";".join(chosen)
+
+    output = []
+    in_single_quote = False
+    in_double_quote = False
+    paren_depth = 0
+    brace_depth = 0
+    
+    i = 0
+    while i < len(payload):
+        char = payload[i]
+        
+        if char == "'" and not in_double_quote:
+            in_single_quote = not in_single_quote
+        elif char == '"' and not in_single_quote:
+            in_double_quote = not in_double_quote
+            
+        if not in_single_quote and not in_double_quote:
+            if char == '(': paren_depth += 1
+            elif char == ')': paren_depth -= 1
+            elif char == '{': brace_depth += 1
+            elif char == '}': brace_depth -= 1
+        
+        if char == ';' and not in_single_quote and not in_double_quote and paren_depth == 0:
+            next_chars = payload[i+1:i+5].lstrip()
+            if next_chars and not next_chars.startswith((';', '}', ')', '|')):
+                output.append(f";{generate_noise_chain()};")
+            else:
+                output.append(char)
+        else:
+            output.append(char)
+            
+        i += 1
+
+    return "".join(output)

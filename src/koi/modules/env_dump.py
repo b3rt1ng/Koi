@@ -100,13 +100,13 @@ class EnvDumpModule(KoiModule):
         ps_expr = (
             "(Get-ChildItem Env: | ForEach-Object {"
             "\"$($_.Name)|||$($_.Value)\""
-            "}) -join '§'"
+            "}) -join 'KOISEP'"
         )
         with self.spinner("Dumping environment..."):
             raw = self._win_query(ps_expr, timeout=TIMEOUTS["exec_query"])
 
         env: dict[str, str] = {}
-        for entry in raw.split("§"):
+        for entry in raw.split("KOISEP"):
             entry = self._clean(entry)
             if "|||" not in entry:
                 continue

