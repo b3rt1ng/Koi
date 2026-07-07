@@ -32,10 +32,13 @@ Disclaimer: please note that this is still under development, and I am still wor
 * **Screenable mode**: masks IPs and MAC addresses from output for safe screen sharing during CTFs or live demos.
 * **Clean signals**: `Ctrl+Z` backgrounds the session, `Ctrl+C` sends `SIGINT` to the remote, never kills your listener by accident.
 
+> [!NOTE]
+> It is now possible to use Koi remotely !
+> Read more [here](https://b3rt1ng.github.io/koi-wiki/go-online/)
+
 ## 🚧 WIP
 * **Tunneling**: once you have your shell, a simple way to tunnel into that network with minimal input would be very convenient. The `ligolo` module automates agent deployment, but native tunnel management is planned.
 * **EDR evasion**: Koi bypasses casual and mid-tier EDR solutions, but more aggressive environments (expensive commercial EDR, heavily monitored networks) may still flag activity. Further improvements (TLS transport, HTTP C2) are under consideration.
-* **go online**: It woul be nice to make koi work on remote networks rather than local networks, technically with a ngrok tunnel it's possible but since it uses side TCPs some features wont work. Currently a relay to put on a server or on your machine is on the work, it will work as a way to handle the requests remotely.
 ---
 
 ## 🚀 Installation
