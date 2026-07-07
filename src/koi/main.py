@@ -108,7 +108,7 @@ def obfuscator():
         add_help=False,
     )
     parser.add_argument("-h", "--help", action=_ArtHelpAction, help="show this help message and exit")
-    parser.add_argument("--port", "-p", type=int, default=4010, help="Callback port embedded in the payload (default: 4010)")
+    parser.add_argument("--port", "-p", type=int, default=CONFIG["port"], help=f"Callback port embedded in the payload (default: {CONFIG['port']})")
     parser.add_argument("iface", nargs="?", default=None, metavar="IFACE",
                         help="Network interface to use (default: all)")
     args = parser.parse_args()

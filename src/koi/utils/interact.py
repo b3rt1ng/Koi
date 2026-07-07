@@ -30,7 +30,7 @@ def _interact_raw(sess: Session, logger=None) -> str:
                 r, _, _ = select.select([sess.conn], [], [], 0.1)
                 if not r:
                     continue
-                data = sess.conn.recv(4096)
+                data = sess.conn.recv(65536)
                 if not data:
                     sess.alive = False
                     result[0] = "disconnected"
@@ -88,7 +88,7 @@ def _interact_windows(sess: Session, logger=None) -> str:
                 r, _, _ = select.select([sess.conn], [], [], 0.1)
                 if not r:
                     continue
-                data = sess.conn.recv(4096)
+                data = sess.conn.recv(65536)
                 if not data:
                     sess.alive = False
                     result[0] = "disconnected"

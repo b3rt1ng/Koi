@@ -145,7 +145,7 @@ def spawn_recv_server(
         try:
             conn, _ = srv.accept()
             chunks: list[bytes] = []
-            while chunk := conn.recv(4096):
+            while chunk := conn.recv(65536):
                 chunks.append(chunk)
             conn.close()
             return b"".join(chunks)

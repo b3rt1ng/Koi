@@ -183,7 +183,7 @@ class Listener:
         else:
             import readline as _rl
             buf = _rl.get_line_buffer()
-            sys.stdout.write(f"\r\033[K")
+            sys.stdout.write("\r\033[K")
             notify('new', msg)
             sys.stdout.write(self._prompt() + buf)
             sys.stdout.flush()
@@ -711,7 +711,7 @@ class Listener:
             try:
                 r, _, _ = select.select([sess.conn], [], [], min(remaining, 0.05))
                 if r:
-                    sess.conn.recv(4096)
+                    sess.conn.recv(65536)
             except OSError:
                 break
 

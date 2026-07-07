@@ -477,8 +477,8 @@ def notify(msg_type, text):
         print(f"  {text}")
         return
 
-    color, icon, label = prefixes[msg_type]
-    prefix = f"  {colored_text(icon, color)}  "
+    col, icon, label = prefixes[msg_type]
+    prefix = f"  {colored_text(icon, col)}  "
     
     if msg_type == 'new':
         print(f"{prefix}{label} {text}")
@@ -531,7 +531,8 @@ class ProgressBar:
     def update(self, current: int):
         self._current = current
         pct = int(current / self.total * 100) if self.total else 0
-        bar = ("─" * (pct // (100 // self.width))).ljust(self.width)
+        filled = min(self.width, int(pct / 100 * self.width))
+        bar = ("─" * filled).ljust(self.width)
         suffix = f"{current}/{self.total} bytes" if self.total else f"{current} bytes"
         print_status_line(
             f"  [{colored_text(f'{bar}', PUMPKIN)}] "
@@ -544,14 +545,14 @@ class ProgressBar:
         self.update(self.total if self.total else self._current)
         print()
         
-def breaker_with_text(test: str = ""):
+def breaker_with_text(text: str = ""):
     cols = shutil.get_terminal_size().columns
 
-    if not test:
+    if not text:
         print(gradient_text("─" * cols, PUMPKIN, SILVER))
         return
 
-    text = f" {test} "
+    text = f" {text} "
     vlen = len(_ANSI.sub("", text))
 
     if vlen >= cols:

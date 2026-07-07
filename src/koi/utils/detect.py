@@ -5,7 +5,7 @@ import time
 import uuid
 import logging
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, Optional
 
 if TYPE_CHECKING:
     from koi.session import Session
@@ -18,8 +18,17 @@ _TIMEOUT = TIMEOUTS["session_detect"]
 _SELECT_TIMEOUT = 0.1
 
 
-def _recv_for(session: "Session", duration: float) -> str:
-    """Read everything available on the socket for `duration` seconds."""
+def _recv_for(
+    session: "Session",
+    duration: float,
+    stop_when: Optional[Callable[[str], bool]] = None,
+) -> str:
+    """Read from the socket for at most `duration` seconds.
+
+    If `stop_when` is given, it is called with the decoded buffer after each
+    chunk; returning True stops reading early. This lets detection return as
+    soon as the OS can be decided instead of always waiting the full timeout.
+    """
     buf = b""
     deadline = time.monotonic() + duration
     while True:
@@ -34,6 +43,8 @@ def _recv_for(session: "Session", duration: float) -> str:
                     session.alive = False
                     break
                 buf += chunk
+                if stop_when is not None and stop_when(buf.decode("utf-8", errors="replace")):
+                    break
         except OSError:
             session.alive = False
             break
@@ -65,34 +76,33 @@ def detect_os(session: "Session") -> None:
         session.alive = False
         return
 
-    response = _recv_for(session, _TIMEOUT)
+    response = _recv_for(
+        session, _TIMEOUT,
+        stop_when=lambda text: _classify(text, expected) is not None,
+    )
     logger.debug(f"[detect] session #{session.id} raw response: {response!r}")
 
     _apply(session, response, expected)
 
 
-def _apply(session: "Session", response: str, expected: str) -> None:
-    r = response.lower()
+def _classify(response: str, expected: str) -> "str | None":
+    """Return the detected os_type from a probe response, or None if undecided.
 
+    Shared by the early-exit predicate and `_apply` so both always agree on the
+    verdict (Linux takes precedence, then PowerShell, then cmd).
+    """
     if expected in response:
-        session.os_type = "linux"
-        session.encoding = "utf-8"
-        session.eol = "\n"
-        logger.debug(f"[detect] session #{session.id}, linux")
-        return
+        return "linux"
+
+    r = response.lower()
 
     ps_hints = [
         "is not recognized as the name of a cmdlet",
         "windows powershell",
         "powershell",
     ]
-    ps_prompt = bool(re.search(r'\bps\s+[a-z]:\\', r))
-    if ps_prompt or any(hint in r for hint in ps_hints):
-        session.os_type = "windows_ps"
-        session.encoding = "cp1252"
-        session.eol = "\r\n"
-        logger.debug(f"[detect] session #{session.id}, windows_ps")
-        return
+    if re.search(r'\bps\s+[a-z]:\\', r) or any(hint in r for hint in ps_hints):
+        return "windows_ps"
 
     cmd_hints = [
         "is not recognized as an internal or external command",
@@ -101,13 +111,25 @@ def _apply(session: "Session", response: str, expected: str) -> None:
         "c:/",
     ]
     if any(hint in r for hint in cmd_hints):
-        session.os_type = "windows_cmd"
-        session.encoding = "cp1252"
-        session.eol = "\r\n"
-        logger.debug(f"[detect] session #{session.id}, windows_cmd")
+        return "windows_cmd"
+
+    return None
+
+
+def _apply(session: "Session", response: str, expected: str) -> None:
+    os_type = _classify(response, expected)
+    if os_type is None:
+        _fallback(session)
         return
 
-    _fallback(session)
+    session.os_type = os_type
+    if os_type == "linux":
+        session.encoding = "utf-8"
+        session.eol = "\n"
+    else:
+        session.encoding = "cp1252"
+        session.eol = "\r\n"
+    logger.debug(f"[detect] session #{session.id}, {os_type}")
 
 
 def _fallback(session: "Session") -> None:
@@ -119,7 +141,12 @@ def _fallback(session: "Session") -> None:
     except OSError:
         return
 
-    response = _recv_for(session, _TIMEOUT)
+    _FALLBACK_TOKENS = ("linux", "darwin", "freebsd", "openbsd", "netbsd",
+                        "windows", "microsoft", "c:\\")
+    response = _recv_for(
+        session, _TIMEOUT,
+        stop_when=lambda text: any(x in text.lower() for x in _FALLBACK_TOKENS),
+    )
     r = response.lower()
     logger.debug(f"[detect] session #{session.id} fallback response: {response!r}")
 

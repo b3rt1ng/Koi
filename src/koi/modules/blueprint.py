@@ -237,7 +237,7 @@ class KoiModule(ABC):
             r, _, _ = select.select([self.session.conn], [], [], min(remaining, _SELECT_TIMEOUT))
             if not r:
                 continue
-            chunk = self.session.conn.recv(4096)
+            chunk = self.session.conn.recv(65536)
             if not chunk:
                 break
             buf += chunk
@@ -322,7 +322,7 @@ class KoiModule(ABC):
             time.sleep(0.3)
             r, _, _ = select.select([self.session.conn], [], [], 1.0)
             if r:
-                self.session.conn.recv(4096)
+                self.session.conn.recv(65536)
         elif self.session.os_type == "windows_ps":
             self.sendline(ps_cmd)
         else:
@@ -454,7 +454,7 @@ class KoiModule(ABC):
             if not ready:
                 continue
 
-            chunk = self.session.conn.recv(4096)
+            chunk = self.session.conn.recv(65536)
             if not chunk:
                 break
 
@@ -516,7 +516,7 @@ class KoiModule(ABC):
             if not ready:
                 continue
 
-            chunk = self.session.conn.recv(4096)
+            chunk = self.session.conn.recv(65536)
             if not chunk:
                 return
 
