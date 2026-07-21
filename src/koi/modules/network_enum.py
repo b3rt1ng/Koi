@@ -20,6 +20,31 @@ class NetworkEnumModule(KoiModule):
          "help": "Ping timeout per host for discovery (default: 1s)."},
     ]
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._uid_cache: dict[int, str] | None = None
+
+    def _load_uid_map(self) -> dict[int, str]:
+        """Load /etc/passwd once to map UID -> username (expensive call, cached)."""
+        if self._uid_cache is not None:
+            return self._uid_cache
+
+        self._uid_cache = {}
+        raw = self._try_exec("cat /etc/passwd", timeout=TIMEOUTS["exec_query"])
+        for line in raw.splitlines():
+            parts = line.split(":")
+            if len(parts) >= 3:
+                try:
+                    self._uid_cache[int(parts[2])] = parts[0]
+                except ValueError:
+                    pass
+        return self._uid_cache
+
+    def _uid_to_user(self, uid: int) -> str:
+        """Map UID to username using cached /etc/passwd."""
+        uid_map = self._load_uid_map()
+        return uid_map.get(uid, str(uid))
+
     def _section_interfaces(self) -> tuple[dict, list[tuple[str, str]]]:
         grouped: dict[str, list[str]] = {}
         ipv4_ifaces: list[tuple[str, str]] = []
@@ -69,8 +94,91 @@ class NetworkEnumModule(KoiModule):
                 info[parts[0].strip()] = (parts[1].strip(), parts[2].strip() if len(parts) == 3 else "")
         return info
 
+    @staticmethod
+    def _hex_port_to_decimal(hex_port: str) -> int:
+        return int(hex_port, 16)
+
+    @staticmethod
+    def _hex_ipv4_to_dotted(hex_ip: str) -> str:
+        bytes_list = bytes.fromhex(hex_ip)
+        return ".".join(str(b) for b in reversed(bytes_list))
+
+    @staticmethod
+    def _hex_ipv6_to_colon(hex_ip: str) -> str:
+        words = [hex_ip[i:i+4] for i in range(0, 32, 4)]
+        addr = ":".join(words)
+        try:
+            import ipaddress
+            return str(ipaddress.IPv6Address(addr))
+        except (ValueError, ImportError):
+            return addr
+
+    def _parse_proc_net_line(self, line: str, is_ipv6: bool = False) -> tuple[str, str, int, str] | None:
+        parts = line.split()
+        if len(parts) < 12:
+            return None
+        try:
+            local_addr_str = parts[1]
+            rem_addr_str = parts[2]
+            state = parts[3]
+            uid = int(parts[7])
+
+            if ":" not in local_addr_str:
+                return None
+
+            local_ip_hex, local_port_hex = local_addr_str.rsplit(":", 1)
+
+            if not local_port_hex or not local_ip_hex:
+                return None
+
+            local_port = self._hex_port_to_decimal(local_port_hex)
+
+            if is_ipv6:
+                if len(local_ip_hex) != 32:
+                    return None
+                local_ip = self._hex_ipv6_to_colon(local_ip_hex)
+            else:
+                if len(local_ip_hex) != 8:
+                    return None
+                local_ip = self._hex_ipv4_to_dotted(local_ip_hex)
+
+            return f"{local_ip}:{local_port}", state, uid, rem_addr_str
+        except (ValueError, IndexError, OSError):
+            return None
+
+    def _read_proc_net(self, filename: str) -> list[tuple[str, str, int, str]]:
+        entries = []
+        try:
+            raw = self._try_exec(f"cat /proc/net/{filename}", timeout=TIMEOUTS["exec_query"])
+            if not raw:
+                return []
+            for line in raw.splitlines():
+                line = line.strip()
+                if not line or line.startswith("sl"):
+                    continue
+                is_ipv6 = "6" in filename
+                result = self._parse_proc_net_line(line, is_ipv6)
+                if result:
+                    addr, state, uid, rem_addr = result
+                    entries.append((addr, state, uid, rem_addr))
+        except Exception:
+            return []
+        return entries
+
     def _section_listening(self) -> dict:
-        entries: list[tuple[str, str, str]] = []
+        box: dict[str, str] = {}
+        listen_state = "0A"
+
+        for filename in ("tcp", "tcp6"):
+            entries = self._read_proc_net(filename)
+            for addr, state, uid, _ in entries:
+                if state == listen_state:
+                    user = self._uid_to_user(uid)
+                    box[addr] = f"uid={uid}  user={user}"
+
+        if box:
+            return box
+
         for line in self._try_exec("ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null", timeout=TIMEOUTS["exec_query"]).splitlines():
             line = self._clean(line)
             if not line or line.startswith(("State", "Proto", "Netid")):
@@ -80,23 +188,52 @@ class NetworkEnumModule(KoiModule):
                 continue
             if parts[0] in ("LISTEN", "tcp", "tcp6"):
                 proc_m = re.search(r'users:\(\("([^"]+)",pid=(\d+)', line)
-                entries.append((parts[3], proc_m.group(1) if proc_m else "", proc_m.group(2) if proc_m else ""))
+                addr = parts[3]
+                pid = proc_m.group(2) if proc_m else ""
+                name = proc_m.group(1) if proc_m else ""
+                if pid:
+                    pid_info = self._pid_info([pid])
+                    if pid in pid_info:
+                        user, cmd = pid_info[pid]
+                        box[addr] = f"{name or cmd}  pid={pid}  user={user}"
+                    else:
+                        box[addr] = f"{name}  pid={pid}".strip()
+                elif name:
+                    box[addr] = name
             elif re.match(r'tcp6?', parts[0]) and len(parts) >= 7:
+                addr = parts[3]
                 pid, _, name = parts[6].partition("/")
-                entries.append((parts[3], name, pid if name else ""))
+                if name:
+                    box[addr] = f"{name}  pid={pid}".strip() if pid else name
+                elif pid:
+                    box[addr] = f"pid={pid}"
 
-        pid_info = self._pid_info([pid for _, _, pid in entries if pid])
-        box: dict[str, str] = {}
-        for local, name, pid in entries:
-            if pid and pid in pid_info:
-                user, cmd = pid_info[pid]
-                box[local] = f"{name or cmd}  pid={pid}  user={user}"
-            else:
-                box[local] = f"{name}  pid={pid}".strip() if (name or pid) else "-"
         return box
 
     def _section_connections(self) -> dict:
         box: dict[str, str] = {}
+        established_state = "01"
+
+        for filename in ("tcp", "tcp6"):
+            entries = self._read_proc_net(filename)
+            for addr, state, uid, rem_addr_str in entries:
+                if state == established_state:
+                    try:
+                        if ":" in rem_addr_str:
+                            rem_ip_hex, rem_port_hex = rem_addr_str.rsplit(":", 1)
+                            rem_port = self._hex_port_to_decimal(rem_port_hex)
+                            if "6" in filename:
+                                rem_ip = self._hex_ipv6_to_colon(rem_ip_hex)
+                            else:
+                                rem_ip = self._hex_ipv4_to_dotted(rem_ip_hex)
+                            user = self._uid_to_user(uid)
+                            box[f"{addr} -> {rem_ip}:{rem_port}"] = f"uid={uid}  user={user}"
+                    except (ValueError, IndexError):
+                        pass
+
+        if box:
+            return box
+
         for line in self._try_exec("ss -tnp state established 2>/dev/null || netstat -tnp 2>/dev/null | grep ESTABLISHED", timeout=TIMEOUTS["exec_query"]).splitlines():
             line = self._clean(line)
             if not line or line.startswith(("Recv", "Proto")):
