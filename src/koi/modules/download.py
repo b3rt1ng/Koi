@@ -40,28 +40,23 @@ class DownloadModule(KoiModule):
 
         quoted = _shell_quote(remote_path)
 
-        with self.spinner("Checking if file exists..."):
+        with self.spinner("Checking file and getting size..."):
             if os_type == "linux":
-                exists = self.exec(f"test -f {quoted}").success
-            else:
-                raw = self._win_query(f"(Test-Path '{remote_path}').ToString()")
-                exists = raw.lower() == "true"
-
-        if not exists:
-            self.err(f"Remote file not found: {remote_path}")
-            return
-
-        with self.spinner("Getting file size..."):
-            if os_type == "linux":
-                size_str = self._exec_clean(f"wc -c < {quoted}")
+                size_str = self._exec_clean(f"[ -f {quoted} ] && wc -c < {quoted} || echo 'not_found'")
+                if size_str == "not_found":
+                    self.err(f"Remote file not found: {remote_path}")
+                    return
                 try:
                     remote_size = int(size_str.split()[0])
                 except (ValueError, IndexError):
                     remote_size = None
             else:
-                size_raw = self._win_query(f"(Get-Item '{remote_path}').Length")
+                info_raw = self._win_query(f"if(Test-Path '{remote_path}'){{(Get-Item '{remote_path}').Length}}else{{'not_found'}}")
+                if info_raw == "not_found":
+                    self.err(f"Remote file not found: {remote_path}")
+                    return
                 try:
-                    remote_size = int(size_raw.strip())
+                    remote_size = int(info_raw.strip())
                 except (ValueError, IndexError):
                     remote_size = None
 

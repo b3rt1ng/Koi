@@ -68,15 +68,20 @@ class WinscalateModule(KoiModule):
             privs["Potato attack feasible"] = "SeImpersonatePrivilege enabled, try PrintSpoofer, GodPotato, RoguePotato"
         n_critical += self._emit("Critical - dangerous privileges", privs)
 
-        with self.spinner("Checking AlwaysInstallElevated..."):
-            hklm = self._q(
-                "(Get-ItemProperty 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer'"
-                " -Name AlwaysInstallElevated -EA SilentlyContinue).AlwaysInstallElevated"
+        with self.spinner("Checking registry policies..."):
+            reg_raw = self._q(
+                "\"$((Get-ItemProperty 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer'"
+                " -Name AlwaysInstallElevated -EA SilentlyContinue).AlwaysInstallElevated)|||$((Get-ItemProperty"
+                " 'HKCU:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer'"
+                " -Name AlwaysInstallElevated -EA SilentlyContinue).AlwaysInstallElevated)|||$((Get-ItemProperty"
+                " 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System'"
+                " -EA SilentlyContinue).ConsentPromptBehaviorAdmin)\""
             )
-            hkcu = self._q(
-                "(Get-ItemProperty 'HKCU:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer'"
-                " -Name AlwaysInstallElevated -EA SilentlyContinue).AlwaysInstallElevated"
-            )
+            parts = reg_raw.split("|||")
+            hklm = parts[0].strip() if len(parts) > 0 else ""
+            hkcu = parts[1].strip() if len(parts) > 1 else ""
+            uac = parts[2].strip() if len(parts) > 2 else ""
+
         if hklm == "1" and hkcu == "1":
             n_critical += self._emit("Critical - AlwaysInstallElevated", {
                 "AlwaysInstallElevated": "HKLM + HKCU both set, install any MSI as SYSTEM"
@@ -86,12 +91,6 @@ class WinscalateModule(KoiModule):
                 "AlwaysInstallElevated": f"HKLM={hklm or '0'}  HKCU={hkcu or '0'}, only one key set"
             })
 
-        with self.spinner("Checking UAC level..."):
-            uac = self._q(
-                "(Get-ItemProperty"
-                " 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System'"
-                ").ConsentPromptBehaviorAdmin"
-            )
         label = _UAC_LEVELS.get(uac, f"Level {uac}")
         if uac == "0":
             n_critical += self._emit("Critical - UAC disabled", {"UAC": label})

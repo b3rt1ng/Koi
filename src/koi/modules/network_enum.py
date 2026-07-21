@@ -179,7 +179,11 @@ class NetworkEnumModule(KoiModule):
         if box:
             return box
 
-        for line in self._try_exec("ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null", timeout=TIMEOUTS["exec_query"]).splitlines():
+        ss_output = self._try_exec("ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null", timeout=TIMEOUTS["exec_query"])
+        pids_to_fetch = set()
+        lines_with_pids = []
+
+        for line in ss_output.splitlines():
             line = self._clean(line)
             if not line or line.startswith(("State", "Proto", "Netid")):
                 continue
@@ -188,25 +192,33 @@ class NetworkEnumModule(KoiModule):
                 continue
             if parts[0] in ("LISTEN", "tcp", "tcp6"):
                 proc_m = re.search(r'users:\(\("([^"]+)",pid=(\d+)', line)
+                if proc_m:
+                    pids_to_fetch.add(proc_m.group(2))
+                    lines_with_pids.append((line, parts, proc_m.group(2), proc_m.group(1)))
+            elif re.match(r'tcp6?', parts[0]) and len(parts) >= 7:
+                # netstat-style: process name/pid already embedded in parts[6],
+                # no _pid_info() lookup needed
+                lines_with_pids.append((line, parts, None, None))
+
+        pid_info = self._pid_info(list(pids_to_fetch)) if pids_to_fetch else {}
+
+        for line, parts, pid, name in lines_with_pids:
+            if parts[0] in ("LISTEN", "tcp", "tcp6"):
                 addr = parts[3]
-                pid = proc_m.group(2) if proc_m else ""
-                name = proc_m.group(1) if proc_m else ""
-                if pid:
-                    pid_info = self._pid_info([pid])
-                    if pid in pid_info:
-                        user, cmd = pid_info[pid]
-                        box[addr] = f"{name or cmd}  pid={pid}  user={user}"
-                    else:
-                        box[addr] = f"{name}  pid={pid}".strip()
+                if pid and pid in pid_info:
+                    user, cmd = pid_info[pid]
+                    box[addr] = f"{name or cmd}  pid={pid}  user={user}"
+                elif pid and name:
+                    box[addr] = f"{name}  pid={pid}".strip()
                 elif name:
                     box[addr] = name
             elif re.match(r'tcp6?', parts[0]) and len(parts) >= 7:
                 addr = parts[3]
-                pid, _, name = parts[6].partition("/")
-                if name:
-                    box[addr] = f"{name}  pid={pid}".strip() if pid else name
-                elif pid:
-                    box[addr] = f"pid={pid}"
+                netstat_pid, _, proc_name = parts[6].partition("/")
+                if proc_name:
+                    box[addr] = f"{proc_name}  pid={netstat_pid}".strip() if netstat_pid else proc_name
+                elif netstat_pid:
+                    box[addr] = f"pid={netstat_pid}"
 
         return box
 
