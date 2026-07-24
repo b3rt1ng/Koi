@@ -12,7 +12,16 @@ import time
 from typing import Callable, Dict, Optional
 
 from koi.utils.config import CONFIG
-from koi.utils.cli import print_help, resolve_command, set_session_provider
+from koi.utils.cli import (
+    check_usage,
+    print_help,
+    resolve_command,
+    resolve_os_type,
+    set_session_provider,
+    OS_ALIASES,
+    SCREENABLE_SENTINEL,
+    TOGGLE_SENTINEL,
+)
 from koi.utils.powerupgrade import upgrade_windows_conptyshell
 from koi.utils.interact import interact
 from koi.modules.loader import load_modules, get_module
@@ -273,7 +282,7 @@ class Listener:
             if not raw:
                 continue
 
-            if raw == "_koi_screenable_":
+            if raw == SCREENABLE_SENTINEL:
                 import readline as _rl
                 try:
                     _rl.remove_history_item(_rl.get_current_history_length() - 1)
@@ -282,7 +291,7 @@ class Listener:
                 self._toggle_screenable()
                 continue
 
-            if raw == "_koi_toggle_":
+            if raw == TOGGLE_SENTINEL:
                 import readline as _rl
                 try:
                     _rl.remove_history_item(_rl.get_current_history_length() - 1)
@@ -293,6 +302,11 @@ class Listener:
 
             parts = raw.split()
             cmd = resolve_command(parts[0])
+
+            usage_err = check_usage(cmd, parts)
+            if usage_err:
+                notify('error', usage_err)
+                continue
 
             if cmd in ("exit", "quit"):
                 self.stop()
@@ -311,22 +325,13 @@ class Listener:
                 self._cmd_ls()
 
             elif cmd == "go":
-                if len(parts) < 2:
-                    notify('error', f"Usage: go {accent('<id|tag>')}")
-                else:
-                    self._cmd_go(parts[1])
+                self._cmd_go(parts[1])
 
             elif cmd == "upgrade":
-                if len(parts) < 2:
-                    notify('error', f"Usage: upgrade {accent('<id|tag>')}")
-                else:
-                    self._cmd_upgrade(parts[1])
+                self._cmd_upgrade(parts[1])
 
             elif cmd == "kill":
-                if len(parts) < 2:
-                    notify('error', f"Usage: kill {accent('<id|tag>')}")
-                else:
-                    self._cmd_kill(parts[1])
+                self._cmd_kill(parts[1])
 
             elif cmd == "payload":
                 self._cmd_payload(parts[1] if len(parts) > 1 else None)
@@ -347,16 +352,10 @@ class Listener:
                 self._dispatch_run(parts)
 
             elif cmd == "setshell":
-                if len(parts) < 3:
-                    notify('error', f"Usage: setshell {accent('<id|tag>')} {accent('<linux|windows_ps|windows_cmd>')}")
-                else:
-                    self._cmd_setshell(parts[1], parts[2])
+                self._cmd_setshell(parts[1], parts[2])
 
             elif cmd == "tag":
-                if len(parts) < 2:
-                    notify('error', f"Usage: tag {accent('<id|tag>')} {accent('[name]')}")
-                else:
-                    self._cmd_tag(parts[1], parts[2] if len(parts) > 2 else None)
+                self._cmd_tag(parts[1], parts[2] if len(parts) > 2 else None)
 
             else:
                 notify('error', f"Unknown command: {accent(cmd)}, type {bold('help')}")
@@ -637,15 +636,6 @@ class Listener:
         finally:
             signal.signal(signal.SIGINT, old_handler)
 
-    _OS_ALIASES: dict[str, str] = {
-        "linux":       "linux",
-        "windows_ps":  "windows_ps",
-        "windows_cmd": "windows_cmd",
-        "ps":          "windows_ps",
-        "powershell":  "windows_ps",
-        "cmd":         "windows_cmd",
-    }
-
     def _cmd_setshell(self, ref: str, os_arg: str) -> None:
         self._prune()
         sess = self._resolve_session(ref)
@@ -654,9 +644,9 @@ class Listener:
             return
         sid = sess.id
 
-        os_type = self._OS_ALIASES.get(os_arg.lower())
+        os_type = resolve_os_type(os_arg)
         if os_type is None:
-            valid = ", ".join(sorted(set(self._OS_ALIASES.values())))
+            valid = ", ".join(sorted(OS_ALIASES.keys()))
             notify('error', f"Unknown OS type {accent(os_arg)!r}.  Valid: {muted(valid)}")
             return
 

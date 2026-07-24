@@ -50,11 +50,57 @@ def resolve_command(cmd: str) -> str:
 
 COMMANDS = list(ALIASES.keys())
 
-_OS_TYPES = ["linux", "windows_ps", "windows_cmd"]
+# Canonical OS type -> accepted aliases (canonical name included), same
+# pattern as ALIASES/resolve_command but for setshell's argument.
+OS_ALIASES: dict[str, list[str]] = {
+    "linux":       ["linux"],
+    "windows_ps":  ["windows_ps", "ps", "powershell"],
+    "windows_cmd": ["windows_cmd", "cmd"],
+}
+
+_OS_ALIAS_TO_CANON: dict[str, str] = {
+    alias: canon for canon, aliases in OS_ALIASES.items() for alias in aliases
+}
+
+
+def resolve_os_type(os_arg: str) -> Optional[str]:
+    """Map an OS-type alias to its canonical name, or None if unknown."""
+    return _OS_ALIAS_TO_CANON.get(os_arg.lower())
+
+
+_OS_TYPES = list(OS_ALIASES.keys())
 _SESSION_ARG1_CMDS = {
     alias for canon in ("go", "upgrade", "kill", "tag") for alias in ALIASES[canon]
 }
 _PAYLOAD_LIKE_CMDS = set(ALIASES["payload"]) | set(ALIASES["obfuscator"])
+
+# Canonical command -> (min positional args required, usage message shown
+# when the count isn't met). Commands not listed here take no mandatory
+# argument. `run` has its own module-aware usage logic in listener.py.
+USAGE: dict[str, tuple[int, str]] = {
+    "go":       (1, f"Usage: go {accent('<id|tag>')}"),
+    "upgrade":  (1, f"Usage: upgrade {accent('<id|tag>')}"),
+    "kill":     (1, f"Usage: kill {accent('<id|tag>')}"),
+    "setshell": (2, f"Usage: setshell {accent('<id|tag>')} {accent('<linux|windows_ps|windows_cmd>')}"),
+    "tag":      (1, f"Usage: tag {accent('<id|tag>')} {accent('[name]')}"),
+}
+
+
+def check_usage(canon: str, parts: list[str]) -> Optional[str]:
+    """Return a usage error message if `parts` (command included) doesn't
+    meet canon's minimum argument count, else None.
+    """
+    spec = USAGE.get(canon)
+    if spec is None:
+        return None
+    min_args, message = spec
+    return message if len(parts) - 1 < min_args else None
+
+
+# Sentinels emitted by the Ctrl+T / Ctrl+W keybindings below; listener.py
+# matches on these constants instead of duplicating the raw strings.
+SCREENABLE_SENTINEL = "_koi_screenable_"
+TOGGLE_SENTINEL = "_koi_toggle_"
 
 _session_provider: Optional[Callable[[], list[str]]] = None
 
@@ -70,8 +116,8 @@ def _session_refs() -> list[str]:
 
 readline.set_history_length(200)
 readline.parse_and_bind("tab: complete")
-readline.parse_and_bind(r'"\C-t": "\C-e\C-u_koi_screenable_\n"')
-readline.parse_and_bind(r'"\C-w": "\C-e\C-u_koi_toggle_\n"')
+readline.parse_and_bind(rf'"\C-t": "\C-e\C-u{SCREENABLE_SENTINEL}\n"')
+readline.parse_and_bind(rf'"\C-w": "\C-e\C-u{TOGGLE_SENTINEL}\n"')
 
 
 def _fuzzy_match(text: str, candidates: list[str], cutoff: float = 0.35) -> list[str]:
