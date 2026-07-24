@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import readline
 from typing import Callable, Optional
 
@@ -10,14 +11,50 @@ from koi.utils.ui import (
     bold, accent, alert,
 )
 
-COMMANDS = [
-    "ls", "go", "upgrade", "kill", "tag", "setshell", "help", "exit",
-    "quit", "interact", "payload", "obfuscator", "run", "modules",
-    "reload", "start", "stop", "logs",
-]
+# Canonical command name -> accepted aliases (canonical name included).
+# Single source of truth: listener.py normalizes user input through
+# resolve_command() instead of hardcoding alias tuples itself.
+ALIASES: dict[str, list[str]] = {
+    "help":       ["help", "h", "?"],
+    "exit":       ["exit"],
+    "quit":       ["quit"],
+    "stop":       ["stop"],
+    "start":      ["start"],
+    "ls":         ["ls", "l", "list"],
+    "go":         ["go", "g", "interact"],
+    "upgrade":    ["upgrade", "u"],
+    "kill":       ["kill", "rm", "terminate"],
+    "payload":    ["payload", "p"],
+    "obfuscator": ["obfuscator", "obs", "cook"],
+    "logs":       ["logs", "log"],
+    "modules":    ["modules", "mdls", "mods"],
+    "reload":     ["reload", "refresh", "rl"],
+    "run":        ["run"],
+    "setshell":   ["setshell", "sh"],
+    "tag":        ["tag"],
+}
+
+_ALIAS_TO_CANON: dict[str, str] = {
+    alias: canon for canon, aliases in ALIASES.items() for alias in aliases
+}
+
+
+def resolve_command(cmd: str) -> str:
+    """Map a typed command (or alias) to its canonical name, case-insensitive.
+
+    Unknown commands pass through unchanged so the caller can still report
+    them as invalid.
+    """
+    return _ALIAS_TO_CANON.get(cmd.lower(), cmd.lower())
+
+
+COMMANDS = list(ALIASES.keys())
 
 _OS_TYPES = ["linux", "windows_ps", "windows_cmd"]
-_SESSION_ARG1_CMDS = {"go", "g", "interact", "upgrade", "u", "kill", "tag"}
+_SESSION_ARG1_CMDS = {
+    alias for canon in ("go", "upgrade", "kill", "tag") for alias in ALIASES[canon]
+}
+_PAYLOAD_LIKE_CMDS = set(ALIASES["payload"]) | set(ALIASES["obfuscator"])
 
 _session_provider: Optional[Callable[[], list[str]]] = None
 
@@ -37,14 +74,40 @@ readline.parse_and_bind(r'"\C-t": "\C-e\C-u_koi_screenable_\n"')
 readline.parse_and_bind(r'"\C-w": "\C-e\C-u_koi_toggle_\n"')
 
 
+def _fuzzy_match(text: str, candidates: list[str], cutoff: float = 0.35) -> list[str]:
+    """Typo-tolerant fallback (e.g. 'paload'/'pyload'/'pld' -> 'payload').
+
+    Ranks candidates by similarity ratio. When one candidate is a clear
+    winner over the runner-up, return only that one so tab jumps straight
+    to it instead of just cycling through look-alikes.
+    """
+    if not text or not candidates:
+        return []
+    t = text.lower()
+    scored = sorted(
+        ((difflib.SequenceMatcher(None, t, c.lower()).ratio(), c) for c in candidates),
+        key=lambda pair: pair[0],
+        reverse=True,
+    )
+    scored = [(score, c) for score, c in scored if score >= cutoff]
+    if not scored:
+        return []
+    best_score, best = scored[0]
+    if len(scored) == 1 or best_score >= scored[1][0] * 1.3:
+        return [best]
+    return [c for _, c in scored]
+
+
 def _match(text: str, candidates: list[str]) -> list[str]:
-    """Prefix matches first, then substring matches (case-insensitive)."""
+    """Prefix matches first, then substring, then typo-tolerant fuzzy fallback."""
     if not text:
         return list(candidates)
     t = text.lower()
     prefix = [c for c in candidates if c.lower().startswith(t)]
     substr = [c for c in candidates if t in c.lower() and not c.lower().startswith(t)]
-    return prefix + substr
+    if prefix or substr:
+        return prefix + substr
+    return _fuzzy_match(text, candidates)
 
 
 def completer(text: str, state: int):
@@ -52,9 +115,13 @@ def completer(text: str, state: int):
     parts = line.strip().split()
 
     if len(parts) == 0 or (len(parts) == 1 and not line.endswith(" ")):
-        options = _match(text, COMMANDS)
+        alias_hit = _ALIAS_TO_CANON.get(text.lower())
+        if alias_hit and alias_hit != text.lower():
+            options = [alias_hit]
+        else:
+            options = _match(text, COMMANDS)
 
-    elif parts[0] in ("payload", "p", "obfuscator", "obs", "cook") and (
+    elif parts[0] in _PAYLOAD_LIKE_CMDS and (
         len(parts) == 1 or (len(parts) == 2 and not line.endswith(" "))
     ):
         options = _match(text, list(get_interfaces().keys()))
@@ -76,13 +143,13 @@ def completer(text: str, state: int):
     ):
         options = _match(text, _session_refs())
 
-    elif parts[0] in ("setshell", "sh") and (
+    elif parts[0] in ALIASES["setshell"] and (
         (len(parts) == 1 and line.endswith(" ")) or
         (len(parts) == 2 and not line.endswith(" "))
     ):
         options = _match(text, _session_refs())
 
-    elif parts[0] in ("setshell", "sh") and (
+    elif parts[0] in ALIASES["setshell"] and (
         (len(parts) == 2 and line.endswith(" ")) or
         (len(parts) == 3 and not line.endswith(" "))
     ):

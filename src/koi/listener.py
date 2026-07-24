@@ -12,7 +12,7 @@ import time
 from typing import Callable, Dict, Optional
 
 from koi.utils.config import CONFIG
-from koi.utils.cli import print_help, set_session_provider
+from koi.utils.cli import print_help, resolve_command, set_session_provider
 from koi.utils.powerupgrade import upgrade_windows_conptyshell
 from koi.utils.interact import interact
 from koi.modules.loader import load_modules, get_module
@@ -292,13 +292,13 @@ class Listener:
                 continue
 
             parts = raw.split()
-            cmd = parts[0].lower()
+            cmd = resolve_command(parts[0])
 
             if cmd in ("exit", "quit"):
                 self.stop()
                 return
 
-            elif cmd in ("help", "h", "?"):
+            elif cmd == "help":
                 print_help()
 
             elif cmd == "stop":
@@ -307,16 +307,16 @@ class Listener:
             elif cmd == "start":
                 self._cmd_start_accepting()
 
-            elif cmd in ("ls", "l", "list"):
+            elif cmd == "ls":
                 self._cmd_ls()
 
-            elif cmd in ("go", "g", "interact"):
+            elif cmd == "go":
                 if len(parts) < 2:
                     notify('error', f"Usage: go {accent('<id|tag>')}")
                 else:
                     self._cmd_go(parts[1])
 
-            elif cmd in ("upgrade", "u"):
+            elif cmd == "upgrade":
                 if len(parts) < 2:
                     notify('error', f"Usage: upgrade {accent('<id|tag>')}")
                 else:
@@ -328,25 +328,25 @@ class Listener:
                 else:
                     self._cmd_kill(parts[1])
 
-            elif cmd in ("payload", "p"):
+            elif cmd == "payload":
                 self._cmd_payload(parts[1] if len(parts) > 1 else None)
 
-            elif cmd in ("obfuscator", "obs", "cook"):
+            elif cmd == "obfuscator":
                 self._cmd_obfuscate(parts[1] if len(parts) > 1 else None)
 
-            elif cmd in ("logs", "log"):
+            elif cmd == "logs":
                 self._cmd_logs()
 
-            elif cmd in ("modules", "mdls", "mods"):
+            elif cmd == "modules":
                 self._cmd_modules()
 
-            elif cmd in ("reload", "refresh", "rl"):
+            elif cmd == "reload":
                 self._cmd_reload()
 
             elif cmd == "run":
                 self._dispatch_run(parts)
 
-            elif cmd in ("setshell", "sh"):
+            elif cmd == "setshell":
                 if len(parts) < 3:
                     notify('error', f"Usage: setshell {accent('<id|tag>')} {accent('<linux|windows_ps|windows_cmd>')}")
                 else:

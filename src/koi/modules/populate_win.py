@@ -18,13 +18,13 @@ TOOLS: dict[str, str] = {
     "Rubeus.exe":      "https://github.com/Flangvik/SharpCollection/raw/refs/heads/master/NetFramework_4.7_x64/Rubeus.exe",
     "RunasCs.exe":     "https://github.com/Flangvik/SharpCollection/raw/refs/heads/master/NetFramework_4.7_x64/RunasCs.exe",
     "Certify.exe":     "https://github.com/Flangvik/SharpCollection/raw/refs/heads/master/NetFramework_4.7_x64/Certify.exe",
-    "winPEAS.exe":     "https://github.com/Flangvik/SharpCollection/raw/refs/heads/master/NetFramework_4.7_x64/winPEAS.exe",
+    "PowerView.ps1":   "https://raw.githubusercontent.com/PowerShellMafia/PowerSploit/refs/heads/master/Recon/PowerView.ps1",
 }
 
 
 class PopulateWinModule(KoiModule):
     name        = "armory"
-    description = "Upload common exploitation tools (Rubeus, RunasCs, Certify, winPEAS, mimikatz) on the target."
+    description = "Upload common exploitation tools (Rubeus, RunasCs, Certify, mimikatz, PowerView) on the target."
     usage       = "armory <id> [-o <remote_dir>]"
     category    = "Privilege Escalation"
     platform    = "windows_ps"
