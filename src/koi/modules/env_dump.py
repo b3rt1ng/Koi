@@ -99,18 +99,18 @@ class EnvDumpModule(KoiModule):
     def _run_windows(self) -> None:
         ps_expr = (
             "(Get-ChildItem Env: | ForEach-Object {"
-            "\"$($_.Name)|||$($_.Value)\""
-            "}) -join 'KOISEP'"
+            f"\"$($_.Name){self.FIELD_SEP}$($_.Value)\""
+            f"}}) -join '{self.REC_SEP}'"
         )
         with self.spinner("Dumping environment..."):
             raw = self._win_query(ps_expr, timeout=TIMEOUTS["exec_query"])
 
         env: dict[str, str] = {}
-        for entry in raw.split("KOISEP"):
+        for entry in raw.split(self.REC_SEP):
             entry = self._clean(entry)
-            if "|||" not in entry:
+            if self.FIELD_SEP not in entry:
                 continue
-            key, _, val = entry.partition("|||")
+            key, _, val = entry.partition(self.FIELD_SEP)
             key = key.strip()
             if key:
                 env[key] = val.strip()

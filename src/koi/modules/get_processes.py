@@ -107,7 +107,7 @@ class GetProcessesModule(KoiModule):
 
     def _parse_windows_tasklist(self, raw: str) -> list[dict]:
         procs = []
-        for entry in raw.split("KOISEP"):
+        for entry in raw.split(self.REC_SEP):
             entry = self._clean(entry)
             if not entry or not entry.startswith('"'):
                 continue
@@ -140,7 +140,7 @@ class GetProcessesModule(KoiModule):
         return False
 
     def _run_windows(self) -> None:
-        ps_expr = "(tasklist /fo csv /nh /v) -join 'KOISEP'"
+        ps_expr = f"(tasklist /fo csv /nh /v) -join '{self.REC_SEP}'"
         with self.spinner("Collecting processes via tasklist..."):
             raw = self._win_query(ps_expr, timeout=TIMEOUTS["exec_query"])
 

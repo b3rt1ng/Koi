@@ -55,14 +55,11 @@ class GetUsersModule(KoiModule):
             self.table("Interesting users", headers, interesting_users)
 
     def _run_windows(self) -> None:
-        # ASCII-only separators: a non-ASCII separator (e.g. '§') does not
-        # survive the command's cp1252 -> UTF-8 console round-trip on an
-        # upgraded ConPtyShell, which collapses the joined output into a single
-        # record. 'KOISEP' / '|||' are ASCII and pass through unchanged.
+        # See KoiModule.REC_SEP / FIELD_SEP for why these delimiters are ASCII.
         ps_expr = (
             "(Get-LocalUser | ForEach-Object {"
-            "\"$($_.Name)|||$($_.SID.Value)|||$($_.Enabled)|||$($_.LastLogon)\""
-            "}) -join 'KOISEP'"
+            f"\"$($_.Name){self.FIELD_SEP}$($_.SID.Value){self.FIELD_SEP}$($_.Enabled){self.FIELD_SEP}$($_.LastLogon)\""
+            f"}}) -join '{self.REC_SEP}'"
         )
 
         raw = self._win_query(ps_expr)
@@ -71,11 +68,11 @@ class GetUsersModule(KoiModule):
             return
 
         users = []
-        for entry in raw.split("KOISEP"):
+        for entry in raw.split(self.REC_SEP):
             entry = self._clean(entry)
-            if "|||" not in entry:
+            if self.FIELD_SEP not in entry:
                 continue
-            fields = entry.split("|||")
+            fields = entry.split(self.FIELD_SEP)
             if len(fields) < 4:
                 continue
             username, sid, enabled, lastlogon = (f.strip() for f in fields[:4])

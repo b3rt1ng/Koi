@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import urllib.request
 from pathlib import Path
+
+from koi.utils.config import TIMEOUTS
 from koi.utils.ui import notify
 
 _CACHE_DIR = Path.home() / ".koi" / "cache"
@@ -26,6 +29,35 @@ def get_cache(name: str) -> bytes | None:
 
 def has_cache(name: str) -> bool:
     return cache_path(name).exists()
+
+
+def fetch_or_cache(
+    url: str,
+    name: str,
+    timeout: float | None = None,
+    headers: dict[str, str] | None = None,
+) -> tuple[bytes, str]:
+    """Download *url* and cache the response bytes under *name*.
+
+    Returns ``(data, source)`` where *source* is ``"remote"`` when the download
+    succeeds (the bytes are also written to the cache) or ``"cache"`` when the
+    download fails but a previously cached copy exists. If the download fails
+    and nothing is cached, the original download error is re-raised.
+    """
+    if timeout is None:
+        timeout = TIMEOUTS["http_fetch"]
+    request = urllib.request.Request(url, headers=headers) if headers else url
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as resp:
+            data = resp.read()
+        put_cache(name, data)
+        return data, "remote"
+    except Exception:
+        cached = get_cache(name)
+        if cached is None:
+            raise
+        return cached, "cache"
+
 
 def purge_cache() -> None:
     try:

@@ -18,7 +18,7 @@ def _try_bind_port(port: int) -> tuple[socket.socket, int] | None:
         return None
 
 
-def _bind_side_channel_port() -> tuple[socket.socket, int]:
+def bind_side_channel_port() -> tuple[socket.socket, int]:
     """
     Try to bind to a configured side-channel port.
     Falls back to port 0 (OS-assigned) if all configured ports fail.
@@ -67,7 +67,7 @@ def spawn_send_server(
     - *errors* is a list that will contain an error string if the transfer fails.
     - *on_progress*: optional ``callback(bytes_sent)`` called after each chunk.
     """
-    srv, port = _bind_side_channel_port()
+    srv, port = bind_side_channel_port()
     srv.listen(1)
     srv.settimeout(timeout)
 
@@ -137,7 +137,7 @@ def spawn_recv_server(
     Call ``collect()`` to block until the connection is received and all data is read;
     returns the raw bytes (empty on timeout or error).
     """
-    srv, port = _bind_side_channel_port()
+    srv, port = bind_side_channel_port()
     srv.listen(1)
     srv.settimeout(timeout)
 

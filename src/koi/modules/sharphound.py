@@ -5,12 +5,11 @@ import os
 import re
 import tempfile
 import time
-import urllib.request
 import uuid
 import zipfile
 
 from koi.modules.blueprint import KoiModule, TCPReceiveServer
-from koi.utils.cache import cache_path, get_cache, put_cache
+from koi.utils.cache import cache_path, fetch_or_cache
 from koi.utils.config import TIMEOUTS
 
 
@@ -33,20 +32,10 @@ class SharpHoundModule(KoiModule):
     ]
 
     def _fetch_release(self) -> tuple[dict, str]:
-        req = urllib.request.Request(
-            _RELEASE_API,
-            headers={"User-Agent": "koi-sharphound"},
+        raw, source = fetch_or_cache(
+            _RELEASE_API, _RELEASE_CACHE_NAME, headers={"User-Agent": "koi-sharphound"}
         )
-        try:
-            with urllib.request.urlopen(req, timeout=TIMEOUTS["http_fetch"]) as resp:
-                release = json.load(resp)
-            put_cache(_RELEASE_CACHE_NAME, json.dumps(release).encode("utf-8"))
-            return release, "remote"
-        except Exception as exc:
-            cached = get_cache(_RELEASE_CACHE_NAME)
-            if cached is None:
-                raise exc
-            return json.loads(cached.decode("utf-8")), "cache"
+        return json.loads(raw), source
 
     def _find_asset(self, release: dict) -> tuple[str, str] | None:
         for asset in release.get("assets", []):
@@ -54,19 +43,6 @@ class SharpHoundModule(KoiModule):
             if _ASSET_RE.match(name):
                 return name, asset["browser_download_url"]
         return None
-
-    def _download_zip(self, url: str, cache_name: str) -> tuple[bytes, str]:
-        req = urllib.request.Request(url, headers={"User-Agent": "koi-sharphound"})
-        try:
-            with urllib.request.urlopen(req, timeout=TIMEOUTS["http_fetch"]) as resp:
-                zip_bytes = resp.read()
-            put_cache(cache_name, zip_bytes)
-            return zip_bytes, "remote"
-        except Exception:
-            cached = get_cache(cache_name)
-            if cached is None:
-                raise
-            return cached, "cache"
 
     def _extract_payload(self, zip_bytes: bytes) -> dict[str, bytes]:
         """Extract every file in the zip; return {basename: bytes}."""
@@ -163,8 +139,10 @@ class SharpHoundModule(KoiModule):
         asset_cache_name = f"sharphound_{asset_name}"
         with self.spinner(f"Downloading {asset_name}..."):
             try:
-                zip_bytes, asset_source = self._download_zip(asset_url, asset_cache_name)
-                files     = self._extract_payload(zip_bytes)
+                zip_bytes, asset_source = fetch_or_cache(
+                    asset_url, asset_cache_name, headers={"User-Agent": "koi-sharphound"}
+                )
+                files = self._extract_payload(zip_bytes)
             except Exception as exc:
                 self.err(f"Download or extraction failed: {exc}")
                 return

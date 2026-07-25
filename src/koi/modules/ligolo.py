@@ -5,12 +5,10 @@ import json
 import re
 import tarfile
 import time
-import urllib.request
 import zipfile
 
 from koi.modules.blueprint import KoiModule
-from koi.utils.cache import cache_path, get_cache, put_cache
-from koi.utils.config import TIMEOUTS
+from koi.utils.cache import cache_path, fetch_or_cache
 
 _GITHUB_API = "https://api.github.com/repos/nicocha30/ligolo-ng/releases/latest"
 _RELEASE_CACHE_NAME = "ligolo_latest_release.json"
@@ -55,21 +53,12 @@ class LigoloModule(KoiModule):
         return arch
 
     def _latest_release(self) -> tuple[str, list[dict], str]:
-        req = urllib.request.Request(
-            _GITHUB_API,
+        raw, source = fetch_or_cache(
+            _GITHUB_API, _RELEASE_CACHE_NAME,
             headers={"User-Agent": "koi/ligolo-module", "Accept": "application/json"},
         )
-        try:
-            with urllib.request.urlopen(req, timeout=TIMEOUTS["http_fetch"]) as resp:
-                data = json.loads(resp.read())
-            put_cache(_RELEASE_CACHE_NAME, json.dumps(data).encode("utf-8"))
-            return data["tag_name"], data["assets"], "remote"
-        except Exception as exc:
-            cached = get_cache(_RELEASE_CACHE_NAME)
-            if cached is None:
-                raise exc
-            data = json.loads(cached.decode("utf-8"))
-            return data["tag_name"], data["assets"], "cache"
+        data = json.loads(raw)
+        return data["tag_name"], data["assets"], source
 
     def _pick_asset(self, assets: list[dict], os_name: str, arch: str) -> dict:
         for asset in assets:
@@ -111,19 +100,9 @@ class LigoloModule(KoiModule):
         url = asset["browser_download_url"]
         name = asset["name"]
         cache_name = f"ligolo_agent_{name}"
-
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "koi/ligolo-module"})
-            with urllib.request.urlopen(req, timeout=TIMEOUTS["http_fetch"]) as resp:
-                archive_data = resp.read()
-            put_cache(cache_name, archive_data)
-            source = "remote"
-        except Exception:
-            archive_data = get_cache(cache_name)
-            if archive_data is None:
-                raise
-            source = "cache"
-
+        archive_data, source = fetch_or_cache(
+            url, cache_name, headers={"User-Agent": "koi/ligolo-module"}
+        )
         return self._extract_agent(archive_data, name), source
 
     def run(self) -> None:

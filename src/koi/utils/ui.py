@@ -474,7 +474,9 @@ def notify(msg_type, text):
     }
     
     if msg_type not in prefixes:
-        print(f"  {text}")
+        # Unknown type: flag it loudly instead of silently dropping the icon
+        # and label, which used to let typos like notify('eror', ...) slip by.
+        print(f"  {alert(f'[notify: unknown type {msg_type!r}]')}  {text}")
         return
 
     col, icon, label = prefixes[msg_type]

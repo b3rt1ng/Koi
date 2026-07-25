@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import shlex
-import urllib.request
 
 from koi.modules.blueprint import KoiModule
-from koi.utils.cache import cache_path, get_cache, put_cache
+from koi.utils.cache import cache_path, fetch_or_cache
 from koi.utils.config import TIMEOUTS
 
 LINPEAS_URL = "https://github.com/peass-ng/PEASS-ng/releases/latest/download/linpeas.sh"
@@ -21,20 +20,6 @@ class PeasModule(KoiModule):
         {"flags": ["-o", "--output"], "default": None, "help": "Remote destination path"},
     ]
 
-    def _fetch_tool(self, url: str, cache_name: str) -> tuple[bytes, str]:
-        try:
-            with urllib.request.urlopen(url, timeout=TIMEOUTS["http_fetch"]) as resp:
-                data = resp.read()
-            put_cache(cache_name, data)
-            return data, "remote"
-        except Exception:
-            data = get_cache(cache_name)
-            if data is None:
-                raise RuntimeError(
-                    f"Failed to fetch {cache_name} from {url} and no cache available"
-                )
-            return data, "cache"
-
     def run(self) -> None:
         os_type = self.session.os_type
 
@@ -47,7 +32,7 @@ class PeasModule(KoiModule):
 
         with self.spinner(f"Fetching {name}..."):
             try:
-                raw, source = self._fetch_tool(url, name)
+                raw, source = fetch_or_cache(url, name)
             except Exception as exc:
                 self.err(f"Could not fetch {name}: {exc}")
                 return

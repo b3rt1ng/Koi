@@ -58,11 +58,11 @@ class SysInfoModule(KoiModule):
                 "\"$($_up.Days)d $($_up.Hours)h $($_up.Minutes)m\","
                 "\"$([math]::Round($_os.TotalVisibleMemorySize/1024/1024,1)) GB total,"
                 " $([math]::Round($_os.FreePhysicalMemory/1024/1024,1)) GB free\","
-                "(whoami),$_ips) -join 'KOISEP'}"
+                f"(whoami),$_ips) -join '{self.REC_SEP}'}}"
             )
 
         keys = ["hostname", "domain", "OS", "version", "arch", "uptime", "RAM", "current user", "IP"]
-        parts = raw.split("KOISEP")
+        parts = raw.split(self.REC_SEP)
         info = {k: parts[i].strip() for i, k in enumerate(keys)
                 if i < len(parts) and parts[i].strip() and parts[i].strip() != "unknown"}
         self.box(f"System Info #{self.session.id}", info)
@@ -70,29 +70,35 @@ class SysInfoModule(KoiModule):
         with self.spinner("Collecting users and privileges..."):
             batch = self._win_query(
                 "&{$_privs=((whoami /priv)-match 'Enabled'"
-                "|ForEach-Object{(($_ -split '\\s{2,}')[0]).Trim()}) -join 'KOISEP';"
+                "|ForEach-Object{(($_ -split '\\s{2,}')[0]).Trim()}) -join '"
+                f"{self.REC_SEP}';"
                 "$_users=(Get-LocalUser|ForEach-Object{"
-                "\"$($_.Name)|||$(if($_.Enabled){'enabled'}else{'disabled'})\"}) -join 'KOISEP';"
+                f"\"$($_.Name){self.FIELD_SEP}$(if($_.Enabled)"
+                "{'enabled'}else{'disabled'})\"}) -join '"
+                f"{self.REC_SEP}';"
                 "$_admins=(Get-LocalGroupMember -Group 'Administrators'"
-                "|ForEach-Object{\"$($_.Name)|||$($_.ObjectClass)\"}) -join 'KOISEP';"
-                "@($_privs,$_users,$_admins) -join 'KOISEC'}"
+                "|ForEach-Object{"
+                f"\"$($_.Name){self.FIELD_SEP}$($_.ObjectClass)\""
+                "}) -join '"
+                f"{self.REC_SEP}';"
+                f"@($_privs,$_users,$_admins) -join '{self.SEC_SEP}'}}"
             )
 
-        sections   = batch.split("KOISEC")
+        sections   = batch.split(self.SEC_SEP)
         privs_raw  = sections[0] if len(sections) > 0 else ""
         users_raw  = sections[1] if len(sections) > 1 else ""
         admins_raw = sections[2] if len(sections) > 2 else ""
 
         if privs_raw.strip():
-            privs = {p.strip(): "Enabled" for p in privs_raw.split("KOISEP") if p.strip()}
+            privs = {p.strip(): "Enabled" for p in privs_raw.split(self.REC_SEP) if p.strip()}
             if privs:
                 self.box("Enabled privileges", privs)
 
         if users_raw.strip():
             users = {}
-            for entry in users_raw.split("KOISEP"):
-                if "|||" in entry:
-                    name, status = entry.strip().split("|||", 1)
+            for entry in users_raw.split(self.REC_SEP):
+                if self.FIELD_SEP in entry:
+                    name, status = entry.strip().split(self.FIELD_SEP, 1)
                     if name.strip():
                         users[name.strip()] = status.strip()
             if users:
@@ -100,9 +106,9 @@ class SysInfoModule(KoiModule):
 
         if admins_raw.strip():
             admins = {}
-            for entry in admins_raw.split("KOISEP"):
-                if "|||" in entry:
-                    name, kind = entry.strip().split("|||", 1)
+            for entry in admins_raw.split(self.REC_SEP):
+                if self.FIELD_SEP in entry:
+                    name, kind = entry.strip().split(self.FIELD_SEP, 1)
                     if name.strip():
                         admins[name.strip()] = kind.strip()
             if admins:

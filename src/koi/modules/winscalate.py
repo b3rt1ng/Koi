@@ -62,7 +62,7 @@ class WinscalateModule(KoiModule):
         n_critical = n_high = n_info = 0
 
         with self.spinner("Checking privileges..."):
-            raw = self._q("((whoami /priv) -match 'Enabled') -join 'KOISEP'")
+            raw = self._q(f"((whoami /priv) -match 'Enabled') -join '{self.REC_SEP}'")
         privs = {p: _DANGEROUS_PRIVS[p] for p in _DANGEROUS_PRIVS if p in raw}
         if "SeImpersonatePrivilege" in privs:
             privs["Potato attack feasible"] = "SeImpersonatePrivilege enabled, try PrintSpoofer, GodPotato, RoguePotato"
@@ -71,13 +71,15 @@ class WinscalateModule(KoiModule):
         with self.spinner("Checking registry policies..."):
             reg_raw = self._q(
                 "\"$((Get-ItemProperty 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer'"
-                " -Name AlwaysInstallElevated -EA SilentlyContinue).AlwaysInstallElevated)|||$((Get-ItemProperty"
+                " -Name AlwaysInstallElevated -EA SilentlyContinue).AlwaysInstallElevated)"
+                f"{self.FIELD_SEP}$((Get-ItemProperty"
                 " 'HKCU:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer'"
-                " -Name AlwaysInstallElevated -EA SilentlyContinue).AlwaysInstallElevated)|||$((Get-ItemProperty"
+                " -Name AlwaysInstallElevated -EA SilentlyContinue).AlwaysInstallElevated)"
+                f"{self.FIELD_SEP}$((Get-ItemProperty"
                 " 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System'"
                 " -EA SilentlyContinue).ConsentPromptBehaviorAdmin)\""
             )
-            parts = reg_raw.split("|||")
+            parts = reg_raw.split(self.FIELD_SEP)
             hklm = parts[0].strip() if len(parts) > 0 else ""
             hkcu = parts[1].strip() if len(parts) > 1 else ""
             uac = parts[2].strip() if len(parts) > 2 else ""
@@ -104,12 +106,15 @@ class WinscalateModule(KoiModule):
                 " -and $_.PathName -match ' '"
                 " -and $_.PathName -notmatch '^\"'"
                 " -and $_.PathName -notmatch '^C:\\\\Windows\\\\' }"
-                " | ForEach-Object { \"$($_.Name)|||$($_.PathName)\" }) -join 'KOISEP'",
+                " | ForEach-Object { \"$($_.Name)"
+                f"{self.FIELD_SEP}$($_.PathName)\""
+                " }) -join '"
+                f"{self.REC_SEP}'",
                 timeout=TIMEOUTS["exec_query"],
             )
         unquoted = {}
-        for entry in (e for e in raw.split("KOISEP") if "|||" in e):
-            name, path = entry.split("|||", 1)
+        for entry in (e for e in raw.split(self.REC_SEP) if self.FIELD_SEP in e):
+            name, path = entry.split(self.FIELD_SEP, 1)
             unquoted[f"Unquoted path: {name.strip()}"] = path.strip()
         n_high += self._emit("High - unquoted service paths", unquoted)
 
@@ -122,21 +127,22 @@ class WinscalateModule(KoiModule):
                 "   $t = Join-Path $d '_koi_test.tmp';"
                 "   [IO.File]::OpenWrite($t).Close();"
                 "   Remove-Item $t -EA SilentlyContinue; $d"
-                "  } catch {} } }) -join 'KOISEP'"
+                "  } catch {} } }) -join '"
+                f"{self.REC_SEP}'"
             )
-        writable = {d: "DLL / binary hijack possible" for d in (x.strip() for x in raw.split("KOISEP") if x.strip())}
+        writable = {d: "DLL / binary hijack possible" for d in (x.strip() for x in raw.split(self.REC_SEP) if x.strip())}
         n_high += self._emit("High - writable PATH directories", writable)
 
         with self.spinner("Checking stored credentials..."):
-            raw = self._q("(cmdkey /list) -join 'KOISEP'")
-        creds = [l.strip() for l in raw.split("KOISEP") if "Target:" in l or "User:" in l]
+            raw = self._q(f"(cmdkey /list) -join '{self.REC_SEP}'")
+        creds = [l.strip() for l in raw.split(self.REC_SEP) if "Target:" in l or "User:" in l]
         if creds:
             n_high += self._emit("High - stored credentials", {"cmdkey": "  |  ".join(creds)})
 
         with self.spinner("Checking sensitive files..."):
             files_expr = "@(" + ",".join(f"'{f}'" for f in _SENSITIVE_FILES) + ")"
-            raw = self._q(f"({files_expr} | Where-Object {{Test-Path $_}}) -join 'KOISEP'")
-        sensitive = {f: "May contain plaintext credentials" for f in (x.strip() for x in raw.split("KOISEP") if x.strip())}
+            raw = self._q(f"({files_expr} | Where-Object {{Test-Path $_}}) -join '{self.REC_SEP}'")
+        sensitive = {f: "May contain plaintext credentials" for f in (x.strip() for x in raw.split(self.REC_SEP) if x.strip())}
         n_high += self._emit("High - sensitive files", sensitive)
 
         with self.spinner("Checking scheduled tasks..."):
@@ -147,13 +153,16 @@ class WinscalateModule(KoiModule):
                 " -or $_.Principal.RunLevel -eq 'Highest') }"
                 " | ForEach-Object {"
                 "  $a = $_.Actions | Where-Object { $_.Execute } | Select-Object -First 1;"
-                "  if($a){ \"$($_.TaskName)|||$($a.Execute)\" }"
-                " }) -join 'KOISEP'",
+                "  if($a){ \"$($_.TaskName)"
+                f"{self.FIELD_SEP}$($a.Execute)\""
+                " }"
+                " }) -join '"
+                f"{self.REC_SEP}'",
                 timeout=TIMEOUTS["exec_query"],
             )
         tasks = {}
-        for entry in (e for e in raw.split("KOISEP") if "|||" in e):
-            name, exe = entry.split("|||", 1)
+        for entry in (e for e in raw.split(self.REC_SEP) if self.FIELD_SEP in e):
+            name, exe = entry.split(self.FIELD_SEP, 1)
             name, exe = name.strip(), exe.strip()
             if exe and not any(exe.lower().startswith(p) for p in ("%windir%\\system32", "%systemroot%\\system32", "c:\\windows\\system32")):
                 tasks[name] = exe
@@ -167,12 +176,15 @@ class WinscalateModule(KoiModule):
                 ") | ForEach-Object { $k = $_;"
                 " try { (Get-ItemProperty $k -EA Stop).PSObject.Properties"
                 "  | Where-Object { $_.Name -notlike 'PS*' }"
-                "  | ForEach-Object { \"$($_.Name)|||$($_.Value)\" }"
-                " } catch {} }) -join 'KOISEP'"
+                "  | ForEach-Object { \"$($_.Name)"
+                f"{self.FIELD_SEP}$($_.Value)\""
+                " }"
+                " } catch {} }) -join '"
+                f"{self.REC_SEP}'"
             )
         autorun = {}
-        for entry in (e for e in raw.split("KOISEP") if "|||" in e):
-            name, val = entry.split("|||", 1)
+        for entry in (e for e in raw.split(self.REC_SEP) if self.FIELD_SEP in e):
+            name, val = entry.split(self.FIELD_SEP, 1)
             autorun[name.strip()] = val.strip()
         n_info += self._emit("Info - AutoRun entries", autorun)
 

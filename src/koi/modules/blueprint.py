@@ -14,8 +14,12 @@ if TYPE_CHECKING:
 from koi.utils.config import TIMEOUTS
 from koi.utils.models import CommandResult, StreamLine
 from koi.utils import ui
-from koi.utils.tcp import get_local_ip, spawn_recv_server, spawn_send_server
-from koi.utils.tcp import _bind_side_channel_port
+from koi.utils.tcp import (
+    bind_side_channel_port,
+    get_local_ip,
+    spawn_recv_server,
+    spawn_send_server,
+)
 
 import argparse
 
@@ -41,7 +45,7 @@ class TCPReceiveServer:
         self.port: int    = 0
 
     def start(self) -> "TCPReceiveServer":
-        self._sock, self.port = _bind_side_channel_port()
+        self._sock, self.port = bind_side_channel_port()
         self._sock.listen(1)
         self._sock.settimeout(self._timeout)
         threading.Thread(target=self._run, daemon=True).start()
@@ -134,6 +138,16 @@ class KoiModule(ABC):
     #: Supported platform(s): "linux", "windows_cmd", "windows_ps", "any",
     #: or a list combining multiple specific targets.
     platform: PlatformSpec = "any"
+
+    #: Delimiters used to reconstruct structured data from the flat text a
+    #: remote shell returns. Both the command that joins values and the parser
+    #: that splits them must reference these constants so they never desync.
+    #: They MUST stay ASCII: a non-ASCII token does not survive the
+    #: cp1252 -> UTF-8 console round-trip of an upgraded ConPtyShell, which
+    #: would collapse the joined output into a single record.
+    REC_SEP: str = "KOISEP"    # between records of a joined list
+    SEC_SEP: str = "KOISEC"    # between top-level sections
+    FIELD_SEP: str = "|||"     # between fields of a single record
 
     @staticmethod
     def _clean(text: str) -> str:
