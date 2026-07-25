@@ -11,14 +11,13 @@ from typing import Callable
 from koi.utils.bash_obfuscate import METHODS as LINUX_METHODS
 from koi.utils.payloads import get_interfaces, PayloadGenerator
 from koi.utils.ps_obfuscate import (
-    _ps_hex_obfuscate,
-    _ps_syntax_obfuscate,
-    _ps_format_obfuscate,
-    _ps_xor_obfuscate,
-    _ps_base64_encode,
-    _ps_variable_obfuscate,
-    _ps_bullshit_obfuscate
-    
+    ps_hex_obfuscate,
+    ps_syntax_obfuscate,
+    ps_format_obfuscate,
+    ps_xor_obfuscate,
+    ps_base64_encode,
+    ps_variable_obfuscate,
+    ps_bullshit_obfuscate,
 )
 from koi.utils.ui import (
     bold, accent, dim, muted, plain,
@@ -28,13 +27,13 @@ from koi.utils.ui import (
 )
 
 WIN_METHODS: list[tuple[str, str, Callable[[str], str]]] = [
-    ("hex",    "hex byte array encoding",                     _ps_hex_obfuscate),
-    ("syntax", "cmdlet name split concatenation",             _ps_syntax_obfuscate),
-    ("format", "-f string format interpolation",              _ps_format_obfuscate),
-    ("xor",    "XOR encoding with random key",                _ps_xor_obfuscate),
-    ("variable", "obfuscate variable names",                  _ps_variable_obfuscate),
-    ("base64", "UTF-16LE base64 -> powershell -enc  [FINAL]", _ps_base64_encode),
-    ("bullshit", "insert random no-op statements",            _ps_bullshit_obfuscate),
+    ("hex",    "hex byte array encoding",                     ps_hex_obfuscate),
+    ("syntax", "cmdlet name split concatenation",             ps_syntax_obfuscate),
+    ("format", "-f string format interpolation",              ps_format_obfuscate),
+    ("xor",    "XOR encoding with random key",                ps_xor_obfuscate),
+    ("variable", "obfuscate variable names",                  ps_variable_obfuscate),
+    ("base64", "UTF-16LE base64 -> powershell -enc  [FINAL]", ps_base64_encode),
+    ("bullshit", "insert random no-op statements",            ps_bullshit_obfuscate),
 ]
 
 _HIDE    = "\033[?25l"

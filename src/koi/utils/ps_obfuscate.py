@@ -10,7 +10,7 @@ def _to_ps_hex_str(s: str) -> str:
     return f"([System.Text.Encoding]::UTF8.GetString([byte[]]({hex_bytes})))"
 
 
-def _ps_hex_obfuscate(payload: str) -> str:
+def ps_hex_obfuscate(payload: str) -> str:
     return re.sub(r"'([^']*)'", lambda m: _to_ps_hex_str(m.group(1)), payload)
 
 
@@ -32,7 +32,7 @@ def _random_split(cmdlet: str) -> str:
     return "&(" + "+".join(f"{q}{p}{q}" for p in parts) + ")"
 
 
-def _obfuscate_call(cmdlet: str) -> str:
+def obfuscate_call(cmdlet: str) -> str:
     """Pick randomly from concat, format-string, and char-array call forms."""
     technique = random.randrange(3)
     if technique == 0:
@@ -60,7 +60,7 @@ _PS_CMDLETS = [
 ]
 
 
-def _ps_syntax_obfuscate(payload: str) -> str:
+def ps_syntax_obfuscate(payload: str) -> str:
     result = payload
     for cmdlet in _PS_CMDLETS:
         result = re.sub(
@@ -86,7 +86,7 @@ def _format_split(s: str) -> str:
     return f"('{placeholders}' -f {parts_str})"
 
 
-def _ps_format_obfuscate(payload: str) -> str:
+def ps_format_obfuscate(payload: str) -> str:
     return re.sub(
         r"'([^']{2,})'",
         lambda m: _format_split(m.group(1)),
@@ -101,7 +101,7 @@ def _xor_encode_str(s: str) -> str:
     return f"$(${var}={key};$b=[byte[]]({hex_bytes});-join($b|%{{[char]($_-bxor${var})}}))"
 
 
-def _ps_xor_obfuscate(payload: str) -> str:
+def ps_xor_obfuscate(payload: str) -> str:
     return re.sub(
         r"'([^']{2,})'",
         lambda m: _xor_encode_str(m.group(1)),
@@ -129,7 +129,7 @@ _CS_SIGNAL_LITERALS: list[tuple[str, str]] = [
     ('"File"',                 "File"),
 ]
 
-def _ps_base64_encode(payload: str) -> str:
+def ps_base64_encode(payload: str) -> str:
     b64 = base64.b64encode(payload.encode("utf-16-le")).decode("ascii")
     return f"powershell -enc {b64}"
 
@@ -218,7 +218,7 @@ _PS_RESERVED_VARS = frozenset({
 _PS_VAR_RE = re.compile(r'\$[a-zA-Z_][a-zA-Z0-9_]*')
 
 
-def _ps_variable_obfuscate(payload: str) -> str:
+def ps_variable_obfuscate(payload: str) -> str:
     """Rename user-defined PowerShell variables in a single regex pass.
 
     Matching full variable tokens (not substrings) avoids prefix-collision
@@ -240,7 +240,7 @@ def _ps_variable_obfuscate(payload: str) -> str:
     return _PS_VAR_RE.sub(_repl, payload)
 
 
-def _ps_bullshit_obfuscate(payload: str) -> str:
+def ps_bullshit_obfuscate(payload: str) -> str:
     """
     Insert random no-op statements into a PowerShell payload to make it harder
     """

