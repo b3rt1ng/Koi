@@ -44,6 +44,13 @@ _MAC_TEXT   = re.compile(r'(?<![0-9a-fA-F])(?:[0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]
 _MAC_BYTES  = re.compile(rb'(?<![0-9a-fA-F])(?:[0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]{2}(?![0-9a-fA-F])')
 _PROMPT_ARROW = gradient_text(" ❯ ", PUMPKIN, CORAL)
 
+# Timing constants
+_ACCEPT_TIMEOUT = 1.0
+_SOCKET_BUFFER_SIZE = 65536
+_SHORT_SLEEP = 0.15
+_MEDIUM_SLEEP = 0.2
+_LONG_SLEEP = 0.5
+
 
 class _MaskBinary:
     def __init__(self, real, check):
@@ -146,7 +153,7 @@ class Listener:
     def _accept_loop(self):
         while self._running:
             try:
-                self._server_sock.settimeout(1.0)
+                self._server_sock.settimeout(_ACCEPT_TIMEOUT)
                 conn, addr = self._server_sock.accept()
             except socket.timeout:
                 continue
@@ -232,7 +239,7 @@ class Listener:
                 if s.upgraded:
                     s.send(b"exit\n")
             if any(s.upgraded for s in sessions):
-                time.sleep(0.5)
+                time.sleep(_LONG_SLEEP)
             for s in sessions:
                 s.close()
 
@@ -308,57 +315,8 @@ class Listener:
                 notify('error', usage_err)
                 continue
 
-            if cmd in ("exit", "quit"):
-                self.stop()
+            if not self._dispatch_command(cmd, parts):
                 return
-
-            elif cmd == "help":
-                print_help()
-
-            elif cmd == "stop":
-                self._cmd_stop_accepting()
-
-            elif cmd == "start":
-                self._cmd_start_accepting()
-
-            elif cmd == "ls":
-                self._cmd_ls()
-
-            elif cmd == "go":
-                self._cmd_go(parts[1])
-
-            elif cmd == "upgrade":
-                self._cmd_upgrade(parts[1])
-
-            elif cmd == "kill":
-                self._cmd_kill(parts[1])
-
-            elif cmd == "payload":
-                self._cmd_payload(parts[1] if len(parts) > 1 else None)
-
-            elif cmd == "obfuscator":
-                self._cmd_obfuscate(parts[1] if len(parts) > 1 else None)
-
-            elif cmd == "logs":
-                self._cmd_logs()
-
-            elif cmd == "modules":
-                self._cmd_modules()
-
-            elif cmd == "reload":
-                self._cmd_reload()
-
-            elif cmd == "run":
-                self._dispatch_run(parts)
-
-            elif cmd == "setshell":
-                self._cmd_setshell(parts[1], parts[2])
-
-            elif cmd == "tag":
-                self._cmd_tag(parts[1], parts[2] if len(parts) > 2 else None)
-
-            else:
-                notify('error', f"Unknown command: {accent(cmd)}, type {bold('help')}")
 
     def _dispatch_run(self, parts: list) -> None:
         if len(parts) < 3:
@@ -410,6 +368,53 @@ class Listener:
             self._execute_hidden_command(self._cmd_stop_accepting)
         else:
             self._execute_hidden_command(self._cmd_start_accepting)
+
+    def _dispatch_command(self, cmd: str, parts: list[str]) -> bool:
+        """Dispatch a command to its handler.
+
+        Returns False to exit the main loop, True to continue.
+        """
+        # Exit commands
+        if cmd in ("exit", "quit"):
+            self.stop()
+            return False
+
+        # Simple commands (no arguments)
+        simple_commands = {
+            "help": print_help,
+            "stop": self._cmd_stop_accepting,
+            "start": self._cmd_start_accepting,
+            "ls": self._cmd_ls,
+            "logs": self._cmd_logs,
+            "modules": self._cmd_modules,
+            "reload": self._cmd_reload,
+        }
+
+        if cmd in simple_commands:
+            simple_commands[cmd]()
+            return True
+
+        # Commands with arguments
+        if cmd == "go":
+            self._cmd_go(parts[1])
+        elif cmd == "upgrade":
+            self._cmd_upgrade(parts[1])
+        elif cmd == "kill":
+            self._cmd_kill(parts[1])
+        elif cmd == "payload":
+            self._cmd_payload(parts[1] if len(parts) > 1 else None)
+        elif cmd == "obfuscator":
+            self._cmd_obfuscate(parts[1] if len(parts) > 1 else None)
+        elif cmd == "run":
+            self._dispatch_run(parts)
+        elif cmd == "setshell":
+            self._cmd_setshell(parts[1], parts[2])
+        elif cmd == "tag":
+            self._cmd_tag(parts[1], parts[2] if len(parts) > 2 else None)
+        else:
+            notify('error', f"Unknown command: {accent(cmd)}, type {bold('help')}")
+
+        return True
 
     def _cmd_ls(self) -> None:
         self._prune()
@@ -506,7 +511,7 @@ class Listener:
         with Spinner(f"Terminating session #{sid}..."):
             if sess.upgraded:
                 sess.send(b"exit\n")
-                time.sleep(0.5)
+                time.sleep(_LONG_SLEEP)
             self._remove(sid)
         notify('success', f"Session {accent(f'#{sid}')} terminated.")
 
@@ -538,12 +543,12 @@ class Listener:
                 self._sync_winsize(sess)
                 self._drain(sess, 0.3)
                 sess.send(b"\n")
-                time.sleep(0.15)
+                time.sleep(_SHORT_SLEEP)
             signal.signal(signal.SIGWINCH, lambda *_: self._winch(sess))
 
         if sess.os_type in ("windows_cmd", "windows_ps") and not sess.upgraded:
             sess.send(b"\r\n")
-            time.sleep(0.2)
+            time.sleep(_MEDIUM_SLEEP)
 
         breaker_with_text()
 
@@ -701,7 +706,7 @@ class Listener:
             try:
                 r, _, _ = select.select([sess.conn], [], [], min(remaining, 0.05))
                 if r:
-                    sess.conn.recv(65536)
+                    sess.conn.recv(_SOCKET_BUFFER_SIZE)
             except OSError:
                 break
 

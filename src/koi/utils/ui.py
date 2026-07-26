@@ -22,6 +22,10 @@ BOLD = "\033[1m"
 
 __version__ = importlib.metadata.version("koi-handler")
 
+# UI constants
+_READLINE_HISTORY_LENGTH = 200
+_SPINNER_FRAME_DELAY = 0.08
+
 def bold(t):   return f"{BOLD}{t}{RST}"
 def dim(t):    return f"{DIM}{t}{RST}"
 def alert(t):  return colored_text(t, CORAL)
@@ -514,7 +518,7 @@ class Spinner:
             frame = colored_text(self._FRAMES[i % len(self._FRAMES)], PUMPKIN)
             sys.stdout.write(f"\r  {frame}  {colored_text(self.message, SILVER)}")
             sys.stdout.flush()
-            time.sleep(0.08)
+            time.sleep(_SPINNER_FRAME_DELAY)
             i += 1
 
     def __enter__(self):

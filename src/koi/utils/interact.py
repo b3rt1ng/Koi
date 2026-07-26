@@ -13,6 +13,12 @@ from koi.session import Session, RawTerminal
 CTRL_Z = b"\x1a"
 CTRL_C = b"\x03"
 
+_SOCKET_BUFFER_SIZE = 65536
+_RECV_TIMEOUT = 1.0
+_QUEUE_TIMEOUT = 0.1
+_INITIAL_SLEEP = 0.3
+_EXIT_SLEEP = 0.2
+
 
 def interact(sess: Session, logger=None) -> str:
     if sess.os_type in ("windows_cmd", "windows_ps") and not sess.upgraded:
@@ -30,7 +36,7 @@ def _interact_raw(sess: Session, logger=None) -> str:
                 r, _, _ = select.select([sess.conn], [], [], 0.1)
                 if not r:
                     continue
-                data = sess.conn.recv(65536)
+                data = sess.conn.recv(_SOCKET_BUFFER_SIZE)
                 if not data:
                     sess.alive = False
                     result[0] = "disconnected"
@@ -72,7 +78,7 @@ def _interact_raw(sess: Session, logger=None) -> str:
             pass
 
     stop_event.set()
-    recv_thread.join(timeout=1.0)
+    recv_thread.join(timeout=_RECV_TIMEOUT)
     return result[0]
 
 
@@ -88,7 +94,7 @@ def _interact_windows(sess: Session, logger=None) -> str:
                 r, _, _ = select.select([sess.conn], [], [], 0.1)
                 if not r:
                     continue
-                data = sess.conn.recv(65536)
+                data = sess.conn.recv(_SOCKET_BUFFER_SIZE)
                 if not data:
                     sess.alive = False
                     result[0] = "disconnected"
@@ -109,7 +115,7 @@ def _interact_windows(sess: Session, logger=None) -> str:
     recv_thread = threading.Thread(target=_recv, daemon=True)
     recv_thread.start()
 
-    time.sleep(0.3)
+    time.sleep(_INITIAL_SLEEP)
 
     old_sigtstp = signal.getsignal(signal.SIGTSTP)
 
@@ -124,7 +130,7 @@ def _interact_windows(sess: Session, logger=None) -> str:
     def _read_input():
         while not stop_event.is_set():
             try:
-                r, _, _ = select.select([sys.stdin], [], [], 0.1)
+                r, _, _ = select.select([sys.stdin], [], [], _QUEUE_TIMEOUT)
                 if r:
                     line = sys.stdin.readline()
                     if line:
@@ -149,7 +155,7 @@ def _interact_windows(sess: Session, logger=None) -> str:
 
             if cmd.strip().lower() in ("exit", "quit"):
                 sess.send(b"exit\r\n")
-                time.sleep(0.2)
+                time.sleep(_EXIT_SLEEP)
                 result[0] = "disconnected"
                 break
 
@@ -164,5 +170,5 @@ def _interact_windows(sess: Session, logger=None) -> str:
         signal.signal(signal.SIGTSTP, old_sigtstp)
 
     stop_event.set()
-    recv_thread.join(timeout=1.0)
+    recv_thread.join(timeout=_RECV_TIMEOUT)
     return result[0]

