@@ -77,13 +77,16 @@ class EnvDumpModule(KoiModule):
 
     def _run_linux(self) -> None:
         with self.spinner("Dumping environment..."):
-            raw = self._exec_clean("printenv 2>/dev/null || env 2>/dev/null", timeout=TIMEOUTS["exec_query"])
+            raw = self._exec_clean("declare -x", timeout=TIMEOUTS["exec_query"])
 
         env: dict[str, str] = {}
         for line in raw.splitlines():
             line = self._clean(line)
             if not line or "=" not in line:
                 continue
+            # Strip "declare -x " prefix if present
+            if line.startswith("declare -x "):
+                line = line[11:]  # len("declare -x ") == 11
             key, _, val = line.partition("=")
             key = key.strip()
             if key:

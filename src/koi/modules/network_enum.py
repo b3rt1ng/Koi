@@ -23,22 +23,53 @@ class NetworkEnumModule(KoiModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._uid_cache: dict[int, str] | None = None
+        self._proc_net_cache: dict[str, str] = {}
+        self._resolv_cache: str = ""
 
-    def _load_uid_map(self) -> dict[int, str]:
-        """Load /etc/passwd once to map UID -> username (expensive call, cached)."""
+    def _preload_system_data(self) -> None:
+        """Load /etc/passwd, /proc/net/*, and /etc/resolv.conf in a single call."""
         if self._uid_cache is not None:
-            return self._uid_cache
+            return
+
+        raw = self._try_exec("""
+printf '===PASSWD===\\n'
+cat /etc/passwd 2>/dev/null
+printf '===TCP===\\n'
+cat /proc/net/tcp 2>/dev/null
+printf '===TCP6===\\n'
+cat /proc/net/tcp6 2>/dev/null
+printf '===RESOLV===\\n'
+cat /etc/resolv.conf 2>/dev/null
+""", timeout=TIMEOUTS["exec_query"])
 
         self._uid_cache = {}
-        raw = self._try_exec("cat /etc/passwd", timeout=TIMEOUTS["exec_query"])
-        for line in raw.splitlines():
-            parts = line.split(":")
-            if len(parts) >= 3:
-                try:
-                    self._uid_cache[int(parts[2])] = parts[0]
-                except ValueError:
-                    pass
-        return self._uid_cache
+        parts = re.split(r'===(\w+)===\n', raw)
+
+        # Parse /etc/passwd
+        if len(parts) > 1:
+            for line in parts[1].splitlines():
+                fields = line.split(":")
+                if len(fields) >= 3:
+                    try:
+                        self._uid_cache[int(fields[2])] = fields[0]
+                    except ValueError:
+                        pass
+
+        # Cache /proc/net sections
+        if len(parts) > 3:
+            self._proc_net_cache["tcp"] = parts[3]
+        if len(parts) > 5:
+            self._proc_net_cache["tcp6"] = parts[5]
+
+        # Cache resolv.conf
+        if len(parts) > 7:
+            self._resolv_cache = parts[7]
+
+    def _load_uid_map(self) -> dict[int, str]:
+        """Get cached UID map (loaded in _preload_system_data)."""
+        if self._uid_cache is None:
+            self._preload_system_data()
+        return self._uid_cache or {}
 
     def _uid_to_user(self, uid: int) -> str:
         """Map UID to username using cached /etc/passwd."""
@@ -149,7 +180,9 @@ class NetworkEnumModule(KoiModule):
     def _read_proc_net(self, filename: str) -> list[tuple[str, str, int, str]]:
         entries = []
         try:
-            raw = self._try_exec(f"cat /proc/net/{filename}", timeout=TIMEOUTS["exec_query"])
+            # Use cached data instead of making a new cat call
+            self._preload_system_data()
+            raw = self._proc_net_cache.get(filename, "")
             if not raw:
                 return []
             for line in raw.splitlines():
@@ -261,7 +294,9 @@ class NetworkEnumModule(KoiModule):
     def _section_dns(self) -> dict:
         box: dict[str, str] = {}
         idx: dict[str, int] = {}
-        for line in self._try_exec("cat /etc/resolv.conf 2>/dev/null", timeout=TIMEOUTS["exec_query"]).splitlines():
+        # Use cached resolv.conf instead of making a new cat call
+        self._preload_system_data()
+        for line in self._resolv_cache.splitlines():
             line = self._clean(line)
             if not line or line.startswith("#"):
                 continue

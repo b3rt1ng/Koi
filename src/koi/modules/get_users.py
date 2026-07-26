@@ -25,7 +25,9 @@ class GetUsersModule(KoiModule):
             self._run_windows()
 
     def _run_linux(self) -> None:
-        result = self.exec("cat /etc/passwd")
+        result = self.exec(
+            "while IFS= read -r line; do printf '%s\\n' \"$line\"; done < /etc/passwd"
+        )
         if not result.success:
             self.err(f"Could not read /etc/passwd (rc={result.returncode})")
             return
