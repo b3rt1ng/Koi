@@ -3,6 +3,7 @@ from __future__ import annotations
 import urllib.request
 from pathlib import Path
 
+import koi.utils.config as config_module
 from koi.utils.config import TIMEOUTS
 from koi.utils.ui import notify
 
@@ -43,7 +44,16 @@ def fetch_or_cache(
     succeeds (the bytes are also written to the cache) or ``"cache"`` when the
     download fails but a previously cached copy exists. If the download fails
     and nothing is cached, the original download error is re-raised.
+
+    In LOCAL_MODE, skips network calls and uses cache only.
     """
+    # In LOCAL_MODE, use cache only (no network calls)
+    if config_module.LOCAL_MODE:
+        cached = get_cache(name)
+        if cached is not None:
+            return cached, "cache"
+        raise Exception(f"LOCAL_MODE enabled but cache miss for {name}")
+
     if timeout is None:
         timeout = TIMEOUTS["http_fetch"]
     request = urllib.request.Request(url, headers=headers) if headers else url

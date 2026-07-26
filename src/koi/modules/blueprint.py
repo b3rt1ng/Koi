@@ -139,6 +139,9 @@ class KoiModule(ABC):
     #: or a list combining multiple specific targets.
     platform: PlatformSpec = "any"
 
+    #: External resources (URLs) needed by this module, used by --local-prepare
+    external_resources: list[dict] = []
+
     #: Delimiters used to reconstruct structured data from the flat text a
     #: remote shell returns. Both the command that joins values and the parser
     #: that splits them must reference these constants so they never desync.

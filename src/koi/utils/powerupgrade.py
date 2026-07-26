@@ -134,3 +134,14 @@ def _wait_for_new_session(
             if expected_ip in conpty_staging:
                 return conpty_staging.pop(expected_ip)
     return None
+
+
+def get_external_resources() -> list[dict]:
+    """Return external resources needed by powerupgrade."""
+    return [
+        {
+            "name": "ConPtyShell",
+            "url": _CONPTYSHELL_URL,
+            "cache_key": _CONPTY_CACHE_NAME,
+        },
+    ]

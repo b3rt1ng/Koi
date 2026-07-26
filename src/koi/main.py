@@ -14,6 +14,67 @@ from koi.utils.logger import clear_log as _clear_log
 
 
 
+def _prepare_local_cache() -> None:
+    """Download and cache all external resources declared by modules."""
+    from koi.modules.loader import collect_external_resources
+    from koi.utils.powerupgrade import get_external_resources as pw_resources
+    from koi.utils.cache import fetch_or_cache
+    from koi.utils.ui import bold, accent
+
+    resources = collect_external_resources()
+    resources.extend(pw_resources())
+
+    if not resources:
+        notify('info', "No external resources to cache.")
+        return
+
+    print()
+    notify('info', f"Preparing cache: {bold(len(resources))} resource(s) to download")
+    print()
+
+    succeeded = []
+    failed = []
+
+    for i, resource in enumerate(resources, 1):
+        name = resource.get("name", "Unknown")
+        url = resource.get("url")
+        cache_key = resource.get("cache_key")
+
+        if not url or not cache_key:
+            notify('warning', f"[{i}/{len(resources)}] {accent(name)}: malformed resource config")
+            failed.append((name, "malformed config"))
+            continue
+
+        try:
+            sys.stdout.write(f"  [{i}/{len(resources)}] {accent(name):<30} ")
+            sys.stdout.flush()
+            data, source = fetch_or_cache(url, cache_key)
+            if source == "remote":
+                print(f"✓ ({len(data)} bytes)")
+                succeeded.append(name)
+            else:
+                print(f"✓ (cached)")
+                succeeded.append(name)
+        except Exception as e:
+            print(f"✗")
+            notify('warning', f"  {str(e)[:80]}")
+            failed.append((name, str(e)))
+
+    print()
+    if succeeded:
+        notify('success', f"Cached: {bold(len(succeeded))}")
+        for name in succeeded:
+            print(f"  ✓ {name}")
+
+    if failed:
+        print()
+        notify('warning', f"Failed: {bold(len(failed))}")
+        for name, reason in failed:
+            print(f"  ✗ {name}: {reason[:50]}")
+
+    print()
+
+
 class _ArtHelpAction(argparse.Action):
     def __init__(self, option_strings, dest=argparse.SUPPRESS, default=argparse.SUPPRESS, help=None):
         super().__init__(option_strings=option_strings, dest=dest, default=default, nargs=0, help=help)
@@ -37,6 +98,8 @@ def main():
     parser.add_argument("--obfuscator", "--cook", nargs="?", const="__all__", metavar="IFACE",
                         help="Open the payload obfuscator (optionally for a specific interface) and exit")
     parser.add_argument("--purge-cache", "-pc", action="store_true", help="removes all files in cache")
+    parser.add_argument("--local", "-l", action="store_true", help="Local mode: use cache only, no external network calls")
+    parser.add_argument("--local-prepare", "-lp", action="store_true", help="Download and cache all external resources needed by modules")
     args = parser.parse_args()
     
     if args.purge_cache:
@@ -53,7 +116,11 @@ def main():
         run_obfuscate_ui(None if args.obfuscator == "__all__" else args.obfuscator, args.port)
         sys.exit(0)
 
-    listener = Listener(host=args.host, port=args.port)
+    if args.local_prepare:
+        _prepare_local_cache()
+        sys.exit(0)
+
+    listener = Listener(host=args.host, port=args.port, local_mode=args.local)
 
     try:
         listener.start()

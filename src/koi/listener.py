@@ -12,6 +12,7 @@ import time
 from typing import Callable, Dict, Optional
 
 from koi.utils.config import CONFIG
+import koi.utils.config as config_module
 from koi.utils.cli import (
     check_usage,
     print_help,
@@ -84,9 +85,11 @@ class _MaskStream:
 
 
 class Listener:
-    def __init__(self, host: str = "0.0.0.0", port: int = 4010):
+    def __init__(self, host: str = "0.0.0.0", port: int = 4010, local_mode: bool = False):
         self.host = host
         self.port = port
+        self.local_mode = local_mode
+        config_module.LOCAL_MODE = local_mode
         self._sessions: Dict[int, Session] = {}
         self._next_id = 1
         self._id_lock = threading.Lock()
@@ -221,6 +224,8 @@ class Listener:
         if CONFIG["display_art"]:
             display_art()
         notify('info', f"Listening on {bold(self.host)}:{bold(self.port)}")
+        if self.local_mode:
+            notify('warning', "Local mode enabled: using cache only, no external network calls")
         self._warn_log_accumulation()
         print()
 

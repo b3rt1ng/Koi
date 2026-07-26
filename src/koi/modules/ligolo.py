@@ -39,6 +39,28 @@ class LigoloModule(KoiModule):
             "help": "Remote destination path for the agent binary",
         },
     ]
+    external_resources = [
+        {
+            "name": "ligolo-ng agent (Linux x64)",
+            "url": "https://github.com/nicocha30/ligolo-ng/releases/download/v0.9/ligolo-ng_agent_0.9_linux_amd64.tar.gz",
+            "cache_key": "ligolo-ng_agent_0.9_linux_amd64.tar.gz",
+        },
+        {
+            "name": "ligolo-ng agent (Linux ARM64)",
+            "url": "https://github.com/nicocha30/ligolo-ng/releases/download/v0.9/ligolo-ng_agent_0.9_linux_arm64.tar.gz",
+            "cache_key": "ligolo-ng_agent_0.9_linux_arm64.tar.gz",
+        },
+        {
+            "name": "ligolo-ng agent (Windows x64)",
+            "url": "https://github.com/nicocha30/ligolo-ng/releases/download/v0.9/ligolo-ng_agent_0.9_windows_amd64.zip",
+            "cache_key": "ligolo-ng_agent_0.9_windows_amd64.zip",
+        },
+        {
+            "name": "ligolo-ng agent (Windows ARM64)",
+            "url": "https://github.com/nicocha30/ligolo-ng/releases/download/v0.9/ligolo-ng_agent_0.9_windows_arm64.zip",
+            "cache_key": "ligolo-ng_agent_0.9_windows_arm64.zip",
+        },
+    ]
 
     def _detect_arch(self) -> str:
         if self.session.os_type == "linux":

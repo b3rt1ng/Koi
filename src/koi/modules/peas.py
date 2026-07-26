@@ -19,6 +19,18 @@ class PeasModule(KoiModule):
     arguments = [
         {"flags": ["-o", "--output"], "default": None, "help": "Remote destination path"},
     ]
+    external_resources = [
+        {
+            "name": "linpeas.sh",
+            "url": LINPEAS_URL,
+            "cache_key": "linpeas.sh",
+        },
+        {
+            "name": "winPEASx64.exe",
+            "url": WINPEAS_URL,
+            "cache_key": "winPEASx64.exe",
+        },
+    ]
 
     def run(self) -> None:
         os_type = self.session.os_type

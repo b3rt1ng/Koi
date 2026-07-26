@@ -30,6 +30,13 @@ class SharpHoundModule(KoiModule):
         {"flags": ["-o", "--output"], "default": None,
          "help":  "Local path for the BloodHound zip"},
     ]
+    external_resources = [
+        {
+            "name":      "sharphound_release.json",
+            "url":       _RELEASE_API,
+            "cache_key": _RELEASE_CACHE_NAME,
+        },
+    ]
 
     def _fetch_release(self) -> tuple[dict, str]:
         raw, source = fetch_or_cache(

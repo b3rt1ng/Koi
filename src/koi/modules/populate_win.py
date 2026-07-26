@@ -33,7 +33,20 @@ class PopulateWinModule(KoiModule):
             "help":    "Remote directory where tools will be saved (default: current directory)",
         },
     ]
-
+    external_resources = [
+        {
+            "name":      name,
+            "url":       url,
+            "cache_key": f"armory_{name}",
+        }
+        for name, url in TOOLS.items()
+    ] + [
+        {
+            "name":      "mimikatz_trunk.zip",
+            "url":       MIMIKATZ_ZIP_URL,
+            "cache_key": MIMIKATZ_ZIP_CACHE_NAME,
+        },
+    ]
     def _fetch_mimikatz_exe(self) -> tuple[bytes, str]:
         """Download mimikatz_trunk.zip and return the x64/mimikatz.exe bytes."""
         zip_bytes, source = fetch_or_cache(MIMIKATZ_ZIP_URL, MIMIKATZ_ZIP_CACHE_NAME)

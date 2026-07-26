@@ -69,6 +69,9 @@ COLORS   = CONFIG["colors"]
 TIMEOUTS = CONFIG["timeouts"]
 SIDETCPS = CONFIG.get("sidetcps", DEFAULTS["sidetcps"])
 
+# Runtime mode: set to True when --local flag is used
+LOCAL_MODE = False
+
 
 def color(name: str) -> tuple[int, int, int]:
     """Return an RGB tuple for `name`, falling back to the built-in default on bad config."""

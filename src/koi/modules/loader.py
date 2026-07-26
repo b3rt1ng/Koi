@@ -64,3 +64,12 @@ def load_modules(reload: bool = False) -> Dict[str, Type]:
 
 def get_module(name: str) -> Optional[Type]:
     return load_modules().get(name)
+
+
+def collect_external_resources() -> list[dict]:
+    """Collect all external_resources declared by all loaded modules."""
+    resources = []
+    for mod_cls in load_modules().values():
+        if hasattr(mod_cls, 'external_resources') and mod_cls.external_resources:
+            resources.extend(mod_cls.external_resources)
+    return resources
