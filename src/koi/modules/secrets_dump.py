@@ -366,8 +366,8 @@ class SecretsDumpModule(KoiModule):
         if proc_env:
             filtered = filter_env_vars(proc_env)
             if filtered:
-                env_list = [f"{k}={v}" for k, v in sorted(filtered.items())[:20]]
-                result["Process Environment Vars"] = "\n".join(env_list)
+                env_dict = {k: v for k, v in sorted(filtered.items())[:20]}
+                result["Process Environment Vars"] = env_dict
 
         return result
 
