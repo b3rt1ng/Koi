@@ -107,6 +107,8 @@ class Listener:
         self._loggers: dict = {}
         # Set by main() when --mcp is passed; started from start().
         self.mcp_server = None
+        # None until start() binds; koi_status reports it as the listener uptime.
+        self.started_at: Optional[float] = None
 
     def _mask_ip(self, ip: str, kind: str = "remote") -> str:
         """Return a placeholder instead of a real IP when screenable mode is active."""
@@ -250,6 +252,7 @@ class Listener:
         self._server_sock.bind((self.host, self.port))
         self._server_sock.listen(16)
         self._running = True
+        self.started_at = time.time()
 
         set_session_provider(self._session_refs)
         sys.stdout = _MaskStream(sys.stdout, lambda: self.screenable_mode)

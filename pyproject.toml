@@ -10,7 +10,9 @@ requires-python = ">=3.10"
 
 [project.optional-dependencies]
 # Koi's core stays dependency-free; MCP support is opt-in.
-mcp = ["mcp>=1.9", "uvicorn>=0.30", "starlette>=0.40"]
+# mcp 2.x only: the server is built with the on_* callback API, which 1.x
+# (decorator-based) does not accept.
+mcp = ["mcp>=2.0", "uvicorn>=0.30", "starlette>=0.40"]
 
 [project.scripts]
 koi = "koi.main:main"

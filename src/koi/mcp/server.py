@@ -16,6 +16,7 @@ import logging
 import secrets
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -74,6 +75,24 @@ def _exec_timeout(value) -> float:
     if timeout <= 0 or timeout != timeout:  # NaN compares unequal to itself
         raise ValueError(f"timeout must be greater than 0, got {value!r}")
     return min(timeout, _MAX_EXEC_TIMEOUT)
+
+
+def _uptime(since: Optional[float]) -> Optional[str]:
+    if since is None:
+        return None
+    secs = int(max(0.0, time.time() - since))
+    m, s = divmod(secs, 60)
+    h, m = divmod(m, 60)
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+
+def _version() -> str:
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        return version("koi-handler")
+    except PackageNotFoundError:  # running from a clone without an install
+        return "unknown"
 
 
 def _tool(name: str, description: str, properties=None, required=None) -> Dict[str, Any]:
@@ -213,9 +232,79 @@ class KoiMCPServer:
             "busy_with": sess.io_holder,
         }
 
+    def _status(self) -> Dict[str, Any]:
+        """Everything a client needs to reason about the C2 without asking the operator.
+
+        Where Koi listens, where a payload should call back to, what is degraded
+        (paused, offline) and what this MCP connection is actually allowed to do.
+        """
+        from koi.utils.config import SIDETCPS
+        from koi.utils.payloads import get_interfaces
+
+        lst = self.listener
+        sessions = list(lst._sessions.values())
+        by_os: Dict[str, int] = {}
+        for sess in sessions:
+            if sess.alive:
+                by_os[sess.os_type or "unknown"] = by_os.get(sess.os_type or "unknown", 0) + 1
+
+        # Masked like session addresses: screenable mode exists so the operator
+        # can show a client window without leaking their own network.
+        interfaces = {
+            name: lst._mask_ip(ip, kind="local") for name, ip in get_interfaces().items()
+        }
+
+        return {
+            "koi_version": _version(),
+            "listener": {
+                "bind_host": lst._mask_ip(lst.host, kind="local")
+                if lst.host not in ("0.0.0.0", "::")
+                else lst.host,
+                "port": lst.port,
+                "uptime": _uptime(lst.started_at),
+                "accepting": lst._accepting,
+                "interfaces": interfaces,
+                # Callback target for a payload: any interface above, on `port`.
+                "callback_hint": (
+                    "payload must connect back to one of interfaces:port"
+                    if lst.host in ("0.0.0.0", "::")
+                    else "listener is bound to a single address"
+                ),
+            },
+            "sessions": {
+                "alive": sum(1 for s in sessions if s.alive),
+                "total": len(sessions),
+                "by_os": by_os,
+            },
+            "modes": {
+                # Offline: modules serve external tooling from ~/.koi/cache only.
+                "local_offline": lst.local_mode,
+                "screenable": lst.screenable_mode,
+            },
+            "transfers": {
+                # upload/download open a one-shot TCP server on one of these,
+                # so the target must be able to reach the operator on them too.
+                "side_channel_ports": list(SIDETCPS),
+            },
+            "mcp": {
+                "url": self.url,
+                "allow_exec": self.allow_exec,
+                "io_timeout": _IO_TIMEOUT,
+                "max_exec_timeout": _MAX_EXEC_TIMEOUT,
+            },
+            "logs": {"dir": str(log_dir()), "count": len(list_logs())},
+        }
+
     def _static_tools(self) -> List[Dict[str, Any]]:
         session = {"type": "string", "description": "Session id (e.g. \"1\") or tag."}
         return [
+            _tool(
+                "koi_status",
+                "Describe the Koi listener itself: version, bind address and port, "
+                "local interfaces a payload can call back to, uptime, whether new "
+                "connections are accepted, offline/screenable modes, side-channel "
+                "transfer ports and what this MCP connection is allowed to do.",
+            ),
             _tool(
                 "koi_list_sessions",
                 "List every reverse shell currently held by Koi, with its OS, "
@@ -291,6 +380,9 @@ class KoiMCPServer:
         Executed on a worker thread: every path below blocks on socket I/O.
         """
         arguments = arguments or {}
+
+        if name == "koi_status":
+            return json.dumps(self._status(), indent=2)
 
         if name == "koi_list_sessions":
             # at_prompt: found from a server thread while the operator sits at
@@ -444,6 +536,32 @@ class KoiMCPServer:
 
         return _strip_ansi(path.read_text(encoding="utf-8", errors="replace"))
 
+    def _instructions(self) -> str:
+        """Sent once at initialize, so it stays static: anything that changes at
+        runtime belongs in koi_status, which the client can call again."""
+        mode = (
+            "Command execution is enabled: koi_exec and the koi_module_* tools "
+            "act on live targets."
+            if self.allow_exec
+            else "This connection is read-only. Only introspection tools are "
+            "exposed; exec and modules are refused."
+        )
+        return (
+            "Koi is a multi-session reverse shell listener used for authorised "
+            "offensive security work. Sessions are real shells on remote hosts "
+            f"that called back to this listener. {mode}\n\n"
+            "Call koi_status first when you need the operating context: bind "
+            "address, listen port, local interfaces to point a payload at, "
+            "side-channel ports used for file transfers, offline mode and log "
+            "location. Call koi_list_sessions for what is currently connected; "
+            "session ids are reused across tools and a tag can replace an id.\n\n"
+            "One command runs on a session at a time. A tool call fails fast "
+            "with a busy error when the operator is interacting with that shell, "
+            "which is expected: retry later rather than escalating. Prefer a "
+            "module over a hand-written command when one covers the task, since "
+            "modules handle the per-OS quirks and the PTY protocol already."
+        )
+
     def _build_app(self):
         """Assemble the MCP server and its ASGI wrapper (mcp 2.x low-level API)."""
         import mcp.types as types
@@ -481,6 +599,10 @@ class KoiMCPServer:
 
         server = Server(
             "koi",
+            version=_version(),
+            title="Koi",
+            website_url="https://b3rt1ng.github.io/koi-wiki/",
+            instructions=self._instructions(),
             on_list_tools=on_list_tools,
             on_call_tool=on_call_tool,
             on_list_resources=on_list_resources,
