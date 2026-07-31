@@ -129,6 +129,26 @@ class CommandTimeout(Exception):
         super().__init__(f"Command timed out after {timeout}s: {command}")
 
 
+class ModuleArgumentError(ValueError):
+    """Raised when a module is given arguments argparse refuses."""
+
+
+class _ModuleParser(argparse.ArgumentParser):
+    """argparse that reports failures instead of printing usage and exiting.
+
+    The default writes to stderr then raises SystemExit, which is useless to a
+    caller that has to explain the failure: the REPL used to swallow it into an
+    empty Namespace and let the module die on a missing attribute instead.
+    """
+
+    def error(self, message):
+        usage = self.format_usage().strip().removeprefix("usage: ")
+        raise ModuleArgumentError(f"{message} (usage: {usage})")
+
+    def exit(self, status=0, message=None):
+        raise ModuleArgumentError(message.strip() if message else "bad arguments")
+
+
 class KoiModule(ABC):
     """
     Base class for all Koi modules.
@@ -227,7 +247,7 @@ class KoiModule(ABC):
         if not self.arguments:
             return argparse.Namespace()
 
-        parser = argparse.ArgumentParser(prog=self.name, add_help=False)
+        parser = _ModuleParser(prog=self.name, add_help=False)
         for arg in self.arguments:
             arg = arg.copy()
             flags = arg.pop("flags")
@@ -238,8 +258,8 @@ class KoiModule(ABC):
 
         try:
             return parser.parse_args(self.raw_args)
-        except SystemExit:
-            return argparse.Namespace()
+        except SystemExit as exc:  # an action bypassing error()/exit()
+            raise ModuleArgumentError("bad arguments") from exc
 
     def _get_local_ip(self) -> str:
         """Return the local IP that routes toward the current session."""

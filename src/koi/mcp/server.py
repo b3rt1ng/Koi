@@ -37,6 +37,12 @@ _IO_TIMEOUT = 10.0
 _MODULE_TOOL_PREFIX = "koi_module_"
 _LOG_URI_PREFIX = "koi://logs/"
 
+# Nothing validates a tool's arguments against its schema before they land here,
+# so koi_exec checks its own. The ceiling matters most: a command that never
+# returns pins one of the pool's threads for as long as it is allowed to run.
+_DEFAULT_EXEC_TIMEOUT = 30.0
+_MAX_EXEC_TIMEOUT = 600.0
+
 # Imported lazily inside _build_app/_serve, so callers must ask for this list up
 # front rather than meet an ImportError once the thread is already running.
 _REQUIRED_PACKAGES = ("mcp", "uvicorn", "starlette")
@@ -53,6 +59,21 @@ def _strip_ansi(text: str) -> str:
     """Flatten a terminal stream into text a model can read."""
     # Carriage returns go too: they are how a spinner overwrites its own line.
     return ANSI_RE.sub("", text).replace("\r", "")
+
+
+def _exec_timeout(value) -> float:
+    """Validate the timeout a client asked for, clamped to something survivable."""
+    if value is None:
+        return _DEFAULT_EXEC_TIMEOUT
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise ValueError(f"timeout must be a number, got {type(value).__name__}")
+    try:
+        timeout = float(value)
+    except ValueError:
+        raise ValueError(f"timeout must be a number, got {value!r}") from None
+    if timeout <= 0 or timeout != timeout:  # NaN compares unequal to itself
+        raise ValueError(f"timeout must be greater than 0, got {value!r}")
+    return min(timeout, _MAX_EXEC_TIMEOUT)
 
 
 def _tool(name: str, description: str, properties=None, required=None) -> Dict[str, Any]:
@@ -163,8 +184,6 @@ class KoiMCPServer:
         self.allow_exec = allow_exec
         self._thread: Optional[threading.Thread] = None
 
-    # ---------------------------------------------------------------- helpers
-
     def _resolve(self, ref: str) -> "Session":
         sess = self.listener._resolve_session(str(ref))
         if sess is None:
@@ -193,8 +212,6 @@ class KoiMCPServer:
             "connected_at": sess.connected_at.isoformat(timespec="seconds"),
             "busy_with": sess.io_holder,
         }
-
-    # ------------------------------------------------------------------ tools
 
     def _static_tools(self) -> List[Dict[str, Any]]:
         session = {"type": "string", "description": "Session id (e.g. \"1\") or tag."}
@@ -268,8 +285,6 @@ class KoiMCPServer:
         # PermissionError. Presentation only - call_tool still refuses them.
         return [t for t in self._static_tools() if t["name"] != "koi_exec"]
 
-    # -------------------------------------------------------------- dispatch
-
     def call_tool(self, name: str, arguments: Dict[str, Any]) -> str:
         """Run a tool and return its textual result.
 
@@ -325,7 +340,11 @@ class KoiMCPServer:
     def _do_exec(self, arguments: Dict[str, Any]) -> str:
         self._require_exec()
         sess = self._resolve(arguments["session"])
+
         command = arguments["command"]
+        if not isinstance(command, str) or not command.strip():
+            raise ValueError("command must be a non-empty string")
+        timeout = _exec_timeout(arguments.get("timeout"))
 
         # A bare KoiModule reaches exec(), which carries the sentinel protocol
         # and the per-OS quirks already.
@@ -334,7 +353,7 @@ class KoiMCPServer:
         )
         try:
             with sess.io(holder="mcp:exec", timeout=_IO_TIMEOUT):
-                result = runner.exec(command, timeout=float(arguments.get("timeout") or 30))
+                result = runner.exec(command, timeout=timeout)
         except SessionBusy as exc:
             raise RuntimeError(str(exc)) from exc
 
@@ -396,8 +415,6 @@ class KoiMCPServer:
             payload["error"] = error
         return json.dumps(payload, indent=2)
 
-    # ------------------------------------------------------------- resources
-
     def list_resources(self) -> List[Dict[str, str]]:
         return [
             {
@@ -426,8 +443,6 @@ class KoiMCPServer:
             raise ValueError(f"Log not found: {uri}")
 
         return _strip_ansi(path.read_text(encoding="utf-8", errors="replace"))
-
-    # --------------------------------------------------------------- runtime
 
     def _build_app(self):
         """Assemble the MCP server and its ASGI wrapper (mcp 2.x low-level API)."""
