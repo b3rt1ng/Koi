@@ -28,10 +28,6 @@ def get_cache(name: str) -> bytes | None:
     return p.read_bytes() if p.exists() else None
 
 
-def has_cache(name: str) -> bool:
-    return cache_path(name).exists()
-
-
 def fetch_or_cache(
     url: str,
     name: str,

@@ -46,9 +46,6 @@ MOTD = ["The serene shell handler",
         "You can use \"koifuscator\" to directly use the obfuscator"
 ]
 
-def whole_line(char=" "):
-    return (char * shutil.get_terminal_size().columns)
-
 def color_signal(signal):
     return f"\033[38;2;{signal[0]};{signal[1]};{signal[2]}m"
 

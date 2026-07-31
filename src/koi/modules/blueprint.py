@@ -8,7 +8,7 @@ import threading
 import time
 import uuid
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Callable, List, Literal, Optional, Union
+from typing import TYPE_CHECKING, Callable, Iterator, List, Literal, Optional, Union
 
 if TYPE_CHECKING:
     from koi.session import Session
@@ -510,96 +510,20 @@ class KoiModule(ABC):
         self.session          -> Session dataclass (id, conn, addr, upgraded, ...)
         self.args             -> list[str] from the CLI
         """
-    @_owns_io
-    def exec(self, command: str, timeout: float = TIMEOUTS["exec_command"], _silent: bool = False):
-        sentinel = uuid.uuid4().hex
-        marker = f"__KOI_DONE_{sentinel}__"
-        wrapped = (
-            f'( {command} ); _rc=$?; '
-            f'printf "\\n{marker}:$_rc\\n"\n'
-        )
-        # A PTY echoes the wrapper back, so a line merely *containing* the marker
-        # is that echo, not the terminator. Anchoring on the numeric exit code
-        # tells them apart, and keeps int() below off a literal `$_rc`.
-        done_re = re.compile(rf"^{re.escape(marker)}:(-?\d+)$")
-        self.session.conn.sendall(wrapped.encode("utf-8"))
+    def _read_lines(self, command: str, timeout: float) -> Iterator[str]:
+        """Yield decoded lines from the session socket until the peer goes quiet.
 
+        The transport half of the sentinel protocol, shared by exec() and
+        exec_stream(): both send a wrapped command and read lines back until
+        their marker shows up. Keeping one reader is what stops the two from
+        drifting, which is how exec_stream ended up blind to the PTY echo that
+        exec already handled.
+
+        Raises :class:`CommandTimeout` if *timeout* elapses, and returns when
+        the socket closes. Callers hold the session I/O lock already.
+        """
         buf = b""
         deadline = time.monotonic() + timeout
-        output_lines = []
-
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise CommandTimeout(command, timeout)
-
-            ready, _, _ = select.select([self.session.conn], [], [], min(remaining, _SELECT_TIMEOUT))
-            if not ready:
-                continue
-
-            chunk = self.session.conn.recv(65536)
-            if not chunk:
-                break
-
-            buf += chunk
-            while b"\n" in buf:
-                raw_line, buf = buf.split(b"\n", 1)
-                text = raw_line.decode("utf-8", errors="replace").strip("\r")
-                if match := done_re.match(text):
-                    rc = int(match.group(1))
-                    output = "\n".join(output_lines)
-                    result = CommandResult(
-                        command=command,
-                        returncode=rc,
-                        stdout=output,
-                        duration=time.monotonic() - (deadline - timeout),
-                    )
-                    if self._logger and not _silent:
-                        self._logger.log_event(f"exec  {command}")
-                        if output:
-                            self._logger.log_output(output.encode("utf-8", errors="replace"))
-                    return result
-                if marker in text:
-                    # The echo: everything up to it is prompt and command noise.
-                    output_lines.clear()
-                    continue
-                output_lines.append(text)
-
-        result = CommandResult(
-            command=command, returncode=1,
-            stdout="\n".join(output_lines),
-            duration=0,
-        )
-        if self._logger and not _silent:
-            self._logger.log_event(f"exec  {command}")
-            if result.stdout:
-                self._logger.log_output(result.stdout.encode("utf-8", errors="replace"))
-        return result
-
-    @_owns_io
-    def exec_stream(self, command: str, timeout: float = TIMEOUTS["exec_command"]):
-        """
-        Stream output of *command* line-by-line from the remote session as
-        :class:`~koi.shell_handler.result.StreamLine` objects.
-
-        Example::
-
-            for line in self.exec_stream("find / -name '*.conf' 2>/dev/null"):
-                self.notify('info', line.text)
-        """
-        sentinel = uuid.uuid4().hex
-        marker   = f"__KOI_DONE_{sentinel}__"
-        wrapped  = f'( {command} ); printf "\\n{marker}\\n"\n'
-        self.session.conn.sendall(wrapped.encode("utf-8"))
-
-        buf      = b""
-        deadline = time.monotonic() + timeout
-
-        # Unlike exec(), this cannot drop the prompt-and-echo preamble after the
-        # fact, so opening lines are held until the echo identifies them as
-        # noise. A shell that does not echo never sends one, hence the cap.
-        pending: List[str] = []
-        holding = True
 
         while True:
             remaining = deadline - time.monotonic()
@@ -617,27 +541,87 @@ class KoiModule(ABC):
             buf += chunk
             while b"\n" in buf:
                 raw_line, buf = buf.split(b"\n", 1)
-                text = raw_line.decode("utf-8", errors="replace").strip("\r")
-                if text == marker:
-                    for held in pending:
-                        yield StreamLine(text=held)
-                    return
-                if marker in text:
-                    # The echo. Matching it loosely used to end the stream here,
-                    # i.e. return nothing at all on any PTY session.
-                    pending.clear()
-                    holding = False
+                yield raw_line.decode("utf-8", errors="replace").strip("\r")
+
+    @_owns_io
+    def exec(self, command: str, timeout: float = TIMEOUTS["exec_command"], _silent: bool = False):
+        marker = f"__KOI_DONE_{uuid.uuid4().hex}__"
+        # A PTY echoes the wrapper back, so a line merely *containing* the marker
+        # is that echo, not the terminator. Anchoring on the numeric exit code
+        # tells them apart, and keeps int() below off a literal `$_rc`.
+        done_re = re.compile(rf"^{re.escape(marker)}:(-?\d+)$")
+        wrapped = f'( {command} ); _rc=$?; printf "\\n{marker}:$_rc\\n"\n'
+        self.session.conn.sendall(wrapped.encode("utf-8"))
+
+        started = time.monotonic()
+        output_lines: List[str] = []
+        returncode = 1  # the socket closing mid-command is a failure
+
+        for text in self._read_lines(command, timeout):
+            if match := done_re.match(text):
+                returncode = int(match.group(1))
+                break
+            if marker in text:
+                # The echo: everything up to it is prompt and command noise.
+                output_lines.clear()
+                continue
+            output_lines.append(text)
+
+        output = "\n".join(output_lines)
+        if self._logger and not _silent:
+            self._logger.log_event(f"exec  {command}")
+            if output:
+                self._logger.log_output(output.encode("utf-8", errors="replace"))
+        return CommandResult(
+            command=command,
+            returncode=returncode,
+            stdout=output,
+            duration=time.monotonic() - started,
+        )
+
+    @_owns_io
+    def exec_stream(self, command: str, timeout: float = TIMEOUTS["exec_command"]):
+        """
+        Stream output of *command* line-by-line from the remote session as
+        :class:`~koi.shell_handler.result.StreamLine` objects.
+
+        Example::
+
+            for line in self.exec_stream("find / -name '*.conf' 2>/dev/null"):
+                self.notify('info', line.text)
+        """
+        marker = f"__KOI_DONE_{uuid.uuid4().hex}__"
+        wrapped = f'( {command} ); printf "\\n{marker}\\n"\n'
+        self.session.conn.sendall(wrapped.encode("utf-8"))
+
+        # Unlike exec(), this cannot drop the prompt-and-echo preamble after the
+        # fact, so opening lines are held until the echo identifies them as
+        # noise. A shell that does not echo never sends one, hence the cap.
+        pending: List[str] = []
+        holding = True
+
+        for text in self._read_lines(command, timeout):
+            if text == marker:
+                break
+            if marker in text:
+                pending.clear()
+                holding = False
+                continue
+
+            pending.append(text)
+            if holding:
+                if len(pending) < _ECHO_PREAMBLE_LINES:
                     continue
-                if holding:
-                    pending.append(text)
-                    if len(pending) < _ECHO_PREAMBLE_LINES:
-                        continue
-                    holding = False
-                    for held in pending:
-                        yield StreamLine(text=held)
-                    pending.clear()
-                    continue
-                yield StreamLine(text=text)
+                holding = False  # no echo is coming, they were output after all
+
+            for held in pending:
+                yield StreamLine(text=held)
+            pending.clear()
+
+        # Whatever is still held when the command ends was never identified as
+        # noise, so it is output: the terminator arrived before the cap.
+        for held in pending:
+            yield StreamLine(text=held)
 
     def send(self, data: bytes) -> bool:
         """

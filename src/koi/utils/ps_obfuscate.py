@@ -32,21 +32,6 @@ def _random_split(cmdlet: str) -> str:
     return "&(" + "+".join(f"{q}{p}{q}" for p in parts) + ")"
 
 
-def obfuscate_call(cmdlet: str) -> str:
-    """Pick randomly from concat, format-string, and char-array call forms."""
-    technique = random.randrange(3)
-    if technique == 0:
-        return _random_split(cmdlet)
-    elif technique == 1:
-        parts = _split_parts(cmdlet)
-        placeholders = "".join(f"{{{i}}}" for i in range(len(parts)))
-        args = ",".join(f"'{p}'" for p in parts)
-        return f"&(('{placeholders}'-f{args}))"
-    else:
-        codes = ",".join(str(ord(c)) for c in cmdlet)
-        return f"&(-join[char[]]@({codes}))"
-
-
 _PS_CMDLETS = [
     "Invoke-Expression",
     "New-Object",

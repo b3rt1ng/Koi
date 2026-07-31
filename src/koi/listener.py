@@ -421,46 +421,43 @@ class Listener:
 
         Returns False to exit the main loop, True to continue.
         """
-        # Exit commands
         if cmd in ("exit", "quit"):
             self.stop()
             return False
 
-        # Simple commands (no arguments)
-        simple_commands = {
-            "help": print_help,
-            "stop": self._cmd_stop_accepting,
-            "start": self._cmd_start_accepting,
-            "ls": self._cmd_ls,
-            "logs": self._cmd_logs,
-            "modules": self._cmd_modules,
-            "reload": self._cmd_reload,
-        }
-
-        if cmd in simple_commands:
-            simple_commands[cmd]()
+        if cmd == "run":
+            # Module-aware usage of its own, so it takes the raw parts.
+            self._dispatch_run(parts)
             return True
 
-        # Commands with arguments
-        if cmd == "go":
-            self._cmd_go(parts[1])
-        elif cmd == "upgrade":
-            self._cmd_upgrade(parts[1])
-        elif cmd == "kill":
-            self._cmd_kill(parts[1])
-        elif cmd == "payload":
-            self._cmd_payload(parts[1] if len(parts) > 1 else None)
-        elif cmd == "obfuscator":
-            self._cmd_obfuscate(parts[1] if len(parts) > 1 else None)
-        elif cmd == "run":
-            self._dispatch_run(parts)
-        elif cmd == "setshell":
-            self._cmd_setshell(parts[1], parts[2])
-        elif cmd == "tag":
-            self._cmd_tag(parts[1], parts[2] if len(parts) > 2 else None)
-        else:
-            notify('error', f"Unknown command: {accent(cmd)}, type {bold('help')}")
+        # command -> (handler, positionals it takes). cli.USAGE already declares
+        # which of those are mandatory and check_usage() has enforced them by
+        # now, so a slot left empty here is an optional one and gets None.
+        handlers = {
+            "help":       (print_help, 0),
+            "stop":       (self._cmd_stop_accepting, 0),
+            "start":      (self._cmd_start_accepting, 0),
+            "ls":         (self._cmd_ls, 0),
+            "logs":       (self._cmd_logs, 0),
+            "modules":    (self._cmd_modules, 0),
+            "reload":     (self._cmd_reload, 0),
+            "go":         (self._cmd_go, 1),
+            "upgrade":    (self._cmd_upgrade, 1),
+            "kill":       (self._cmd_kill, 1),
+            "payload":    (self._cmd_payload, 1),
+            "obfuscator": (self._cmd_obfuscate, 1),
+            "tag":        (self._cmd_tag, 2),
+            "setshell":   (self._cmd_setshell, 2),
+        }
 
+        entry = handlers.get(cmd)
+        if entry is None:
+            notify('error', f"Unknown command: {accent(cmd)}, type {bold('help')}")
+            return True
+
+        handler, takes = entry
+        args = parts[1:1 + takes]
+        handler(*args, *[None] * (takes - len(args)))
         return True
 
     def _cmd_ls(self) -> None:
