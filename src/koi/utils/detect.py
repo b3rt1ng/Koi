@@ -70,19 +70,22 @@ def detect_os(session: "Session") -> None:
     expected = a + b
     probe = f" A={a} B={b}; echo $A$B\r\n"
 
-    try:
-        session.conn.sendall(probe.encode("utf-8"))
-    except OSError:
-        session.alive = False
-        return
+    with session.io(holder="detect_os"):
+        try:
+            session.conn.sendall(probe.encode("utf-8"))
+        except OSError:
+            session.alive = False
+            return
 
-    response = _recv_for(
-        session, _TIMEOUT,
-        stop_when=lambda text: _classify(text, expected) is not None,
-    )
-    logger.debug(f"[detect] session #{session.id} raw response: {response!r}")
+        response = _recv_for(
+            session, _TIMEOUT,
+            stop_when=lambda text: _classify(text, expected) is not None,
+        )
+        logger.debug(f"[detect] session #{session.id} raw response: {response!r}")
 
-    _apply(session, response, expected)
+        # Inside the lock: _apply may fall through to _fallback, which sends a
+        # second probe and reads its reply.
+        _apply(session, response, expected)
 
 
 def _classify(response: str, expected: str) -> "str | None":

@@ -491,6 +491,17 @@ def notify(msg_type, text):
     else:
         print(f"{prefix}{text}")
 
+def _thread_stdout():
+    """The stream the *calling* thread should write to.
+
+    Normally ``sys.stdout``. The MCP server swaps in a stand-in routing each
+    thread to its own buffer, so anything spawning a helper thread must resolve
+    the stream here, in the parent, and hand it over.
+    """
+    for_thread = getattr(sys.stdout, "for_thread", None)
+    return for_thread() if for_thread else sys.stdout
+
+
 class Spinner:
     _FRAMES = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"]
 
@@ -498,9 +509,16 @@ class Spinner:
         self.message   = message
         self._stop_ev  = threading.Event()
         self._thread   = None
+        self._out      = None
 
     def start(self):
+        # Resolved here, not in _spin: that runs on its own thread and must
+        # inherit the caller's stream.
+        self._out = _thread_stdout()
         self._stop_ev.clear()
+        # Frames are cursor tricks: silent when captured (MCP) or piped.
+        if not self._out.isatty():
+            return self
         self._thread = threading.Thread(target=self._spin, daemon=True)
         self._thread.start()
         return self
@@ -509,15 +527,16 @@ class Spinner:
         self._stop_ev.set()
         if self._thread:
             self._thread.join()
-        sys.stdout.write("\r\033[K")
-        sys.stdout.flush()
+            self._thread = None
+            self._out.write("\r\033[K")
+            self._out.flush()
 
     def _spin(self):
         i = 0
         while not self._stop_ev.is_set():
             frame = colored_text(self._FRAMES[i % len(self._FRAMES)], PUMPKIN)
-            sys.stdout.write(f"\r  {frame}  {colored_text(self.message, SILVER)}")
-            sys.stdout.flush()
+            self._out.write(f"\r  {frame}  {colored_text(self.message, SILVER)}")
+            self._out.flush()
             time.sleep(_SPINNER_FRAME_DELAY)
             i += 1
 

@@ -21,9 +21,13 @@ _EXIT_SLEEP = 0.2
 
 
 def interact(sess: Session, logger=None) -> str:
-    if sess.os_type in ("windows_cmd", "windows_ps") and not sess.upgraded:
-        return _interact_windows(sess, logger)
-    return _interact_raw(sess, logger)
+    # Held for the whole interactive session: the receive thread below reads the
+    # socket continuously, so nothing else may touch it until the user
+    # backgrounds or the peer drops.
+    with sess.io(holder="interact"):
+        if sess.os_type in ("windows_cmd", "windows_ps") and not sess.upgraded:
+            return _interact_windows(sess, logger)
+        return _interact_raw(sess, logger)
 
 
 def _interact_raw(sess: Session, logger=None) -> str:

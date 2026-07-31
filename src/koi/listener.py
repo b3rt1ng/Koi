@@ -105,6 +105,8 @@ class Listener:
         self.screenable_mode: bool = False
         self._accepting: bool = True
         self._loggers: dict = {}
+        # Set by main() when --mcp is passed; started from start().
+        self.mcp_server = None
 
     def _mask_ip(self, ip: str, kind: str = "remote") -> str:
         """Return a placeholder instead of a real IP when screenable mode is active."""
@@ -149,9 +151,30 @@ class Listener:
             self._loggers[sid].close()
             del self._loggers[sid]
 
-    def _prune(self) -> None:
+    def _prune(self, at_prompt: bool = False) -> None:
+        """Drop sessions whose far end is gone, announcing each loss.
+
+        ``at_prompt`` says where the operator is: the REPL calls this from
+        inside a command they just typed, the MCP server from a thread while
+        they sit at the prompt.
+        """
+        # Ask each socket first: nothing else marks a session dead until an
+        # operation writes to it, so this pass is what actually detects a loss.
+        for sess in list(self._sessions.values()):
+            sess.probe()
+
+        # Only silent losses reach here: a session the operator kills, or one
+        # that drops during `go`, is announced on its own path and already gone.
         for sid in [k for k, s in self._sessions.items() if not s.alive]:
+            sess = self._sessions[sid]
+            label = sess.tag or self._mask_ip(sess.addr[0])
+            uptime = sess._uptime()
             self._remove(sid)
+            self._announce(
+                'error',
+                f"Session {bold(plain(f'#{sid}'))} lost {muted(f'({label}, up {uptime})')}",
+                at_prompt=at_prompt,
+            )
 
     def _accept_loop(self):
         while self._running:
@@ -195,18 +218,31 @@ class Listener:
         masked_ip = self._mask_ip(sess.addr[0])
         msg = f"{bold(plain(f'#{sess.id}'))}  {plain(masked_ip)}{muted(f':{sess.addr[1]}')}{os_tag}"
         os.write(self._notify_w, b"1\n")
+        self._announce('new', msg)
 
+    def _announce(self, msg_type: str, text: str, at_prompt: bool = True) -> None:
+        """Report something the operator did not ask for, without wrecking their line.
+
+        Queued while they are inside a session; at the prompt the line is erased
+        and redrawn around the message so a half-typed command survives.
+        ``at_prompt=False`` is for callers already inside a command they typed.
+        """
         if self._in_session:
             with self._notif_lock:
-                self._pending_notifications.append(('new', msg))
-        else:
-            import readline as _rl
-            buf = _rl.get_line_buffer()
-            sys.stdout.write("\r\033[K")
-            notify('new', msg)
-            sys.stdout.write(self._prompt() + buf)
-            sys.stdout.flush()
-            _rl.redisplay()
+                self._pending_notifications.append((msg_type, text))
+            return
+
+        if not at_prompt:
+            notify(msg_type, text)
+            return
+
+        import readline as _rl
+        buf = _rl.get_line_buffer()
+        sys.stdout.write("\r\033[K")
+        notify(msg_type, text)
+        sys.stdout.write(self._prompt() + buf)
+        sys.stdout.flush()
+        _rl.redisplay()
 
     def start(self):
         self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -226,6 +262,12 @@ class Listener:
         notify('info', f"Listening on {bold(self.host)}:{bold(self.port)}")
         if self.local_mode:
             notify('warning', "Local mode enabled: using cache only, no external network calls")
+        if self.mcp_server is not None:
+            self.mcp_server.start()
+            notify('info', f"MCP server on {bold(self.mcp_server.url)}")
+            notify('status', muted(f"token: {self.mcp_server.token}"))
+            if not self.mcp_server.allow_exec:
+                notify('status', muted("MCP is read-only; use --mcp-allow-exec to permit exec and modules"))
         self._warn_log_accumulation()
         print()
 
@@ -479,7 +521,9 @@ class Listener:
         logger = self._ensure_logger(sess)
         sess.attach_logger(logger)
 
-        with Spinner("Upgrading shell..."):
+        # One atomic sequence: a reader slipping in between these sends would
+        # swallow the shell's replies and leave the session half-upgraded.
+        with Spinner("Upgrading shell..."), sess.io(holder="upgrade"):
             pty_payload = (
                 'if command -v script >/dev/null 2>&1; then '
                     'exec script -qc /bin/bash /dev/null 2>/dev/null || exec script -q /dev/null /bin/bash 2>/dev/null; '
@@ -703,17 +747,18 @@ class Listener:
             notify(msg_type, text)
 
     def _drain(self, sess: Session, duration: float = 0.5) -> None:
-        deadline = time.monotonic() + duration
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-            try:
-                r, _, _ = select.select([sess.conn], [], [], min(remaining, 0.05))
-                if r:
-                    sess.conn.recv(_SOCKET_BUFFER_SIZE)
-            except OSError:
-                break
+        with sess.io(holder="drain"):
+            deadline = time.monotonic() + duration
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                try:
+                    r, _, _ = select.select([sess.conn], [], [], min(remaining, 0.05))
+                    if r:
+                        sess.conn.recv(_SOCKET_BUFFER_SIZE)
+                except OSError:
+                    break
 
     def _sync_winsize(self, sess: Session) -> None:
         try:

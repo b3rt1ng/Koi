@@ -30,6 +30,8 @@ DEFAULTS = {
     },
 
     "sidetcps": [5985, 5986, 445, 3389],
+    
+    "mcp_token": None,
 }
 
 
@@ -40,7 +42,6 @@ def _deep_merge(defaults: dict, overrides: dict) -> dict:
         if isinstance(default_value, dict):
             if isinstance(value, dict):
                 merged[key] = _deep_merge(default_value, value)
-            # else: malformed override for a dict-shaped default, keep the default
         else:
             merged[key] = value
     return merged
@@ -62,6 +63,35 @@ def _load() -> dict:
     except OSError:
         pass
     return dict(DEFAULTS)
+
+
+def persist(key: str, value) -> bool:
+    """Write a single top-level key to the user's config file.
+
+    Re-reads the file first so a concurrent edit is not clobbered, and tightens
+    permissions to 0600 because the config now holds the MCP bearer token.
+    Returns False when the file cannot be written; callers must stay usable.
+    """
+    try:
+        data = {}
+        if _CONFIG_PATH.exists():
+            try:
+                loaded = json.loads(_CONFIG_PATH.read_text())
+                if isinstance(loaded, dict):
+                    data = loaded
+            except json.JSONDecodeError:
+                pass  # malformed file: rewrite it rather than lose the key
+        data[key] = value
+        _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _CONFIG_PATH.write_text(json.dumps(data, indent=4) + "\n")
+        try:
+            _CONFIG_PATH.chmod(0o600)
+        except OSError:
+            pass
+        CONFIG[key] = value
+        return True
+    except OSError:
+        return False
 
 
 CONFIG   = _load()

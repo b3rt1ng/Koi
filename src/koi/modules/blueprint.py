@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import functools
+import inspect
 import re
 import select
 import threading
@@ -25,7 +27,33 @@ import argparse
 
 _PS_PROMPT = re.compile(r'^PS\s+\S+>\s*')
 _ANSI_RE   = re.compile(r'\x1b\[[0-9;?]*[a-zA-Z]|\r')
+
+# Opening lines exec_stream holds while learning whether the shell echoes.
+# Covers a multi-line prompt; past it they are released, so a non-echoing shell
+# loses nothing but a brief delay.
+_ECHO_PREAMBLE_LINES = 8
 _SELECT_TIMEOUT = 0.1
+
+
+def _owns_io(fn):
+    """Hold the session's I/O lock for the whole call.
+
+    Every method that talks to ``self.session.conn`` needs this: without it a
+    concurrent reader elsewhere in the process consumes bytes this method is
+    waiting for, and the command sentinel never arrives. The lock is reentrant,
+    so nesting (``_upload_bytes_lin`` -> ``_try_exec`` -> ``exec``) is free.
+    """
+    if inspect.isgeneratorfunction(fn):
+        @functools.wraps(fn)
+        def wrapper(self, *args, **kwargs):
+            with self.session.io(holder=f"{self.name}.{fn.__name__}"):
+                yield from fn(self, *args, **kwargs)
+    else:
+        @functools.wraps(fn)
+        def wrapper(self, *args, **kwargs):
+            with self.session.io(holder=f"{self.name}.{fn.__name__}"):
+                return fn(self, *args, **kwargs)
+    return wrapper
 
 PlatformSpec = Union[
     Literal["linux", "windows_cmd", "windows_ps", "any"],
@@ -217,6 +245,7 @@ class KoiModule(ABC):
         """Return the local IP that routes toward the current session."""
         return get_local_ip(self.session.addr[0])
 
+    @_owns_io
     def _win_query(self, ps_expr: str, timeout: float = TIMEOUTS["exec_query"]) -> str:
         """
         Evaluate a PowerShell expression on the remote Windows target and return
@@ -279,6 +308,7 @@ class KoiModule(ABC):
             self._logger.log_output(result.encode("utf-8", errors="replace"))
         return result
 
+    @_owns_io
     def _win_query_sidechannel(self, ps_expr: str, timeout: float = TIMEOUTS["exec_query"]) -> str:
         """
         Variant of _win_query for upgraded (ConPtyShell) sessions.
@@ -332,6 +362,7 @@ class KoiModule(ABC):
         except Exception:
             return ""
 
+    @_owns_io
     def _dispatch_ps(self, ps_cmd: str) -> None:
         """Route a PS command to the session: raw socket for upgraded, sendline otherwise."""
         if self.session.upgraded:
@@ -346,6 +377,7 @@ class KoiModule(ABC):
             escaped = ps_cmd.replace('"', '\\"')
             self.sendline(f'powershell -NoProfile -NonInteractive -c "{escaped}"')
 
+    @_owns_io
     def _upload_bytes_lin(
         self,
         raw: bytes,
@@ -368,6 +400,7 @@ class KoiModule(ABC):
         except (ValueError, IndexError):
             return False
 
+    @_owns_io
     def _upload_bytes_win(
         self,
         raw: bytes,
@@ -423,14 +456,22 @@ class KoiModule(ABC):
             return self._upload_bytes_lin(raw, dest, timeout, on_progress)
         return self._upload_bytes_win(raw, dest, timeout, on_progress)
 
-    def run_module(self) -> None:
-        if self._logger:
-            self._logger.log_event(f"module_start  {self.name}")
-        try:
-            self.run()
-        finally:
+    def run_module(self, io_timeout: Optional[float] = None) -> None:
+        """Run the module while owning the session socket for its whole duration.
+
+        A module is a sequence of commands whose intermediate state matters, so
+        the lock is held across the entire run rather than per ``exec()`` call.
+        ``io_timeout=None`` waits indefinitely (the REPL); an out-of-band caller
+        passes a timeout and handles :class:`~koi.session.SessionBusy`.
+        """
+        with self.session.io(holder=f"module:{self.name}", timeout=io_timeout):
             if self._logger:
-                self._logger.log_event(f"module_end  {self.name}")
+                self._logger.log_event(f"module_start  {self.name}")
+            try:
+                self.run()
+            finally:
+                if self._logger:
+                    self._logger.log_event(f"module_end  {self.name}")
 
     @abstractmethod
     def run(self) -> None:
@@ -449,6 +490,7 @@ class KoiModule(ABC):
         self.session          -> Session dataclass (id, conn, addr, upgraded, ...)
         self.args             -> list[str] from the CLI
         """
+    @_owns_io
     def exec(self, command: str, timeout: float = TIMEOUTS["exec_command"], _silent: bool = False):
         sentinel = uuid.uuid4().hex
         marker = f"__KOI_DONE_{sentinel}__"
@@ -456,6 +498,10 @@ class KoiModule(ABC):
             f'( {command} ); _rc=$?; '
             f'printf "\\n{marker}:$_rc\\n"\n'
         )
+        # A PTY echoes the wrapper back, so a line merely *containing* the marker
+        # is that echo, not the terminator. Anchoring on the numeric exit code
+        # tells them apart, and keeps int() below off a literal `$_rc`.
+        done_re = re.compile(rf"^{re.escape(marker)}:(-?\d+)$")
         self.session.conn.sendall(wrapped.encode("utf-8"))
 
         buf = b""
@@ -478,9 +524,9 @@ class KoiModule(ABC):
             buf += chunk
             while b"\n" in buf:
                 raw_line, buf = buf.split(b"\n", 1)
-                text = raw_line.decode("utf-8", errors="replace").rstrip("\r")
-                if text.startswith(marker):
-                    rc = int(text.split(":")[-1]) if ":" in text else 0
+                text = raw_line.decode("utf-8", errors="replace").strip("\r")
+                if match := done_re.match(text):
+                    rc = int(match.group(1))
                     output = "\n".join(output_lines)
                     result = CommandResult(
                         command=command,
@@ -493,6 +539,10 @@ class KoiModule(ABC):
                         if output:
                             self._logger.log_output(output.encode("utf-8", errors="replace"))
                     return result
+                if marker in text:
+                    # The echo: everything up to it is prompt and command noise.
+                    output_lines.clear()
+                    continue
                 output_lines.append(text)
 
         result = CommandResult(
@@ -506,6 +556,7 @@ class KoiModule(ABC):
                 self._logger.log_output(result.stdout.encode("utf-8", errors="replace"))
         return result
 
+    @_owns_io
     def exec_stream(self, command: str, timeout: float = TIMEOUTS["exec_command"]):
         """
         Stream output of *command* line-by-line from the remote session as
@@ -524,6 +575,12 @@ class KoiModule(ABC):
         buf      = b""
         deadline = time.monotonic() + timeout
 
+        # Unlike exec(), this cannot drop the prompt-and-echo preamble after the
+        # fact, so opening lines are held until the echo identifies them as
+        # noise. A shell that does not echo never sends one, hence the cap.
+        pending: List[str] = []
+        holding = True
+
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -540,9 +597,26 @@ class KoiModule(ABC):
             buf += chunk
             while b"\n" in buf:
                 raw_line, buf = buf.split(b"\n", 1)
-                text = raw_line.decode("utf-8", errors="replace").rstrip("\r")
-                if marker in text:
+                text = raw_line.decode("utf-8", errors="replace").strip("\r")
+                if text == marker:
+                    for held in pending:
+                        yield StreamLine(text=held)
                     return
+                if marker in text:
+                    # The echo. Matching it loosely used to end the stream here,
+                    # i.e. return nothing at all on any PTY session.
+                    pending.clear()
+                    holding = False
+                    continue
+                if holding:
+                    pending.append(text)
+                    if len(pending) < _ECHO_PREAMBLE_LINES:
+                        continue
+                    holding = False
+                    for held in pending:
+                        yield StreamLine(text=held)
+                    pending.clear()
+                    continue
                 yield StreamLine(text=text)
 
     def send(self, data: bytes) -> bool:

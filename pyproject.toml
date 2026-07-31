@@ -4,9 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "koi-handler"
-version = "0.9.5"
+version = "0.10.0"
 description = "Reverse shell listener"
 requires-python = ">=3.10"
+
+[project.optional-dependencies]
+# Koi's core stays dependency-free; MCP support is opt-in.
+mcp = ["mcp>=1.9", "uvicorn>=0.30", "starlette>=0.40"]
 
 [project.scripts]
 koi = "koi.main:main"

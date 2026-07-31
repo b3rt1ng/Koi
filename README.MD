@@ -10,7 +10,9 @@ Disclaimer: please note that this is still under development, and I am still wor
 
 ## 📑 Table of Contents
 
-[✨ Features](#-features) | [🚧 WIP](#-wip) | [🚀 Installation](#-installation) | [💻 Usage](#-usage) | [🔧 PTY Upgrade](#-pty-upgrade) | [🤖 Modules](#-modules)
+[✨ Features](#-features) | [🚧 WIP](#-wip) | [🚀 Installation](#-installation) | [💻 Usage](#-usage) | [🔧 PTY Upgrade](#-pty-upgrade) | [🤖 Modules](#-modules) | [🧠 MCP](#-mcp)
+
+Full documentation lives in the [wiki](https://b3rt1ng.github.io/koi-wiki/): [Getting Started](https://b3rt1ng.github.io/koi-wiki/getting-started/) · [CLI Reference](https://b3rt1ng.github.io/koi-wiki/cli-reference/) · [Configuration](https://b3rt1ng.github.io/koi-wiki/configuration/) · [Module Development](https://b3rt1ng.github.io/koi-wiki/modules-overview/) · [Troubleshooting](https://b3rt1ng.github.io/koi-wiki/troubleshooting/)
   
 ---
 
@@ -28,7 +30,8 @@ Disclaimer: please note that this is still under development, and I am still wor
 * **PTY Upgrade**: upgrade a raw shell to a full PTY (Linux via `script`/`socat`, Windows via obfuscated ConPtyShell) for tab completion, Ctrl+C forwarding, and terminal resizing.
 * **Modules**: automate post-exploitation tasks, file transfer, enumeration, pivoting, AD collection, and more. Easily extensible with your own modules.
 * **Obfuscator**: built-in payload obfuscator with chainable techniques (XOR, hex, format strings, char-array) to evade Defender and EDR solutions.
-* **Session logging**: every session is logged automatically. Replay any session with `koireview`.
+* **Session logging**: every session is logged automatically. Replay any session with `koireview`. ([docs](https://b3rt1ng.github.io/koi-wiki/logs/))
+* **MCP server**: expose your sessions and modules to an LLM client, read-only by default. ([docs](https://b3rt1ng.github.io/koi-wiki/mcp/))
 * **Screenable mode**: masks IPs and MAC addresses from output for safe screen sharing during CTFs or live demos.
 * **Clean signals**: `Ctrl+Z` backgrounds the session, `Ctrl+C` sends `SIGINT` to the remote, never kills your listener by accident.
 
@@ -54,6 +57,9 @@ pipx install koi-handler
 git clone https://github.com/b3rt1ng/koi
 cd koi
 pipx install --editable .
+
+# with MCP support (optional extra, see the MCP section)
+pipx install "koi-handler[mcp] @ git+https://github.com/b3rt1ng/Koi"
 ```
 
 _This installation comes with `koifuscator` and `koireview`_
@@ -66,6 +72,8 @@ To upgrade:
 ```
 pipx upgrade koi-handler
 ```
+
+More details in [Getting Started](https://b3rt1ng.github.io/koi-wiki/getting-started/).
 
 ---
 
@@ -82,6 +90,8 @@ koi --host 10.10.14.5 --port 9001
 koi -p 9001
 ```
 
+Once inside, `help` lists every command. The full reference is in the [CLI Reference](https://b3rt1ng.github.io/koi-wiki/cli-reference/), and session handling (tags, backgrounding, screenable mode) in [Session Management](https://b3rt1ng.github.io/koi-wiki/sessions/).
+
 #### Catch a shell
 
 Send a reverse shell yourself or by typing `payloads *interface*` to get pregenerated payloads. Do note that it needs to be a terminal like shell, as Koi is manipulating linux shs, powershells and cmd.
@@ -93,6 +103,8 @@ Koi includes a built-in payload obfuscator to help evade Windows Defender detect
 <a href="https://asciinema.org/a/1xnYShXuhoBhCUDX"><img src="https://asciinema.org/a/1xnYShXuhoBhCUDX.svg" alt="koi obfuscator demo" width="100%" /></a>
 
 The obfuscator also works for Linux payloads. While most Linux environments don't run antivirus software, bash one-liners are commonly flagged by EDR solutions, IDS rules, or monitored by blue teams watching for known reverse shell patterns. Obfuscating your payload helps fly under the radar in some hardened environments.
+
+Every technique and every supported payload type is listed in [Payloads & Obfuscation](https://b3rt1ng.github.io/koi-wiki/payloads/).
 
 ---
 
@@ -127,6 +139,8 @@ I did not bother making one for CMD, but for powershell the technique uses an ob
 6) The target connects back with a fully interactive PTY shell, registered as a new session
 ```
 
+Fallback chain and per-OS details in [Upgrading Sessions](https://b3rt1ng.github.io/koi-wiki/upgrading-sessions/).
+
 ---
 
 ### 🤖 Modules
@@ -140,6 +154,27 @@ If you want to make your own modules, I recommend cloning this repo and installi
 Check the [Module Development Guide](https://b3rt1ng.github.io/koi-wiki/modules-overview/) in the wiki for a full API reference, or browse the existing modules ([ligolo](src/koi/modules/ligolo.py), [get_users](src/koi/modules/get_users.py)) for inspiration.
 
 Also, if you want to make your own module part of this repo, do not hesitate to make a PR, I will gladly look at it and see if it's interesting to add here <3
+
+---
+
+### 🧠 MCP
+
+Koi can expose its sessions and modules over [MCP](https://modelcontextprotocol.io), so an LLM client can read your session table and drive modules without you copy-pasting anything.
+
+```bash
+# read-only: sessions, modules and logs
+koi --mcp
+
+# lets the model run commands and modules on targets
+koi --mcp --mcp-allow-exec
+```
+
+The server runs in the listener process and binds `127.0.0.1:7331`, protected by a bearer token printed on startup. Read-only is the default on purpose.
+
+> [!WARNING]
+> With `--mcp-allow-exec` an LLM can run commands on every machine you hold a shell on. Session logs contain output from compromised hosts, which is attacker-controlled text going straight into the model context.
+
+Setup, client configuration and the full tool list are in the [MCP documentation](https://b3rt1ng.github.io/koi-wiki/mcp/).
 
 <div align="center">
   <img src="https://media1.tenor.com/m/pTHWYc7b8TsAAAAd/smiling-friends-dab.gif">

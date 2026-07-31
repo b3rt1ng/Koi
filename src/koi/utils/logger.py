@@ -18,7 +18,9 @@ if TYPE_CHECKING:
     from koi.session import Session
 
 _LOG_DIR         = Path.home() / ".koi" / "logs"
-_ANSI            = re.compile(r"\x1b(?:\][^\x07]*\x07|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])")
+# Public: the MCP server strips the same three families - OSC (window title, as
+# a coloured prompt emits), CSI (colour, cursor), and two-byte Fe escapes.
+ANSI_RE          = re.compile(r"\x1b(?:\][^\x07]*\x07|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])")
 _CTRL            = re.compile(r"[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f]")
 _PROMPT_SUFFIXES = ("$", "#", "❯", ">", "% ")
 
@@ -30,7 +32,7 @@ def log_dir() -> Path:
 
 def _clean(raw: bytes, encoding: str) -> str:
     text = raw.decode(encoding, errors="replace")
-    text = _ANSI.sub("", text)
+    text = ANSI_RE.sub("", text)
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
 

@@ -100,6 +100,12 @@ def main():
     parser.add_argument("--purge-cache", "-pc", action="store_true", help="removes all files in cache")
     parser.add_argument("--local", "-l", action="store_true", help="Local mode: use cache only, no external network calls")
     parser.add_argument("--local-prepare", "-lp", action="store_true", help="Download and cache all external resources needed by modules")
+    parser.add_argument("--mcp", action="store_true", help="Expose sessions and modules over MCP (loopback HTTP)")
+    parser.add_argument("--mcp-port", type=int, default=7331, metavar="PORT", help="Port for the MCP server (default: 7331)")
+    parser.add_argument("--mcp-allow-exec", action="store_true",
+                        help="Let MCP clients run commands and modules on live sessions (read-only without it)")
+    parser.add_argument("--mcp-token", default=None, metavar="TOKEN",
+                        help="Bearer token for the MCP server (default: saved in ~/.koi/config.json, or $KOI_MCP_TOKEN)")
     args = parser.parse_args()
     
     if args.purge_cache:
@@ -121,6 +127,25 @@ def main():
         sys.exit(0)
 
     listener = Listener(host=args.host, port=args.port, local_mode=args.local)
+
+    if args.mcp:
+        from koi.mcp.server import KoiMCPServer, missing_dependencies
+
+        # MCP support is an optional extra. Checked before the listener starts
+        # because these are imported from the server thread, where the failure
+        # would otherwise land as a traceback across the operator's prompt.
+        if missing := missing_dependencies():
+            notify('error', f"MCP support needs: {', '.join(missing)}")
+            notify('status', "Install with:  pipx install 'koi-handler[mcp]'")
+            notify('status', "From a clone:  pipx install -e '.[mcp]'")
+            sys.exit(1)
+
+        listener.mcp_server = KoiMCPServer(
+            listener,
+            port=args.mcp_port,
+            token=args.mcp_token,
+            allow_exec=args.mcp_allow_exec,
+        )
 
     try:
         listener.start()
