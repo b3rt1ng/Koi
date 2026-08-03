@@ -6,13 +6,11 @@ This project is my shot at making a fast, easy to use (yet feature rich) shell h
 
 Disclaimer: please note that this is still under development, and I am still working on some of the key features, talked about in [this section](#-wip).
 
-#### NEW WIKI [HERE](https://b3rt1ng.github.io/koi-wiki/) !!
-
 ## 📑 Table of Contents
 
 [✨ Features](#-features) | [🚧 WIP](#-wip) | [🚀 Installation](#-installation) | [💻 Usage](#-usage) | [🔧 PTY Upgrade](#-pty-upgrade) | [🤖 Modules](#-modules) | [🧠 MCP](#-mcp)
 
-Full documentation lives in the [wiki](https://b3rt1ng.github.io/koi-wiki/): [Getting Started](https://b3rt1ng.github.io/koi-wiki/getting-started/) · [CLI Reference](https://b3rt1ng.github.io/koi-wiki/cli-reference/) · [Configuration](https://b3rt1ng.github.io/koi-wiki/configuration/) · [Module Development](https://b3rt1ng.github.io/koi-wiki/modules-overview/) · [Troubleshooting](https://b3rt1ng.github.io/koi-wiki/troubleshooting/)
+Full documentation lives in the [wiki](https://b3rt1ng.github.io/koi-wiki/).
   
 ---
 
@@ -47,22 +45,20 @@ Full documentation lives in the [wiki](https://b3rt1ng.github.io/koi-wiki/): [Ge
 ## 🚀 Installation
 
 ```bash
-# directly from the repo to get the latest version
-pipx install git+https://github.com/b3rt1ng/Koi
-
-# or pypi
+# Recommended: stable release from PyPI
 pipx install koi-handler
+
+# With MCP support
+pipx install "koi-handler[mcp]"
+
+# Or directly from the repo
+pipx install git+https://github.com/b3rt1ng/Koi
 
 # From source if you want to dev your own modules
 git clone https://github.com/b3rt1ng/koi
 cd koi
 pipx install --editable .
-
-# with MCP support (optional extra, see the MCP section)
-pipx install "koi-handler[mcp] @ git+https://github.com/b3rt1ng/Koi"
 ```
-
-_This installation comes with `koifuscator` and `koireview`_
 
 `koifuscator` is the direct shortcut to the obfuscator module.
 
@@ -143,20 +139,6 @@ Fallback chain and per-OS details in [Upgrading Sessions](https://b3rt1ng.github
 
 ---
 
-### 🤖 Modules
-
-<a href="https://asciinema.org/a/quY43wqm0jhsoypj"><img src="https://asciinema.org/a/quY43wqm0jhsoypj.svg" alt="koi module download on powershell" width="100%" /></a>
-
-Modules are basically a way to automate actions on your instances. You can run commands and take advantage of your python backend.
-
-If you want to make your own modules, I recommend cloning this repo and installing it with the `--editable` flag. Once you have a shell, you can dev your payload and use the `reload` command to update all modules including the one you're working on.
-
-Check the [Module Development Guide](https://b3rt1ng.github.io/koi-wiki/modules-overview/) in the wiki for a full API reference, or browse the existing modules ([ligolo](src/koi/modules/ligolo.py), [get_users](src/koi/modules/get_users.py)) for inspiration.
-
-Also, if you want to make your own module part of this repo, do not hesitate to make a PR, I will gladly look at it and see if it's interesting to add here <3
-
----
-
 ### 🧠 MCP
 
 Koi can expose its sessions and modules over [MCP](https://modelcontextprotocol.io), so an LLM client can read your session table and drive modules without you copy-pasting anything.
@@ -175,6 +157,20 @@ The server runs in the listener process and binds `127.0.0.1:7331`, protected by
 > With `--mcp-allow-exec` an LLM can run commands on every machine you hold a shell on. Session logs contain output from compromised hosts, which is attacker-controlled text going straight into the model context.
 
 Setup, client configuration and the full tool list are in the [MCP documentation](https://b3rt1ng.github.io/koi-wiki/mcp/).
+
+---
+
+### 🤖 Modules
+
+<a href="https://asciinema.org/a/quY43wqm0jhsoypj"><img src="https://asciinema.org/a/quY43wqm0jhsoypj.svg" alt="koi module download on powershell" width="100%" /></a>
+
+Modules are basically a way to automate actions on your instances. You can run commands and take advantage of your python backend.
+
+If you want to make your own modules, I recommend cloning this repo and installing it with the `--editable` flag. Once you have a shell, you can dev your payload and use the `reload` command to update all modules including the one you're working on.
+
+Check the [Module Development Guide](https://b3rt1ng.github.io/koi-wiki/modules-overview/) in the wiki for a full API reference, or browse the existing modules ([ligolo](src/koi/modules/ligolo.py), [get_users](src/koi/modules/get_users.py)) for inspiration.
+
+Also, if you want to make your own module part of this repo, do not hesitate to make a PR, I will gladly look at it and see if it's interesting to add here <3
 
 <div align="center">
   <img src="https://media1.tenor.com/m/pTHWYc7b8TsAAAAd/smiling-friends-dab.gif">
