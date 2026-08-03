@@ -1,12 +1,16 @@
 name: Publish to PyPI
 
 on:
-  release:
-    types: [published]
+  push:
+    branches: [main]
+    paths: ["pyproject.toml"]
 
 jobs:
-  build:
+  check:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      should_publish: ${{ steps.check.outputs.should_publish }}
     steps:
       - uses: actions/checkout@v4
 
@@ -14,13 +18,29 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Check tag matches version
+      - name: Check if version is new on PyPI
+        id: check
         run: |
-          tag="${GITHUB_REF_NAME#v}"
+          name=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['name'])")
           ver=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
-          if [ "$tag" != "$ver" ]; then
-            echo "tag $tag != pyproject $ver"; exit 1
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          if curl -sf "https://pypi.org/pypi/$name/$ver/json" > /dev/null; then
+            echo "$name $ver already on PyPI, skipping"
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
           fi
+
+  build:
+    needs: check
+    if: needs.check.outputs.should_publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
       - run: python -m pip install --upgrade build
       - run: python -m build
@@ -31,11 +51,13 @@ jobs:
           path: dist/
 
   publish:
-    needs: build
+    needs: [check, build]
+    if: needs.check.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
       id-token: write
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -43,3 +65,9 @@ jobs:
           path: dist/
 
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Tag release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ needs.check.outputs.version }}" --repo "${{ github.repository }}" --generate-notes --target "${{ github.sha }}"
