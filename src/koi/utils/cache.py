@@ -16,11 +16,23 @@ def _cache_dir() -> Path:
 
 
 def cache_path(name: str) -> Path:
-    return _cache_dir() / name
+    """Resolve *name* inside the cache directory.
+
+    Cache keys are declared by modules, and third-party modules are a documented
+    feature, so a key holding ``..`` or an absolute path must not be allowed to
+    write outside ``~/.koi/cache``.
+    """
+    root = _cache_dir().resolve()
+    candidate = (root / name).resolve()
+    if candidate != root and root not in candidate.parents:
+        raise ValueError(f"Cache key escapes the cache directory: {name!r}")
+    return candidate
 
 
 def put_cache(name: str, data: bytes) -> None:
-    cache_path(name).write_bytes(data)
+    path = cache_path(name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
 
 
 def get_cache(name: str) -> bytes | None:

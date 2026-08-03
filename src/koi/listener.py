@@ -125,19 +125,29 @@ class Listener:
         with self._id_lock:
             sid = self._next_id
             self._next_id += 1
-        sess = Session(id=sid, conn=conn, addr=addr)
-        self._sessions[sid] = sess
+            sess = Session(id=sid, conn=conn, addr=addr)
+            self._sessions[sid] = sess
         return sess
+
+    def _snapshot(self) -> list[Session]:
+        """The session table as a list, taken under the lock.
+
+        The accept thread inserts while the REPL, the completer and the MCP
+        server walk the table; iterating the live dict raises as soon as a shell
+        lands mid-walk. Every reader goes through here.
+        """
+        with self._id_lock:
+            return list(self._sessions.values())
 
     def _resolve_session(self, ref: str) -> Optional[Session]:
         try:
             return self._sessions.get(int(ref))
         except ValueError:
-            return next((s for s in self._sessions.values() if s.tag == ref), None)
+            return next((s for s in self._snapshot() if s.tag == ref), None)
 
     def _session_refs(self) -> list[str]:
         refs = []
-        for s in self._sessions.values():
+        for s in self._snapshot():
             if s.alive:
                 refs.append(str(s.id))
                 if s.tag:
@@ -145,7 +155,8 @@ class Listener:
         return refs
 
     def _remove(self, sid: int) -> None:
-        sess = self._sessions.pop(sid, None)
+        with self._id_lock:
+            sess = self._sessions.pop(sid, None)
         if sess:
             sess.close()
         if sid in self._loggers:
@@ -162,13 +173,13 @@ class Listener:
         """
         # Ask each socket first: nothing else marks a session dead until an
         # operation writes to it, so this pass is what actually detects a loss.
-        for sess in list(self._sessions.values()):
+        for sess in self._snapshot():
             sess.probe()
 
         # Only silent losses reach here: a session the operator kills, or one
         # that drops during `go`, is announced on its own path and already gone.
-        for sid in [k for k, s in self._sessions.items() if not s.alive]:
-            sess = self._sessions[sid]
+        for sess in [s for s in self._snapshot() if not s.alive]:
+            sid = sess.id
             label = sess.tag or self._mask_ip(sess.addr[0])
             uptime = sess._uptime()
             self._remove(sid)
@@ -188,12 +199,20 @@ class Listener:
             except OSError:
                 break
 
-            if not self._accepting and addr[0] not in self._pending_conpty:
+            # A reservation only diverts connections for as long as the upgrade
+            # that placed it is still waiting. Past its deadline it is stale and
+            # would swallow an unrelated shell from the same host.
+            pending = self._pending_conpty.get(addr[0])
+            if pending is not None and time.monotonic() > pending[1]:
+                self._pending_conpty.pop(addr[0], None)
+                pending = None
+
+            if not self._accepting and pending is None:
                 conn.close()
                 continue
 
-            if addr[0] in self._pending_conpty:
-                os_type = self._pending_conpty.pop(addr[0])
+            if pending is not None:
+                os_type = self._pending_conpty.pop(addr[0])[0]
                 staging = Session(id=-1, conn=conn, addr=addr)
                 staging.os_type = os_type
                 with self._conpty_lock:
@@ -284,7 +303,7 @@ class Listener:
             except OSError:
                 pass
         with Spinner("Closing sessions..."):
-            sessions = list(self._sessions.values())
+            sessions = self._snapshot()
             for s in sessions:
                 if s.upgraded:
                     s.send(b"exit\n")
@@ -294,7 +313,7 @@ class Listener:
                 s.close()
 
     def _prompt(self) -> str:
-        alive = sum(1 for s in self._sessions.values() if s.alive)
+        alive = sum(1 for s in self._snapshot() if s.alive)
         noun = "session" if alive == 1 else "sessions"
         count = colored_text(str(alive), PUMPKIN if alive else SILVER)
         anon_tag = colored_text(" [ANON]", PUMPKIN) if self.screenable_mode else ""
@@ -465,11 +484,12 @@ class Listener:
 
     def _cmd_ls(self) -> None:
         self._prune()
-        if not self._sessions:
+        sessions = self._snapshot()
+        if not sessions:
             notify('status', muted('No active sessions.'))
             return
         data = {}
-        for s in sorted(self._sessions.values(), key=lambda x: x.id):
+        for s in sorted(sessions, key=lambda x: x.id):
             masked_ip = self._mask_ip(s.addr[0])
             tag_part = f" {muted('[')}{accent(s.tag)}{muted(']')}" if s.tag else ""
             key = f"#{s.id}{tag_part}  {s.status_dot()}  {plain(masked_ip)}{muted(f':{s.addr[1]}')}"
@@ -673,7 +693,9 @@ class Listener:
         notify('info', f"Running module {accent(mod_name)} on session {accent(f'#{sid}')}...")
         old_handler = signal.getsignal(signal.SIGINT)
         signal.signal(signal.SIGINT, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
-        logger = self._loggers.get(sess.id)
+        # Same logger contract as `go`: a module run on a session the operator
+        # never entered still gets recorded, instead of silently going nowhere.
+        logger = self._ensure_logger(sess)
         sess.attach_logger(logger)
         try:
             mod = mod_cls(session=sess, args=mod_args, logger=logger)
@@ -726,7 +748,7 @@ class Listener:
             sess.tag = None
             notify('success', f"Tag cleared for session {accent(f'#{sess.id}')}.")
             return
-        conflict = next((s for s in self._sessions.values() if s.tag == tag and s.id != sess.id), None)
+        conflict = next((s for s in self._snapshot() if s.tag == tag and s.id != sess.id), None)
         if conflict:
             notify('error', f"Tag {accent(tag)!r} already used by session {accent(f'#{conflict.id}')}.")
             return

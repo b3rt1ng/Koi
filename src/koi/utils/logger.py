@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
 import sys
 import time
@@ -27,6 +28,10 @@ _PROMPT_SUFFIXES = ("$", "#", "❯", ">", "% ")
 
 def log_dir() -> Path:
     _LOG_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        _LOG_DIR.chmod(0o700)
+    except OSError:
+        pass
     return _LOG_DIR
 
 
@@ -52,7 +57,14 @@ def _dim_ts(entry: dict) -> str:
 class SessionLogger:
     def __init__(self, path: Path):
         self.path = path
-        self._f   = open(path, "a", buffering=1)
+        # 0600 at creation rather than whatever the umask allows. chmod as well,
+        # so a log left behind by an older version is tightened on reopen.
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        self._f = open(fd, "a", buffering=1)
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
 
     def _write(self, entry: dict) -> None:
         self._f.write(json.dumps(entry, ensure_ascii=False) + "\n")

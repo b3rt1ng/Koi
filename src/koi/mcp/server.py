@@ -31,21 +31,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("koi.mcp")
 
-# Long enough to queue behind a short module, short enough that a tool call
-# during an interactive shell errors out rather than hanging the client.
 _IO_TIMEOUT = 10.0
 
 _MODULE_TOOL_PREFIX = "koi_module_"
 _LOG_URI_PREFIX = "koi://logs/"
 
-# Nothing validates a tool's arguments against its schema before they land here,
-# so koi_exec checks its own. The ceiling matters most: a command that never
-# returns pins one of the pool's threads for as long as it is allowed to run.
 _DEFAULT_EXEC_TIMEOUT = 30.0
 _MAX_EXEC_TIMEOUT = 600.0
 
-# Imported lazily inside _build_app/_serve, so callers must ask for this list up
-# front rather than meet an ImportError once the thread is already running.
 _REQUIRED_PACKAGES = ("mcp", "uvicorn", "starlette")
 
 
@@ -58,7 +51,6 @@ def missing_dependencies() -> List[str]:
 
 def _strip_ansi(text: str) -> str:
     """Flatten a terminal stream into text a model can read."""
-    # Carriage returns go too: they are how a spinner overwrites its own line.
     return ANSI_RE.sub("", text).replace("\r", "")
 
 
@@ -91,7 +83,7 @@ def _version() -> str:
 
     try:
         return version("koi-handler")
-    except PackageNotFoundError:  # running from a clone without an install
+    except PackageNotFoundError:
         return "unknown"
 
 
@@ -112,7 +104,6 @@ class _ThreadStream:
     avoids all three.
     """
 
-    # Routed to the calling thread's buffer; everything else to the real stream.
     _THREAD_ATTRS = frozenset({"write", "writelines", "flush", "isatty"})
 
     def __init__(self, target):
@@ -134,8 +125,6 @@ class _ThreadStream:
             self._local.buffer = previous
 
     def __getattr__(self, name):
-        # Private names are refused so a lookup before _target exists raises
-        # rather than recursing.
         if name.startswith("_"):
             raise AttributeError(name)
         target = self.for_thread() if name in self._THREAD_ATTRS else self._target
@@ -152,8 +141,6 @@ def _capture_output():
     global _streams
     with _streams_lock:
         if _streams is None:
-            # Installed on first capture, never uninstalled: a Koi run without
-            # --mcp should not have its streams touched at all.
             _streams = (_ThreadStream(sys.stdout), _ThreadStream(sys.stderr))
             sys.stdout, sys.stderr = _streams
 
@@ -242,14 +229,12 @@ class KoiMCPServer:
         from koi.utils.payloads import get_interfaces
 
         lst = self.listener
-        sessions = list(lst._sessions.values())
+        sessions = lst._snapshot()
         by_os: Dict[str, int] = {}
         for sess in sessions:
             if sess.alive:
                 by_os[sess.os_type or "unknown"] = by_os.get(sess.os_type or "unknown", 0) + 1
 
-        # Masked like session addresses: screenable mode exists so the operator
-        # can show a client window without leaking their own network.
         interfaces = {
             name: lst._mask_ip(ip, kind="local") for name, ip in get_interfaces().items()
         }
@@ -264,7 +249,6 @@ class KoiMCPServer:
                 "uptime": _uptime(lst.started_at),
                 "accepting": lst._accepting,
                 "interfaces": interfaces,
-                # Callback target for a payload: any interface above, on `port`.
                 "callback_hint": (
                     "payload must connect back to one of interfaces:port"
                     if lst.host in ("0.0.0.0", "::")
@@ -277,13 +261,10 @@ class KoiMCPServer:
                 "by_os": by_os,
             },
             "modes": {
-                # Offline: modules serve external tooling from ~/.koi/cache only.
                 "local_offline": lst.local_mode,
                 "screenable": lst.screenable_mode,
             },
             "transfers": {
-                # upload/download open a one-shot TCP server on one of these,
-                # so the target must be able to reach the operator on them too.
                 "side_channel_ports": list(SIDETCPS),
             },
             "mcp": {
@@ -370,8 +351,6 @@ class KoiMCPServer:
         if self.allow_exec:
             return self._static_tools() + self._module_tools()
 
-        # Read-only: the hidden tools would answer every call with the same
-        # PermissionError. Presentation only - call_tool still refuses them.
         return [t for t in self._static_tools() if t["name"] != "koi_exec"]
 
     def call_tool(self, name: str, arguments: Dict[str, Any]) -> str:
@@ -385,10 +364,8 @@ class KoiMCPServer:
             return json.dumps(self._status(), indent=2)
 
         if name == "koi_list_sessions":
-            # at_prompt: found from a server thread while the operator sits at
-            # the REPL, so a loss has to be drawn around their half-typed line.
             self.listener._prune(at_prompt=True)
-            sessions = sorted(self.listener._sessions.values(), key=lambda s: s.id)
+            sessions = sorted(self.listener._snapshot(), key=lambda s: s.id)
             return json.dumps(
                 {"sessions": [self._session_dict(s) for s in sessions]}, indent=2
             )
@@ -422,8 +399,6 @@ class KoiMCPServer:
                 "platform": cls.platform,
                 "usage": cls.usage,
             }
-            # Naming a tool tools/list never offered would send a client after
-            # something that does not exist.
             if self.allow_exec:
                 entry["tool"] = f"{_MODULE_TOOL_PREFIX}{name}"
             mods.append(entry)
@@ -438,11 +413,10 @@ class KoiMCPServer:
             raise ValueError("command must be a non-empty string")
         timeout = _exec_timeout(arguments.get("timeout"))
 
-        # A bare KoiModule reaches exec(), which carries the sentinel protocol
-        # and the per-OS quirks already.
-        runner = _AdHocRunner(
-            session=sess, args=[], logger=self.listener._loggers.get(sess.id)
-        )
+        with _capture_output():
+            logger_obj = self.listener._ensure_logger(sess)
+        sess.attach_logger(logger_obj)
+        runner = _AdHocRunner(session=sess, args=[], logger=logger_obj)
         try:
             with sess.io(holder="mcp:exec", timeout=_IO_TIMEOUT):
                 result = runner.exec(command, timeout=timeout)
@@ -477,9 +451,6 @@ class KoiMCPServer:
 
         argv = schema_to_argv(mod_cls, {k: v for k, v in arguments.items() if k != "session"})
 
-        # Modules report to stdout; hand that back as the tool result instead of
-        # letting it scribble over the operator's prompt. _ensure_logger also
-        # prints on first use, so it belongs inside the capture.
         error: Optional[str] = None
         with _capture_output() as buffer:
             try:
@@ -491,8 +462,6 @@ class KoiMCPServer:
             except SessionBusy as exc:
                 raise RuntimeError(str(exc)) from exc
             except Exception as exc:
-                # Like the REPL: report the failure without tearing anything
-                # down, and return whatever the module printed before dying.
                 error = f"{type(exc).__name__}: {exc}"
                 if logger_obj := self.listener._loggers.get(sess.id):
                     logger_obj.log_event(f"module_error  {mod_name}  {exc}")
@@ -521,10 +490,6 @@ class KoiMCPServer:
         if not uri.startswith(_LOG_URI_PREFIX):
             raise ValueError(f"Unknown resource: {uri}")
 
-        # Deliberately not resolve_log(): it returns any path that exists, which
-        # is right for `koireview --log` but here would serve the client every
-        # file the listener can read. Bare filenames only, re-checked against the
-        # log directory so a symlinked log cannot escape it either.
         name = uri[len(_LOG_URI_PREFIX):]
         if not name or name != Path(name).name or name in (".", ".."):
             raise ValueError(f"Invalid log name: {name!r}")
@@ -572,13 +537,10 @@ class KoiMCPServer:
 
         async def on_call_tool(ctx, params) -> types.CallToolResult:
             try:
-                # Tool bodies block on sockets; keep them off the event loop.
                 text = await asyncio.to_thread(
                     self.call_tool, params.name, params.arguments or {}
                 )
             except Exception as exc:
-                # A failed tool call rather than a transport error, so the model
-                # can correct itself and retry.
                 return types.CallToolResult(
                     content=[types.TextContent(type="text", text=f"{type(exc).__name__}: {exc}")],
                     is_error=True,
@@ -611,13 +573,12 @@ class KoiMCPServer:
         inner = server.streamable_http_app(streamable_http_path="/mcp", host=self.host)
 
         async def app(scope, receive, send):
-            # The port is loopback-only, but a token stops any local process from
-            # driving the C2. Non-HTTP scopes (lifespan) pass straight through.
             if scope.get("type") == "http":
                 from starlette.responses import JSONResponse
 
                 headers = dict(scope.get("headers") or [])
-                if headers.get(b"authorization", b"").decode() != f"Bearer {self.token}":
+                provided = headers.get(b"authorization", b"").decode(errors="replace")
+                if not secrets.compare_digest(provided, f"Bearer {self.token}"):
                     await JSONResponse({"error": "unauthorized"}, status_code=401)(
                         scope, receive, send
                     )
@@ -638,15 +599,11 @@ class KoiMCPServer:
                 access_log=False,
             )
             server = uvicorn.Server(config)
-            # Uvicorn's own signal handlers would fight the REPL's Ctrl-C
-            # handling from a non-main thread.
             server.install_signal_handlers = lambda: None
             asyncio.run(server.serve())
-        except Exception as exc:  # pragma: no cover - surfaced to the operator
+        except Exception as exc:
             from koi.utils.ui import notify
 
-            # debug, not error: the last-resort handler writes to stderr, i.e. a
-            # full traceback across the operator's prompt.
             logger.debug("MCP server stopped", exc_info=True)
             notify('error', f"MCP server stopped: {type(exc).__name__}: {exc}")
 
@@ -665,5 +622,5 @@ class _AdHocRunner(KoiModule):
     name = "mcp"
     description = "ad-hoc command execution"
 
-    def run(self) -> None:  # pragma: no cover - never invoked
+    def run(self) -> None:
         pass
