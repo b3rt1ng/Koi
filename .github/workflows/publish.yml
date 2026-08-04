@@ -56,8 +56,9 @@ jobs:
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
+      # Trusted publishing only. No contents:write: GitHub releases are cut by
+      # hand, so nothing here needs to write to the repo.
       id-token: write
-      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -65,9 +66,3 @@ jobs:
           path: dist/
 
       - uses: pypa/gh-action-pypi-publish@release/v1
-
-      - name: Tag release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "v${{ needs.check.outputs.version }}" --repo "${{ github.repository }}" --generate-notes --target "${{ github.sha }}"

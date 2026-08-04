@@ -7,7 +7,7 @@ import sys
 
 from koi.listener import Listener
 from koi.utils.config import CONFIG
-from koi.utils.ui import notify, display_art, print_payloads
+from koi.utils.ui import notify, display_art, print_payloads, __version__
 from koi.utils.obfuscate_ui import run_obfuscate_ui
 from koi.utils.logger import review as _review
 from koi.utils.logger import clear_log as _clear_log
@@ -75,6 +75,11 @@ def _prepare_local_cache() -> None:
     print()
 
 
+def _onoff(value) -> str:
+    """Render a config-sourced boolean for a --help default hint."""
+    return "on" if value else "off"
+
+
 class _ArtHelpAction(argparse.Action):
     def __init__(self, option_strings, dest=argparse.SUPPRESS, default=argparse.SUPPRESS, help=None):
         super().__init__(option_strings=option_strings, dest=dest, default=default, nargs=0, help=help)
@@ -91,21 +96,56 @@ def main():
         add_help=False,
     )
     parser.add_argument("-h", "--help", action=_ArtHelpAction, help="show this help message and exit")
-    parser.add_argument("--host", default=CONFIG["host"], help=f"Bind address (default: {CONFIG['host']})")
-    parser.add_argument("--port", "-p", type=int, default=CONFIG["port"], help=f"Listen port (default: {CONFIG['port']})")
-    parser.add_argument("--payloads", nargs="?", const="__all__", metavar="IFACE",
-                        help="Print payloads for all interfaces (or a specific one) and exit")
-    parser.add_argument("--obfuscator", "--cook", nargs="?", const="__all__", metavar="IFACE",
-                        help="Open the payload obfuscator (optionally for a specific interface) and exit")
-    parser.add_argument("--purge-cache", "-pc", action="store_true", help="removes all files in cache")
-    parser.add_argument("--local", "-l", action="store_true", help="Local mode: use cache only, no external network calls")
-    parser.add_argument("--local-prepare", "-lp", action="store_true", help="Download and cache all external resources needed by modules")
-    parser.add_argument("--mcp", action="store_true", help="Expose sessions and modules over MCP (loopback HTTP)")
-    parser.add_argument("--mcp-port", type=int, default=7331, metavar="PORT", help="Port for the MCP server (default: 7331)")
-    parser.add_argument("--mcp-allow-exec", action="store_true",
-                        help="Let MCP clients run commands and modules on live sessions (read-only without it)")
-    parser.add_argument("--mcp-token", default=None, metavar="TOKEN",
-                        help="Bearer token for the MCP server (default: saved in ~/.koi/config.json, or $KOI_MCP_TOKEN)")
+    parser.add_argument("-v", "--version", action="version", version=f"koi {__version__}",
+                        help="show the koi version and exit")
+
+    listener_group = parser.add_argument_group("listener")
+    listener_group.add_argument("--host", default=CONFIG["host"], help=f"Bind address (default: {CONFIG['host']})")
+    listener_group.add_argument("--port", "-p", type=int, default=CONFIG["port"], help=f"Listen port (default: {CONFIG['port']})")
+
+    payload_group = parser.add_argument_group("payloads")
+    payload_group.add_argument("--payloads", nargs="?", const="__all__", metavar="IFACE",
+                               help="Print payloads for all interfaces (or a specific one) and exit")
+    payload_group.add_argument("--obfuscator", "--cook", nargs="?", const="__all__", metavar="IFACE",
+                               help="Open the payload obfuscator (optionally for a specific interface) and exit")
+
+    # The modal flags below take their default from ~/.koi/config.json, so each
+    # one needs an explicit counter-flag: with a config-driven default there is
+    # otherwise no way to get back to the other value from the command line.
+    opsec_group = parser.add_argument_group("opsec")
+    opsec_group.add_argument("--keep-history", "-kh", dest="keep_history", action="store_true",
+                             help=f"Keep the target's shell history on upgraded sessions (config: {_onoff(CONFIG['keep_history'])})")
+    opsec_group.add_argument("--strip-history", dest="keep_history", action="store_false",
+                             help="Wipe the target's shell history on upgraded sessions")
+    opsec_group.add_argument("--no-log", "-nl", dest="logging", action="store_false",
+                             help=f"Do not record sessions to ~/.koi/logs (config: {_onoff(CONFIG['logging'])})")
+    opsec_group.add_argument("--log", dest="logging", action="store_true",
+                             help="Record sessions to ~/.koi/logs")
+
+    cache_group = parser.add_argument_group("cache & offline")
+    cache_group.add_argument("--local", "-l", dest="local", action="store_true",
+                             help=f"Local mode: use cache only, no external network calls (config: {_onoff(CONFIG['local_mode'])})")
+    cache_group.add_argument("--no-local", dest="local", action="store_false",
+                             help="Allow external network calls")
+    cache_group.add_argument("--local-prepare", "-lp", action="store_true", help="Download and cache all external resources needed by modules")
+    cache_group.add_argument("--purge-cache", "-pc", action="store_true", help="removes all files in cache")
+
+    # Set after both halves of each pair are registered: when two actions share a
+    # dest, relying on which one carries default= is fragile.
+    parser.set_defaults(
+        keep_history=bool(CONFIG["keep_history"]),
+        logging=bool(CONFIG["logging"]),
+        local=bool(CONFIG["local_mode"]),
+    )
+
+    mcp_group = parser.add_argument_group("AI / MCP")
+    mcp_group.add_argument("--mcp", action="store_true", help="Expose sessions and modules over MCP (loopback HTTP)")
+    mcp_group.add_argument("--mcp-port", type=int, default=7331, metavar="PORT", help="Port for the MCP server (default: 7331)")
+    mcp_group.add_argument("--mcp-allow-exec", action="store_true",
+                           help="Let MCP clients run commands and modules on live sessions (read-only without it)")
+    mcp_group.add_argument("--mcp-token", default=None, metavar="TOKEN",
+                           help="Bearer token for the MCP server (default: saved in ~/.koi/config.json, or $KOI_MCP_TOKEN)")
+
     args = parser.parse_args()
     
     if args.purge_cache:
@@ -126,7 +166,8 @@ def main():
         _prepare_local_cache()
         sys.exit(0)
 
-    listener = Listener(host=args.host, port=args.port, local_mode=args.local)
+    listener = Listener(host=args.host, port=args.port, local_mode=args.local,
+                        keep_history=args.keep_history, no_log=not args.logging)
 
     if args.mcp:
         from koi.mcp.server import KoiMCPServer, missing_dependencies

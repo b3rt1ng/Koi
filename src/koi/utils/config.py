@@ -11,6 +11,10 @@ DEFAULTS = {
 
     "display_art": True,
 
+    "logging":      True,
+    "keep_history": False,
+    "local_mode":   False,
+
     "colors": {
         "pumpkin": [248, 101, 70],
         "white":   [255, 255, 255],

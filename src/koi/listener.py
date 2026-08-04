@@ -85,10 +85,13 @@ class _MaskStream:
 
 
 class Listener:
-    def __init__(self, host: str = "0.0.0.0", port: int = 4010, local_mode: bool = False):
+    def __init__(self, host: str = "0.0.0.0", port: int = 4010, local_mode: bool = False,
+                 keep_history: bool = False, no_log: bool = False):
         self.host = host
         self.port = port
         self.local_mode = local_mode
+        self.keep_history = keep_history
+        self.no_log = no_log
         config_module.LOCAL_MODE = local_mode
         self._sessions: Dict[int, Session] = {}
         self._next_id = 1
@@ -105,9 +108,7 @@ class Listener:
         self.screenable_mode: bool = False
         self._accepting: bool = True
         self._loggers: dict = {}
-        # Set by main() when --mcp is passed; started from start().
         self.mcp_server = None
-        # None until start() binds; koi_status reports it as the listener uptime.
         self.started_at: Optional[float] = None
 
     def _mask_ip(self, ip: str, kind: str = "remote") -> str:
@@ -171,13 +172,9 @@ class Listener:
         inside a command they just typed, the MCP server from a thread while
         they sit at the prompt.
         """
-        # Ask each socket first: nothing else marks a session dead until an
-        # operation writes to it, so this pass is what actually detects a loss.
         for sess in self._snapshot():
             sess.probe()
 
-        # Only silent losses reach here: a session the operator kills, or one
-        # that drops during `go`, is announced on its own path and already gone.
         for sess in [s for s in self._snapshot() if not s.alive]:
             sid = sess.id
             label = sess.tag or self._mask_ip(sess.addr[0])
@@ -199,9 +196,6 @@ class Listener:
             except OSError:
                 break
 
-            # A reservation only diverts connections for as long as the upgrade
-            # that placed it is still waiting. Past its deadline it is stale and
-            # would swallow an unrelated shell from the same host.
             pending = self._pending_conpty.get(addr[0])
             if pending is not None and time.monotonic() > pending[1]:
                 self._pending_conpty.pop(addr[0], None)
@@ -284,6 +278,10 @@ class Listener:
         notify('info', f"Listening on {bold(self.host)}:{bold(self.port)}")
         if self.local_mode:
             notify('warning', "Local mode enabled: using cache only, no external network calls")
+        if self.no_log:
+            notify('warning', "Logging disabled: sessions will not be recorded, koireview will show nothing new")
+        if self.keep_history:
+            notify('warning', "Target history preserved: upgraded shells will write to the target's history file")
         if self.mcp_server is not None:
             self.mcp_server.start()
             notify('info', f"MCP server on {bold(self.mcp_server.url)}")
@@ -420,11 +418,15 @@ class Listener:
 
     def _ensure_logger(self, sess: "Session"):
         if sess.id not in self._loggers:
-            from koi.utils.logger import start_logger
-            lg = start_logger(sess)
-            self._loggers[sess.id] = lg
-            sess.log_path = str(lg.path)
-            notify('info', f"Logging to {muted(lg.path.name)}")
+            if self.no_log:
+                from koi.utils.logger import NullLogger
+                self._loggers[sess.id] = NullLogger()
+            else:
+                from koi.utils.logger import start_logger
+                lg = start_logger(sess)
+                self._loggers[sess.id] = lg
+                sess.log_path = str(lg.path)
+                notify('info', f"Logging to {muted(lg.path.name)}")
         return self._loggers[sess.id]
 
     def _execute_hidden_command(self, callback: Callable[[], None]) -> None:
@@ -448,13 +450,9 @@ class Listener:
             return False
 
         if cmd == "run":
-            # Module-aware usage of its own, so it takes the raw parts.
             self._dispatch_run(parts)
             return True
 
-        # command -> (handler, positionals it takes). cli.USAGE already declares
-        # which of those are mandatory and check_usage() has enforced them by
-        # now, so a slot left empty here is an optional one and gets None.
         handlers = {
             "help":       (print_help, 0),
             "stop":       (self._cmd_stop_accepting, 0),
@@ -541,8 +539,6 @@ class Listener:
         logger = self._ensure_logger(sess)
         sess.attach_logger(logger)
 
-        # One atomic sequence: a reader slipping in between these sends would
-        # swallow the shell's replies and leave the session half-upgraded.
         with Spinner("Upgrading shell..."), sess.io(holder="upgrade"):
             pty_payload = (
                 'if command -v script >/dev/null 2>&1; then '
@@ -560,7 +556,10 @@ class Listener:
                 notify('error', f"Session {accent(f'#{sid}')} died during upgrade.")
                 return
 
-            sess.send(b"export TERM=xterm-256color HISTSIZE=0 HISTFILESIZE=0\n")
+            if self.keep_history:
+                sess.send(b"export TERM=xterm-256color\n")
+            else:
+                sess.send(b"export TERM=xterm-256color HISTSIZE=0 HISTFILESIZE=0\n")
             self._drain(sess, 0.3)
 
             self._sync_winsize(sess)
@@ -693,8 +692,6 @@ class Listener:
         notify('info', f"Running module {accent(mod_name)} on session {accent(f'#{sid}')}...")
         old_handler = signal.getsignal(signal.SIGINT)
         signal.signal(signal.SIGINT, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
-        # Same logger contract as `go`: a module run on a session the operator
-        # never entered still gets recorded, instead of silently going nowhere.
         logger = self._ensure_logger(sess)
         sess.attach_logger(logger)
         try:

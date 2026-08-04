@@ -19,8 +19,6 @@ if TYPE_CHECKING:
     from koi.session import Session
 
 _LOG_DIR         = Path.home() / ".koi" / "logs"
-# Public: the MCP server strips the same three families - OSC (window title, as
-# a coloured prompt emits), CSI (colour, cursor), and two-byte Fe escapes.
 ANSI_RE          = re.compile(r"\x1b(?:\][^\x07]*\x07|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])")
 _CTRL            = re.compile(r"[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f]")
 _PROMPT_SUFFIXES = ("$", "#", "❯", ">", "% ")
@@ -94,6 +92,32 @@ class SessionLogger:
             self._f.close()
         except OSError:
             pass
+
+
+class NullLogger:
+    """No-op stand-in returned when --no-log is active.
+
+    A real object rather than None: the upgrade path, module runs and the MCP
+    exec path all call log_event/log_input without guarding, so handing them a
+    None would turn "don't write logs" into an AttributeError mid-session.
+    """
+
+    path = None
+
+    def log_meta(self, sess: "Session") -> None:
+        pass
+
+    def log_input(self, data: bytes) -> None:
+        pass
+
+    def log_output(self, data: bytes) -> None:
+        pass
+
+    def log_event(self, msg: str) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
 
 
 def start_logger(sess: "Session") -> SessionLogger:
