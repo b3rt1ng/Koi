@@ -284,9 +284,12 @@ class KoiModule(ABC):
         marker = f"__KOI_{sentinel}__"
 
         if self.session.os_type == "windows_ps":
-            cmd = f"({ps_expr}); '{marker}'"
+            # No outer () wrapping: (try{...}catch{...}) is invalid PS syntax,
+            # and all existing expressions (if/else, property access, try/catch)
+            # produce pipeline output correctly without it.
+            cmd = f"{ps_expr}; '{marker}'"
         else:
-            inner = f"({ps_expr}); '{marker}'"
+            inner = f"{ps_expr}; '{marker}'"
             cmd = f'powershell -NoProfile -NonInteractive -c "{inner}"'
 
         eol = self.session.eol
@@ -615,7 +618,7 @@ class KoiModule(ABC):
             if holding:
                 if len(pending) < _ECHO_PREAMBLE_LINES:
                     continue
-                holding = False  # no echo is coming, they were output after all
+                holding = False
 
             for held in pending:
                 yield StreamLine(text=held)

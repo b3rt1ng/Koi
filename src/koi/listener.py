@@ -17,6 +17,7 @@ from koi.utils.cli import (
     check_usage,
     print_help,
     resolve_command,
+    tokenize,
     resolve_os_type,
     set_session_provider,
     OS_ALIASES,
@@ -374,7 +375,7 @@ class Listener:
                 self._toggle_accepting()
                 continue
 
-            parts = raw.split()
+            parts = tokenize(raw)
             cmd = resolve_command(parts[0])
 
             usage_err = check_usage(cmd, parts)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import difflib
 import readline
+import shlex
 from typing import Callable, Optional
 
 from koi.modules.loader import load_modules
@@ -11,9 +12,6 @@ from koi.utils.ui import (
     bold, accent, alert,
 )
 
-# Canonical command name -> accepted aliases (canonical name included).
-# Single source of truth: listener.py normalizes user input through
-# resolve_command() instead of hardcoding alias tuples itself.
 ALIASES: dict[str, list[str]] = {
     "help":       ["help", "h", "?"],
     "exit":       ["exit"],
@@ -39,6 +37,30 @@ _ALIAS_TO_CANON: dict[str, str] = {
 }
 
 
+def tokenize(raw: str) -> list[str]:
+    """Split a command line into tokens, honouring quotes but keeping
+    backslashes literal.
+
+    Quotes are stripped so paths with spaces stay in one piece, and
+    backslashes are left alone so Windows paths survive (``shlex.split``
+    would turn ``"C:\\Users\\my dir"`` into ``C:Usersmy dir``)::
+
+        run upload   1 "/home/my file.txt" -o "/opt/dest dir"
+        run download 1 "C:\\Users\\Bob\\My Documents\\creds.txt"
+
+    An unbalanced quote falls back to a plain whitespace split instead of
+    raising.
+    """
+    lexer = shlex.shlex(raw, posix=True)
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    lexer.escape = ""
+    try:
+        return list(lexer)
+    except ValueError:
+        return raw.split()
+
+
 def resolve_command(cmd: str) -> str:
     """Map a typed command (or alias) to its canonical name, case-insensitive.
 
@@ -50,8 +72,6 @@ def resolve_command(cmd: str) -> str:
 
 COMMANDS = list(ALIASES.keys())
 
-# Canonical OS type -> accepted aliases (canonical name included), same
-# pattern as ALIASES/resolve_command but for setshell's argument.
 OS_ALIASES: dict[str, list[str]] = {
     "linux":       ["linux"],
     "windows_ps":  ["windows_ps", "ps", "powershell"],
@@ -74,9 +94,6 @@ _SESSION_ARG1_CMDS = {
 }
 _PAYLOAD_LIKE_CMDS = set(ALIASES["payload"]) | set(ALIASES["obfuscator"])
 
-# Canonical command -> (min positional args required, usage message shown
-# when the count isn't met). Commands not listed here take no mandatory
-# argument. `run` has its own module-aware usage logic in listener.py.
 USAGE: dict[str, tuple[int, str]] = {
     "go":       (1, f"Usage: go {accent('<id|tag>')}"),
     "upgrade":  (1, f"Usage: upgrade {accent('<id|tag>')}"),
@@ -97,8 +114,6 @@ def check_usage(canon: str, parts: list[str]) -> Optional[str]:
     return message if len(parts) - 1 < min_args else None
 
 
-# Sentinels emitted by the Ctrl+T / Ctrl+W keybindings below; listener.py
-# matches on these constants instead of duplicating the raw strings.
 SCREENABLE_SENTINEL = "_koi_screenable_"
 TOGGLE_SENTINEL = "_koi_toggle_"
 
@@ -118,7 +133,7 @@ _READLINE_HISTORY_LENGTH = 200
 readline.set_history_length(_READLINE_HISTORY_LENGTH)
 readline.parse_and_bind("tab: complete")
 readline.parse_and_bind(rf'"\C-t": "\C-e\C-u{SCREENABLE_SENTINEL}\n"')
-readline.parse_and_bind(rf'"\C-w": "\C-e\C-u{TOGGLE_SENTINEL}\n"')
+readline.parse_and_bind(rf'"\C-o": "\C-e\C-u{TOGGLE_SENTINEL}\n"')
 
 
 def _fuzzy_match(text: str, candidates: list[str], cutoff: float = 0.35) -> list[str]:
@@ -234,7 +249,7 @@ def print_help() -> None:
             f"{alert('Ctrl+Z')}": "Background, return to listener shell",
             f"{alert('Ctrl+C')}": "Send SIGINT to remote (keeps session alive)",
             f"{alert('Ctrl+T')}": "Toggle screenable mode, masks IPs for screenshots",
-            f"{alert('Ctrl+W')}": "Toggle listener on/off (pause/resume accepting connections)",
+            f"{alert('Ctrl+O')}": "Toggle listener on/off (pause/resume accepting connections)",
         },
     }
     print_report_box("help", data)
