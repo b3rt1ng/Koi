@@ -34,8 +34,11 @@ DEFAULTS = {
     },
 
     "sidetcps": [5985, 5986, 445, 3389],
-    
-    "mcp_token": None,
+
+    "mcp_activate":   False,   # start the MCP server without passing --mcp
+    "mcp_exec_allow": False,   # allow exec/modules over MCP without --mcp-allow-exec
+    "mcp_port":       7331,
+    "mcp_token":      None,
 }
 
 

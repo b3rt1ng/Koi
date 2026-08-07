@@ -139,10 +139,14 @@ def main():
     )
 
     mcp_group = parser.add_argument_group("AI / MCP")
-    mcp_group.add_argument("--mcp", action="store_true", help="Expose sessions and modules over MCP (loopback HTTP)")
-    mcp_group.add_argument("--mcp-port", type=int, default=7331, metavar="PORT", help="Port for the MCP server (default: 7331)")
-    mcp_group.add_argument("--mcp-allow-exec", action="store_true",
-                           help="Let MCP clients run commands and modules on live sessions (read-only without it)")
+    mcp_group.add_argument("--mcp", action="store_true", default=bool(CONFIG["mcp_activate"]),
+                           help="Expose sessions and modules over MCP (loopback HTTP). "
+                                "Default from config: mcp_activate")
+    mcp_group.add_argument("--mcp-port", type=int, default=CONFIG.get("mcp_port", 7331), metavar="PORT",
+                           help="Port for the MCP server (default from config: mcp_port, else 7331)")
+    mcp_group.add_argument("--mcp-allow-exec", action="store_true", default=bool(CONFIG["mcp_exec_allow"]),
+                           help="Let MCP clients run commands and modules on live sessions "
+                                "(read-only without it). Default from config: mcp_exec_allow")
     mcp_group.add_argument("--mcp-token", default=None, metavar="TOKEN",
                            help="Bearer token for the MCP server (default: saved in ~/.koi/config.json, or $KOI_MCP_TOKEN)")
 

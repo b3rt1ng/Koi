@@ -30,26 +30,44 @@ class SharpHoundModule(KoiModule):
         {"flags": ["-o", "--output"], "default": None,
          "help":  "Local path for the BloodHound zip"},
     ]
-    external_resources = [
-        {
-            "name":      "sharphound_release.json",
-            "url":       _RELEASE_API,
-            "cache_key": _RELEASE_CACHE_NAME,
-        },
-    ]
-
-    def _fetch_release(self) -> tuple[dict, str]:
+    @classmethod
+    def _fetch_release(cls) -> tuple[dict, str]:
         raw, source = fetch_or_cache(
             _RELEASE_API, _RELEASE_CACHE_NAME, headers={"User-Agent": "koi-sharphound"}
         )
         return json.loads(raw), source
 
-    def _find_asset(self, release: dict) -> tuple[str, str] | None:
+    @classmethod
+    def _find_asset(cls, release: dict) -> tuple[str, str] | None:
         for asset in release.get("assets", []):
             name = asset.get("name", "")
             if _ASSET_RE.match(name):
                 return name, asset["browser_download_url"]
         return None
+
+    @classmethod
+    def resolve_external_resources(cls) -> list[dict]:
+        """Cache the actual SharpHound zip for ``--local-prepare``, not just the
+        release metadata.
+
+        Like ligolo, the asset name carries the version and is only known once
+        GitHub answers, so prep resolves the latest release now (which also caches
+        the release JSON under ``_RELEASE_CACHE_NAME``, the key run time reads back
+        offline) and returns the matching zip under ``sharphound_<name>``, the same
+        key :meth:`run` looks up. Without this ``--local-prepare`` cached only the
+        JSON and the offline run missed the binary. A network failure propagates to
+        ``collect_external_resources`` and skips the module with a warning.
+        """
+        release, _source = cls._fetch_release()
+        match = cls._find_asset(release)
+        if match is None:
+            return []
+        name, url = match
+        return [{
+            "name": name,
+            "url": url,
+            "cache_key": f"sharphound_{name}",
+        }]
 
     def _extract_payload(self, zip_bytes: bytes) -> dict[str, bytes]:
         """Extract every file in the zip; return {basename: bytes}."""

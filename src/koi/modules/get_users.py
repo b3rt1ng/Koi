@@ -25,6 +25,7 @@ class GetUsersModule(KoiModule):
             self._run_windows()
 
     def _run_linux(self) -> None:
+        # builtin-only read (no cat) so /etc/passwd access leaves no execve in auditd
         result = self.exec(
             "while IFS= read -r line; do printf '%s\\n' \"$line\"; done < /etc/passwd"
         )

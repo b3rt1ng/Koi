@@ -4,7 +4,6 @@ import io
 import ntpath
 import os
 import posixpath
-import shlex
 import tarfile
 import zipfile
 
@@ -17,14 +16,6 @@ _DIR_TIMEOUT = max(TIMEOUTS.get("download", 300) * 2, 600)
 def _remote_basename(path: str) -> str:
     stripped = path.rstrip("/\\")
     return ntpath.basename(stripped) or posixpath.basename(stripped) or "download"
-
-
-def _shell_quote(path: str) -> str:
-    return shlex.quote(path)
-
-
-def _ps_quote(path: str) -> str:
-    return path.replace("'", "''")
 
 
 class DownloadModule(KoiModule):
@@ -46,8 +37,8 @@ class DownloadModule(KoiModule):
         remote_path = " ".join(self.args.remote_path)
         local_ip    = self._get_local_ip()
         os_type     = self.session.os_type
-        quoted      = _shell_quote(remote_path)
-        ps_path     = _ps_quote(remote_path)
+        quoted      = self._shell_quote(remote_path)
+        ps_path     = self._ps_quote(remote_path)
 
         # 1. ONE command: type + resolved path + size
         with self.spinner("Checking remote path..."):
@@ -70,7 +61,7 @@ class DownloadModule(KoiModule):
                 path_type, resolved, size_raw = parts
                 is_dir      = (path_type == "dir")
                 remote_path = resolved.strip()
-                quoted      = _shell_quote(remote_path)
+                quoted      = self._shell_quote(remote_path)
                 try:
                     remote_size: int | None = int(size_raw.strip().split()[0])
                 except (ValueError, IndexError):
@@ -98,7 +89,7 @@ class DownloadModule(KoiModule):
                 path_type, resolved, size_raw = parts
                 is_dir      = (path_type == "dir")
                 remote_path = resolved.strip()
-                ps_path     = _ps_quote(remote_path)
+                ps_path     = self._ps_quote(remote_path)
                 try:
                     remote_size = int(size_raw.strip())
                 except (ValueError, AttributeError):
@@ -119,6 +110,7 @@ class DownloadModule(KoiModule):
                     + "..."
                 )
                 if os_type == "linux":
+                    # builtin-only read (no cat) so the file transfer leaves no execve in auditd
                     cmd = (
                         f"LC_ALL=C; {{ while IFS= read -r -d '' c; do printf '%s\\0' \"$c\"; done; "
                         f"[ -n \"$c\" ] && printf '%s' \"$c\"; }} < {quoted}"

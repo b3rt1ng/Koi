@@ -67,9 +67,23 @@ def get_module(name: str) -> Optional[Type]:
 
 
 def collect_external_resources() -> list[dict]:
-    """Collect all external_resources declared by all loaded modules."""
+    """Collect the external resources every loaded module wants pre-cached.
+
+    Goes through each module's ``resolve_external_resources()`` rather than the
+    raw attribute, so a module can compute its list dynamically (e.g. enumerate
+    the assets of the latest release). A resolver that fails, typically a network
+    error while listing releases, is skipped with a warning instead of aborting
+    the whole ``--local-prepare`` run.
+    """
     resources = []
     for mod_cls in load_modules().values():
-        if hasattr(mod_cls, 'external_resources') and mod_cls.external_resources:
-            resources.extend(mod_cls.external_resources)
+        try:
+            module_resources = mod_cls.resolve_external_resources()
+        except Exception as exc:
+            logger.warning(
+                f"Could not resolve external resources for {mod_cls.__name__!r}: {exc}"
+            )
+            continue
+        if module_resources:
+            resources.extend(module_resources)
     return resources

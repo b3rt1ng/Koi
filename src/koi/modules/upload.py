@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import os
-import shlex
 import tarfile
 import zipfile
 
@@ -10,14 +9,6 @@ from koi.modules.blueprint import KoiModule
 from koi.utils.config import TIMEOUTS
 
 _DIR_TIMEOUT = max(TIMEOUTS.get("download", 300) * 2, 600)
-
-
-def _shell_quote(path: str) -> str:
-    return shlex.quote(path)
-
-
-def _ps_quote(path: str) -> str:
-    return path.replace("'", "''")
 
 
 class UploadModule(KoiModule):
@@ -127,8 +118,8 @@ class UploadModule(KoiModule):
             # 6. Extract on target
             with self.spinner("Extracting on target..."):
                 if os_type == "linux":
-                    quoted_dest = _shell_quote(remote_dest)
-                    quoted_tmp  = _shell_quote(remote_tmp)
+                    quoted_dest = self._shell_quote(remote_dest)
+                    quoted_tmp  = self._shell_quote(remote_tmp)
                     result = self.exec(
                         f"mkdir -p {quoted_dest} "
                         f"&& tar xzf {quoted_tmp} -C {quoted_dest} "
@@ -152,8 +143,8 @@ class UploadModule(KoiModule):
                         remote_dest = resolved
 
                 else:
-                    ps_dest = _ps_quote(remote_dest)
-                    ps_tmp  = _ps_quote(remote_tmp)
+                    ps_dest = self._ps_quote(remote_dest)
+                    ps_tmp  = self._ps_quote(remote_tmp)
                     result_raw = self._win_query(
                         f"try{{"
                         f"New-Item -ItemType Directory -Path '{ps_dest}' -Force|Out-Null;"

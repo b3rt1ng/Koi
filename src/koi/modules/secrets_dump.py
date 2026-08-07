@@ -4,7 +4,7 @@ from koi.utils.config import TIMEOUTS
 import json
 import re
 import os
-from typing import Dict, List, Tuple, Any
+from typing import Any, Dict, List
 
 
 CRED_PATTERNS = re.compile(
@@ -169,7 +169,7 @@ class SecretsDumpModule(KoiModule):
         else:
             self.warn("No obvious secrets found")
 
-    def _display_results(self, category: str, entries: any) -> None:
+    def _display_results(self, category: str, entries: Any) -> None:
         """Display results with adaptive formatting."""
         if isinstance(entries, dict):
             if len(entries) <= 6:
@@ -472,15 +472,15 @@ class SecretsDumpModule(KoiModule):
             ("Browser Data",          self._hunt_browser),
         ]
 
-        found = 0
+        total_found = 0
         for label, hunt in hunts:
             result = hunt()
             if result:
                 self._display_results(label, result)
-                found += 1
+                total_found += _count_findings(result)
 
-        if found:
-            self.success(f"Found credentials in {found} categories")
+        if total_found:
+            self.success(f"Found {total_found} secret(s)")
         else:
             self.warn("No obvious credentials found")
 

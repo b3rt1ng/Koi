@@ -39,28 +39,6 @@ class LigoloModule(KoiModule):
             "help": "Remote destination path for the agent binary",
         },
     ]
-    external_resources = [
-        {
-            "name": "ligolo-ng agent (Linux x64)",
-            "url": "https://github.com/nicocha30/ligolo-ng/releases/download/v0.9/ligolo-ng_agent_0.9_linux_amd64.tar.gz",
-            "cache_key": "ligolo-ng_agent_0.9_linux_amd64.tar.gz",
-        },
-        {
-            "name": "ligolo-ng agent (Linux ARM64)",
-            "url": "https://github.com/nicocha30/ligolo-ng/releases/download/v0.9/ligolo-ng_agent_0.9_linux_arm64.tar.gz",
-            "cache_key": "ligolo-ng_agent_0.9_linux_arm64.tar.gz",
-        },
-        {
-            "name": "ligolo-ng agent (Windows x64)",
-            "url": "https://github.com/nicocha30/ligolo-ng/releases/download/v0.9/ligolo-ng_agent_0.9_windows_amd64.zip",
-            "cache_key": "ligolo-ng_agent_0.9_windows_amd64.zip",
-        },
-        {
-            "name": "ligolo-ng agent (Windows ARM64)",
-            "url": "https://github.com/nicocha30/ligolo-ng/releases/download/v0.9/ligolo-ng_agent_0.9_windows_arm64.zip",
-            "cache_key": "ligolo-ng_agent_0.9_windows_arm64.zip",
-        },
-    ]
 
     def _detect_arch(self) -> str:
         if self.session.os_type == "linux":
@@ -74,13 +52,41 @@ class LigoloModule(KoiModule):
             raise RuntimeError(f"Unrecognised architecture: {raw!r}")
         return arch
 
-    def _latest_release(self) -> tuple[str, list[dict], str]:
+    @classmethod
+    def _latest_release(cls) -> tuple[str, list[dict], str]:
         raw, source = fetch_or_cache(
             _GITHUB_API, _RELEASE_CACHE_NAME,
             headers={"User-Agent": "koi/ligolo-module", "Accept": "application/json"},
         )
         data = json.loads(raw)
         return data["tag_name"], data["assets"], source
+
+    @classmethod
+    def resolve_external_resources(cls) -> list[dict]:
+        """List every agent asset of the latest release for ``--local-prepare``.
+
+        'Always latest' cannot be pre-listed statically: the version is only
+        known once GitHub answers, and the target's OS/arch is only known once a
+        session exists. So prep resolves the latest release now (which, as a side
+        effect, caches the release JSON under ``_RELEASE_CACHE_NAME``, the very
+        key run time reads back in ``--local``) and lists every agent archive.
+        Each entry is keyed exactly like :meth:`_fetch_agent`'s lookup
+        (``ligolo_agent_<name>``) so the offline run finds it in the cache
+        instead of missing. A network failure here propagates to
+        ``collect_external_resources``, which skips this module with a warning.
+        """
+        _tag, assets, _source = cls._latest_release()
+        resources: list[dict] = []
+        for asset in assets:
+            name = asset.get("name", "")
+            low = name.lower()
+            if "agent" in low and (low.endswith(".tar.gz") or low.endswith(".zip")):
+                resources.append({
+                    "name": name,
+                    "url": asset["browser_download_url"],
+                    "cache_key": f"ligolo_agent_{name}",
+                })
+        return resources
 
     def _pick_asset(self, assets: list[dict], os_name: str, arch: str) -> dict:
         for asset in assets:
