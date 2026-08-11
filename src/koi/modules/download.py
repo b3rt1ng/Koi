@@ -7,8 +7,9 @@ import posixpath
 import tarfile
 import zipfile
 
-from koi.modules.blueprint import KoiModule, TCPReceiveServer
+from koi.modules.blueprint import KoiModule
 from koi.utils.config import TIMEOUTS
+from koi.utils.tcp import TCPReceiveServer
 
 _DIR_TIMEOUT = max(TIMEOUTS.get("download", 300) * 2, 600)
 
@@ -110,7 +111,7 @@ class DownloadModule(KoiModule):
                     + "..."
                 )
                 if os_type == "linux":
-                    # builtin-only read (no cat) so the file transfer leaves no execve in auditd
+                    # builtin-only read (no cat): leaves no execve in auditd
                     cmd = (
                         f"LC_ALL=C; {{ while IFS= read -r -d '' c; do printf '%s\\0' \"$c\"; done; "
                         f"[ -n \"$c\" ] && printf '%s' \"$c\"; }} < {quoted}"

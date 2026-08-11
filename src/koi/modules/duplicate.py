@@ -42,12 +42,11 @@ class DuplicateModule(KoiModule):
             return None
 
     def _select_interface(self) -> tuple[str, int] | None:
-        """Resolve (lhost, lport) from args, prompting for the interface if none
-        was given. Returns None if there are no interfaces or the user cancels.
+        """Resolve (lhost, lport) from args, prompting if no interface was given.
 
-        The -i value may be a literal IP instead of an interface name. That IP is
-        used as-is so the new shell can call back to a listener on another host
-        (sharing a foothold), rather than to one of our own interfaces."""
+        A literal IP in -i is used as-is, so the new shell can call back to a
+        listener on another host rather than one of ours. None if cancelled.
+        """
         iface_arg = getattr(self.args, "iface", None)
         port_arg = getattr(self.args, "port", CONFIG["port"])
 

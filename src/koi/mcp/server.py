@@ -1,9 +1,8 @@
 """MCP server exposing Koi's live sessions and modules.
 
-Runs in a background thread of the listener process, so it shares the session
-table directly. Hence HTTP rather than stdio: stdin/stdout belong to the REPL.
-Every operation touching a shell takes the session's I/O lock with a timeout,
-so a tool call during ``go`` fails fast instead of stealing bytes.
+Runs in a listener thread and shares the session table directly, hence HTTP
+rather than stdio: stdin/stdout belong to the REPL. Every shell operation takes
+the session I/O lock with a timeout, so a call during ``go`` fails fast.
 """
 
 from __future__ import annotations
@@ -23,7 +22,8 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from koi.mcp.schema import module_input_schema, schema_to_argv
 from koi.modules.blueprint import KoiModule
 from koi.session import SessionBusy
-from koi.utils.logger import ANSI_RE, list_logs, log_dir
+from koi.utils.constants import ANSI_RE
+from koi.utils.logger import list_logs, log_dir
 
 if TYPE_CHECKING:
     from koi.listener import Listener
@@ -97,11 +97,9 @@ def _tool(name: str, description: str, properties=None, required=None) -> Dict[s
 class _ThreadStream:
     """A ``sys.stdout``/``sys.stderr`` stand-in that redirects one thread at a time.
 
-    ``contextlib.redirect_stdout`` swaps the stream process-wide, which swallows
-    the REPL's own output for the length of a tool call, turns ``isatty()`` False
-    under its prompt, and - restoring out of order when two calls overlap - can
-    leave ``sys.stdout`` on a dead buffer for good. Keying off the running thread
-    avoids all three.
+    ``contextlib.redirect_stdout`` swaps process-wide: it swallows the REPL's
+    output, breaks ``isatty()``, and on overlapping calls can strand
+    ``sys.stdout`` on a dead buffer. Keying off the thread avoids all three.
     """
 
     _THREAD_ATTRS = frozenset({"write", "writelines", "flush", "isatty"})
@@ -151,11 +149,7 @@ def _capture_output():
 
 
 def resolve_token(explicit: Optional[str] = None) -> str:
-    """Return a bearer token that survives restarts, generating one if needed.
-
-    Saved to the config file so the operator does not re-register the server with
-    their client on every launch. Flag, then $KOI_MCP_TOKEN, then the saved value.
-    """
+    """Bearer token surviving restarts: flag, then $KOI_MCP_TOKEN, then config."""
     import os
 
     from koi.utils.config import CONFIG, persist
@@ -220,11 +214,8 @@ class KoiMCPServer:
         }
 
     def _status(self) -> Dict[str, Any]:
-        """Everything a client needs to reason about the C2 without asking the operator.
-
-        Where Koi listens, where a payload should call back to, what is degraded
-        (paused, offline) and what this MCP connection is actually allowed to do.
-        """
+        """Where Koi listens, where a payload calls back, what is degraded, and
+        what this connection is allowed to do."""
         from koi.utils.config import SIDETCPS
         from koi.utils.payloads import get_interfaces
 
@@ -354,10 +345,7 @@ class KoiMCPServer:
         return [t for t in self._static_tools() if t["name"] != "koi_exec"]
 
     def call_tool(self, name: str, arguments: Dict[str, Any]) -> str:
-        """Run a tool and return its textual result.
-
-        Executed on a worker thread: every path below blocks on socket I/O.
-        """
+        """Run a tool and return its textual result, on a worker thread."""
         arguments = arguments or {}
 
         if name == "koi_status":
@@ -502,8 +490,7 @@ class KoiMCPServer:
         return _strip_ansi(path.read_text(encoding="utf-8", errors="replace"))
 
     def _instructions(self) -> str:
-        """Sent once at initialize, so it stays static: anything that changes at
-        runtime belongs in koi_status, which the client can call again."""
+        """Sent once at initialize: anything runtime-varying belongs in koi_status."""
         mode = (
             "Command execution is enabled: koi_exec and the koi_module_* tools "
             "act on live targets."

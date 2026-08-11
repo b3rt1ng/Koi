@@ -53,10 +53,10 @@ def _prepare_local_cache() -> None:
                 print(f"✓ ({len(data)} bytes)")
                 succeeded.append(name)
             else:
-                print(f"✓ (cached)")
+                print("✓ (cached)")
                 succeeded.append(name)
         except Exception as e:
-            print(f"✗")
+            print("✗")
             notify('warning', f"  {str(e)[:80]}")
             failed.append((name, str(e)))
 
@@ -109,9 +109,8 @@ def main():
     payload_group.add_argument("--obfuscator", "--cook", nargs="?", const="__all__", metavar="IFACE",
                                help="Open the payload obfuscator (optionally for a specific interface) and exit")
 
-    # The modal flags below take their default from ~/.koi/config.json, so each
-    # one needs an explicit counter-flag: with a config-driven default there is
-    # otherwise no way to get back to the other value from the command line.
+    # Each modal flag needs an explicit counter-flag: the default comes from
+    # config.json, so there is otherwise no way back to the other value.
     opsec_group = parser.add_argument_group("opsec")
     opsec_group.add_argument("--keep-history", "-kh", dest="keep_history", action="store_true",
                              help=f"Keep the target's shell history on upgraded sessions (config: {_onoff(CONFIG['keep_history'])})")
@@ -130,8 +129,8 @@ def main():
     cache_group.add_argument("--local-prepare", "-lp", action="store_true", help="Download and cache all external resources needed by modules")
     cache_group.add_argument("--purge-cache", "-pc", action="store_true", help="removes all files in cache")
 
-    # Set after both halves of each pair are registered: when two actions share a
-    # dest, relying on which one carries default= is fragile.
+    # Set after both halves of each pair are registered: when two actions share
+    # a dest, relying on which one carries default= is fragile.
     parser.set_defaults(
         keep_history=bool(CONFIG["keep_history"]),
         logging=bool(CONFIG["logging"]),
@@ -176,9 +175,8 @@ def main():
     if args.mcp:
         from koi.mcp.server import KoiMCPServer, missing_dependencies
 
-        # MCP support is an optional extra. Checked before the listener starts
-        # because these are imported from the server thread, where the failure
-        # would otherwise land as a traceback across the operator's prompt.
+        # Checked before the listener starts: these are imported from the server
+        # thread, where the failure would land as a traceback over the prompt.
         if missing := missing_dependencies():
             notify('error', f"MCP support needs: {', '.join(missing)}")
             notify('status', "Install with:  pipx install 'koi-handler[mcp]'")

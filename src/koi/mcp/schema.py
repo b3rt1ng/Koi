@@ -1,9 +1,7 @@
 """Translate a module's declarative argparse spec into a JSON Schema, and back.
 
-``KoiModule.arguments`` is nearly a JSON Schema already, so tools are derived
-from the class rather than hand-written: a new module becomes callable over MCP
-the moment it lands in ``koi/modules/``. Stdlib only, so it stays testable
-without the optional ``mcp`` dependency.
+Tools are derived from the class, so a new module becomes callable over MCP the
+moment it lands in ``koi/modules/``. Stdlib only: no dependency on ``mcp``.
 """
 
 from __future__ import annotations
@@ -76,8 +74,7 @@ def argument_schema(spec: Dict[str, Any]) -> Tuple[str, Dict[str, Any], bool]:
     if default is not None:
         schema["default"] = default
 
-    # Only a positional with no default would argparse refuse to run without;
-    # `nargs='*'` tolerates emptiness.
+    # Only a positional with no default is truly required; nargs='*' tolerates empty.
     required = (
         _is_positional(flags)
         and default is None
@@ -89,8 +86,7 @@ def argument_schema(spec: Dict[str, Any]) -> Tuple[str, Dict[str, Any], bool]:
 def module_input_schema(mod_cls: Type) -> Dict[str, Any]:
     """Build the full JSON Schema for a module's arguments.
 
-    The caller adds the session reference: that belongs to the tool, not to the
-    module's own argument spec.
+    The caller adds the session reference: it belongs to the tool, not the spec.
     """
     properties: Dict[str, Any] = {}
     required: List[str] = []
@@ -113,8 +109,7 @@ def module_input_schema(mod_cls: Type) -> Dict[str, Any]:
 def schema_to_argv(mod_cls: Type, values: Optional[Dict[str, Any]]) -> List[str]:
     """Turn a validated MCP argument dict back into an argparse argv list.
 
-    Optionals are emitted before positionals on purpose: a positional declared
-    with ``nargs='+'`` would otherwise swallow any flag that followed it.
+    Optionals go first: a ``nargs='+'`` positional would swallow trailing flags.
     """
     values = values or {}
     optionals: List[str] = []

@@ -69,11 +69,9 @@ def get_module(name: str) -> Optional[Type]:
 def collect_external_resources() -> list[dict]:
     """Collect the external resources every loaded module wants pre-cached.
 
-    Goes through each module's ``resolve_external_resources()`` rather than the
-    raw attribute, so a module can compute its list dynamically (e.g. enumerate
-    the assets of the latest release). A resolver that fails, typically a network
-    error while listing releases, is skipped with a warning instead of aborting
-    the whole ``--local-prepare`` run.
+    Goes through ``resolve_external_resources()`` so a module can compute its
+    list dynamically. A failing resolver is skipped with a warning rather than
+    aborting the whole ``--local-prepare`` run.
     """
     resources = []
     for mod_cls in load_modules().values():

@@ -1,4 +1,3 @@
-import re
 import shutil
 import sys
 import threading
@@ -7,8 +6,7 @@ import importlib.metadata
 from random import choice
 
 from koi.utils.config import color
-
-_ANSI = re.compile(r"\033\[[^m]*m")
+from koi.utils.constants import ANSI_RE as _ANSI
 
 PUMPKIN     = color("pumpkin")
 WHITE       = color("white")
@@ -246,6 +244,20 @@ def _make_color_fn(total_rows, total_cols, tl, br):
     return _color
 
 
+def _print_box_top(title, inner_width, get_color, title_color=PUMPKIN) -> None:
+    """Draw the rounded top border with *title* centred in it."""
+    label   = f" {title} "
+    padding = inner_width - len(label)
+    left    = "─" * (padding // 2)
+    right   = "─" * (padding - padding // 2)
+    colored_left  = "".join(get_color(0, c) + ch for c, ch in enumerate("╭" + left))
+    colored_right = "".join(
+        get_color(0, 1 + len(left) + len(label) + c) + ch
+        for c, ch in enumerate(right + "╮")
+    )
+    print("\n" + colored_left + gradient_text(label, title_color, WHITE) + colored_right + RST)
+
+
 def print_report_box(title, data_dict, top_left_color=PUMPKIN, bottom_right_color=CORAL):
     if not data_dict:
         return
@@ -302,17 +314,7 @@ def print_report_box(title, data_dict, top_left_color=PUMPKIN, bottom_right_colo
 
     white_start = f"\033[38;2;{WHITE[0]};{WHITE[1]};{WHITE[2]}m"
 
-    header_label   = f" {title} "
-    header_padding = inner_width - len(header_label)
-    left_dashes    = "─" * (header_padding // 2)
-    right_dashes   = "─" * (header_padding - header_padding // 2)
-    colored_left   = "".join(get_diag_color(0, c) + ch for c, ch in enumerate("╭" + left_dashes))
-    colored_right  = "".join(
-        get_diag_color(0, 1 + len(left_dashes) + len(header_label) + c) + ch
-        for c, ch in enumerate(right_dashes + "╮")
-    )
-    top_line = colored_left + gradient_text(header_label, PUMPKIN, WHITE) + colored_right
-    print("\n" + top_line + RST)
+    _print_box_top(title, inner_width, get_diag_color)
 
     r_idx = 0
 
@@ -396,16 +398,7 @@ def print_table(
 
     r_idx = 0
 
-    header_label   = f" {title} "
-    header_padding = inner_width - len(header_label)
-    left_dashes    = "─" * (header_padding // 2)
-    right_dashes   = "─" * (header_padding - header_padding // 2)
-    colored_left   = "".join(get_color(0, c) + ch for c, ch in enumerate("╭" + left_dashes))
-    colored_right  = "".join(
-        get_color(0, 1 + len(left_dashes) + len(header_label) + c) + ch
-        for c, ch in enumerate(right_dashes + "╮")
-    )
-    print("\n" + colored_left + gradient_text(header_label, top_left_color, WHITE) + colored_right + RST)
+    _print_box_top(title, inner_width, get_color, top_left_color)
 
     white_start = f"\033[38;2;{WHITE[0]};{WHITE[1]};{WHITE[2]}m"
 
@@ -451,18 +444,7 @@ def print_table(
     for wrapped in rows_wrapped:
         render_row(wrapped)
 
-    r_idx += 1
-    line    = get_color(r_idx, 0) + "╰"
-    col_pos = 1
-    for i, w in enumerate(col_widths):
-        for j in range(w + 2):
-            line += get_color(r_idx, col_pos + j) + "─"
-        col_pos += w + 2
-        if i < n_cols - 1:
-            line += get_color(r_idx, col_pos) + "┴"
-            col_pos += 1
-    line += get_color(r_idx, col_pos) + "╯"
-    print(line + RST)
+    render_hsep("╰", "╯", "┴")
 
 def notify(msg_type, text):
     prefixes = {
@@ -475,8 +457,7 @@ def notify(msg_type, text):
     }
     
     if msg_type not in prefixes:
-        # Unknown type: flag it loudly instead of silently dropping the icon
-        # and label, which used to let typos like notify('eror', ...) slip by.
+        # Loud, so a typo like notify('eror', ...) cannot slip by silently.
         print(f"  {alert(f'[notify: unknown type {msg_type!r}]')}  {text}")
         return
 
@@ -491,9 +472,8 @@ def notify(msg_type, text):
 def _thread_stdout():
     """The stream the *calling* thread should write to.
 
-    Normally ``sys.stdout``. The MCP server swaps in a stand-in routing each
-    thread to its own buffer, so anything spawning a helper thread must resolve
-    the stream here, in the parent, and hand it over.
+    The MCP server swaps in a per-thread stand-in, so anything spawning a
+    helper thread must resolve the stream in the parent and hand it over.
     """
     for_thread = getattr(sys.stdout, "for_thread", None)
     return for_thread() if for_thread else sys.stdout
@@ -509,8 +489,7 @@ class Spinner:
         self._out      = None
 
     def start(self):
-        # Resolved here, not in _spin: that runs on its own thread and must
-        # inherit the caller's stream.
+        # Resolved here, not in _spin: that thread must inherit the caller's stream.
         self._out = _thread_stdout()
         self._stop_ev.clear()
         # Frames are cursor tricks: silent when captured (MCP) or piped.
@@ -594,10 +573,9 @@ def breaker_with_text(text: str = ""):
 def _input_no_history(prompt: str) -> str:
     """input() that does not leave the reply in the readline history.
 
-    Prompt answers (y/n, an interface name, ...) are not commands, so they should
-    not clutter the REPL history or be recalled with the up arrow. readline adds
-    at most the one non-empty line just entered; drop anything past the length we
-    saw before the call."""
+    Prompt answers are not commands, so drop anything readline appended past
+    the history length seen before the call.
+    """
     try:
         import readline
     except ImportError:

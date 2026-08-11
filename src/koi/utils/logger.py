@@ -10,6 +10,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from koi.session import wire_settings
+from koi.utils.constants import ANSI_RE
 from koi.utils.ui import (
     RST, DIM, BOLD, PUMPKIN, WHITE, SILVER, CORAL,
     gradient_text, colored_text, notify,
@@ -19,7 +21,6 @@ if TYPE_CHECKING:
     from koi.session import Session
 
 _LOG_DIR         = Path.home() / ".koi" / "logs"
-ANSI_RE          = re.compile(r"\x1b(?:\][^\x07]*\x07|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])")
 _CTRL            = re.compile(r"[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f]")
 _PROMPT_SUFFIXES = ("$", "#", "❯", ">", "% ")
 
@@ -55,8 +56,8 @@ def _dim_ts(entry: dict) -> str:
 class SessionLogger:
     def __init__(self, path: Path):
         self.path = path
-        # 0600 at creation rather than whatever the umask allows. chmod as well,
-        # so a log left behind by an older version is tightened on reopen.
+        # 0600 at creation, not whatever the umask allows; chmod too, so a log
+        # from an older version is tightened on reopen.
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
         self._f = open(fd, "a", buffering=1)
         try:
@@ -95,11 +96,10 @@ class SessionLogger:
 
 
 class NullLogger:
-    """No-op stand-in returned when --no-log is active.
+    """No-op stand-in for --no-log.
 
-    A real object rather than None: the upgrade path, module runs and the MCP
-    exec path all call log_event/log_input without guarding, so handing them a
-    None would turn "don't write logs" into an AttributeError mid-session.
+    A real object rather than None: callers invoke log_event/log_input without
+    guarding, so None would turn "no logs" into an AttributeError mid-session.
     """
 
     path = None
@@ -232,7 +232,7 @@ def review(name: str) -> None:
             ts_str = _dim_ts(entry)
 
             if kind == "meta":
-                encoding = "utf-8" if entry.get("os") == "linux" else "cp1252"
+                encoding, _ = wire_settings(entry.get("os"))
                 _render_meta(entry)
 
             elif kind == "input":

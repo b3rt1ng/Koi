@@ -9,11 +9,11 @@ import threading
 import time
 
 from koi.session import Session, RawTerminal
+from koi.utils.constants import SOCKET_BUFFER_SIZE
 
 CTRL_Z = b"\x1a"
 CTRL_C = b"\x03"
 
-_SOCKET_BUFFER_SIZE = 65536
 _RECV_TIMEOUT = 1.0
 _QUEUE_TIMEOUT = 0.1
 _INITIAL_SLEEP = 0.3
@@ -21,9 +21,8 @@ _EXIT_SLEEP = 0.2
 
 
 def interact(sess: Session, logger=None) -> str:
-    # Held for the whole interactive session: the receive thread below reads the
-    # socket continuously, so nothing else may touch it until the user
-    # backgrounds or the peer drops.
+    # Held for the whole session: the receive thread reads continuously, so
+    # nothing else may touch the socket until backgrounded or dropped.
     with sess.io(holder="interact"):
         if sess.os_type in ("windows_cmd", "windows_ps") and not sess.upgraded:
             return _interact_windows(sess, logger)
@@ -40,7 +39,7 @@ def _interact_raw(sess: Session, logger=None) -> str:
                 r, _, _ = select.select([sess.conn], [], [], 0.1)
                 if not r:
                     continue
-                data = sess.conn.recv(_SOCKET_BUFFER_SIZE)
+                data = sess.conn.recv(SOCKET_BUFFER_SIZE)
                 if not data:
                     sess.alive = False
                     result[0] = "disconnected"
@@ -98,7 +97,7 @@ def _interact_windows(sess: Session, logger=None) -> str:
                 r, _, _ = select.select([sess.conn], [], [], 0.1)
                 if not r:
                     continue
-                data = sess.conn.recv(_SOCKET_BUFFER_SIZE)
+                data = sess.conn.recv(SOCKET_BUFFER_SIZE)
                 if not data:
                     sess.alive = False
                     result[0] = "disconnected"

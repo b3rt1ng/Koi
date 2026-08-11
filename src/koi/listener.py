@@ -12,6 +12,7 @@ import time
 from typing import Callable, Dict, Optional
 
 from koi.utils.config import CONFIG
+from koi.utils.constants import SOCKET_BUFFER_SIZE
 import koi.utils.config as config_module
 from koi.utils.cli import (
     check_usage,
@@ -48,7 +49,6 @@ _PROMPT_ARROW = gradient_text(" ❯ ", PUMPKIN, CORAL)
 
 # Timing constants
 _ACCEPT_TIMEOUT = 1.0
-_SOCKET_BUFFER_SIZE = 65536
 _SHORT_SLEEP = 0.15
 _MEDIUM_SLEEP = 0.2
 _LONG_SLEEP = 0.5
@@ -103,6 +103,7 @@ class Listener:
         self._in_session = False
         self._pending_notifications: list = []
         self._notif_lock = threading.Lock()
+        self._term_lock = threading.Lock()
         self._pending_conpty: dict = {}
         self._conpty_staging: dict = {}
         self._conpty_lock = threading.Lock()
@@ -134,9 +135,8 @@ class Listener:
     def _snapshot(self) -> list[Session]:
         """The session table as a list, taken under the lock.
 
-        The accept thread inserts while the REPL, the completer and the MCP
-        server walk the table; iterating the live dict raises as soon as a shell
-        lands mid-walk. Every reader goes through here.
+        Every reader goes through here: iterating the live dict raises when the
+        accept thread lands a shell mid-walk.
         """
         with self._id_lock:
             return list(self._sessions.values())
@@ -169,9 +169,8 @@ class Listener:
     def _prune(self, at_prompt: bool = False) -> None:
         """Drop sessions whose far end is gone, announcing each loss.
 
-        ``at_prompt`` says where the operator is: the REPL calls this from
-        inside a command they just typed, the MCP server from a thread while
-        they sit at the prompt.
+        ``at_prompt`` says whether the operator is sitting at the prompt rather
+        than inside a command they typed.
         """
         for sess in self._snapshot():
             sess.probe()
@@ -236,16 +235,19 @@ class Listener:
         os.write(self._notify_w, b"1\n")
         self._announce('new', msg)
 
-    def _announce(self, msg_type: str, text: str, at_prompt: bool = True) -> None:
-        """Report something the operator did not ask for, without wrecking their line.
+    def _queue_notification(self, msg_type: str, text: str) -> None:
+        with self._notif_lock:
+            self._pending_notifications.append((msg_type, text))
 
-        Queued while they are inside a session; at the prompt the line is erased
-        and redrawn around the message so a half-typed command survives.
-        ``at_prompt=False`` is for callers already inside a command they typed.
+    def _announce(self, msg_type: str, text: str, at_prompt: bool = True) -> None:
+        """Print an unsolicited message, restoring the operator's line under it.
+
+        Redrawing prompt+buffer by hand puts the screen back exactly where
+        readline believes it is, so its state stays valid without calling
+        redisplay() - which would mutate that state from a background thread.
         """
         if self._in_session:
-            with self._notif_lock:
-                self._pending_notifications.append((msg_type, text))
+            self._queue_notification(msg_type, text)
             return
 
         if not at_prompt:
@@ -253,12 +255,12 @@ class Listener:
             return
 
         import readline as _rl
-        buf = _rl.get_line_buffer()
-        sys.stdout.write("\r\033[K")
-        notify(msg_type, text)
-        sys.stdout.write(self._prompt() + buf)
-        sys.stdout.flush()
-        _rl.redisplay()
+        with self._term_lock:
+            buf = _rl.get_line_buffer()
+            sys.stdout.write("\r\033[K")
+            notify(msg_type, text)
+            sys.stdout.write(self._prompt() + buf)
+            sys.stdout.flush()
 
     def start(self):
         self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -338,6 +340,7 @@ class Listener:
                 if r:
                     os.read(self._notify_r, 4096)
                 raw = input(self._prompt()).strip()
+                self._flush_pending_notifications()
                 _ctrlc = 0
             except EOFError:
                 break
@@ -345,6 +348,7 @@ class Listener:
                 import readline as _rl
                 had_text = bool(_rl.get_line_buffer().strip())
                 print()
+                self._flush_pending_notifications()
                 if had_text:
                     _ctrlc = 0
                 else:
@@ -725,14 +729,7 @@ class Listener:
             return
 
         old = sess.os_label()
-        sess.os_type = os_type
-
-        if os_type == "linux":
-            sess.encoding = "utf-8"
-            sess.eol      = "\n"
-        else:
-            sess.encoding = "cp1252"
-            sess.eol      = "\r\n"
+        sess.set_os_type(os_type)
 
         notify('success',
             f"Session {accent(f'#{sid}')} OS set: {old} -> {sess.os_label()}")
@@ -776,7 +773,7 @@ class Listener:
                 try:
                     r, _, _ = select.select([sess.conn], [], [], min(remaining, 0.05))
                     if r:
-                        sess.conn.recv(_SOCKET_BUFFER_SIZE)
+                        sess.conn.recv(SOCKET_BUFFER_SIZE)
                 except OSError:
                     break
 

@@ -25,9 +25,8 @@ def _recv_for(
 ) -> str:
     """Read from the socket for at most `duration` seconds.
 
-    If `stop_when` is given, it is called with the decoded buffer after each
-    chunk; returning True stops reading early. This lets detection return as
-    soon as the OS can be decided instead of always waiting the full timeout.
+    `stop_when` is called with the decoded buffer after each chunk; returning
+    True ends the read early instead of always waiting the full timeout.
     """
     buf = b""
     deadline = time.monotonic() + duration
@@ -83,16 +82,15 @@ def detect_os(session: "Session") -> None:
         )
         logger.debug(f"[detect] session #{session.id} raw response: {response!r}")
 
-        # Inside the lock: _apply may fall through to _fallback, which sends a
-        # second probe and reads its reply.
+        # Inside the lock: _apply may fall through to _fallback, which probes again.
         _apply(session, response, expected)
 
 
 def _classify(response: str, expected: str) -> "str | None":
-    """Return the detected os_type from a probe response, or None if undecided.
+    """The os_type a probe response implies, or None if undecided.
 
-    Shared by the early-exit predicate and `_apply` so both always agree on the
-    verdict (Linux takes precedence, then PowerShell, then cmd).
+    Shared by the early-exit predicate and `_apply` so both agree on the
+    verdict: Linux first, then PowerShell, then cmd.
     """
     if expected in response:
         return "linux"
@@ -125,13 +123,7 @@ def _apply(session: "Session", response: str, expected: str) -> None:
         _fallback(session)
         return
 
-    session.os_type = os_type
-    if os_type == "linux":
-        session.encoding = "utf-8"
-        session.eol = "\n"
-    else:
-        session.encoding = "cp1252"
-        session.eol = "\r\n"
+    session.set_os_type(os_type)
     logger.debug(f"[detect] session #{session.id}, {os_type}")
 
 
@@ -154,12 +146,8 @@ def _fallback(session: "Session") -> None:
     logger.debug(f"[detect] session #{session.id} fallback response: {response!r}")
 
     if any(x in r for x in ("linux", "darwin", "freebsd", "openbsd", "netbsd")):
-        session.os_type = "linux"
-        session.encoding = "utf-8"
-        session.eol = "\n"
+        session.set_os_type("linux")
     elif any(x in r for x in ("windows", "microsoft", "c:\\")):
-        session.os_type = "windows_cmd"
-        session.encoding = "cp1252"
-        session.eol = "\r\n"
+        session.set_os_type("windows_cmd")
     else:
         logger.debug(f"[detect] session #{session.id}, detection failed, os_type stays None")

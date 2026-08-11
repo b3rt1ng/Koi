@@ -101,9 +101,7 @@ def _rand_ident(length: int = 10) -> str:
 
 
 def _cs_char_array(value: str) -> str:
-    """Construct a C# runtime expression equivalent to a string literal.
-    Produces no string literal in MSIL, only a char-array allocation.
-    """
+    """C# expression equal to a string literal, but leaving none in the MSIL."""
     chars = ",".join(f"(char){ord(c)}" for c in value)
     return f"new string(new char[]{{{chars}}})"
 
@@ -120,11 +118,7 @@ def ps_base64_encode(payload: str) -> str:
 
 
 def obfuscate_conptyshell(ps1_data: bytes) -> tuple[bytes, str]:
-    """Obfuscate a ConPtyShell PS1 script in-memory before serving it.
-
-    Returns ``(obfuscated_bytes, new_function_name)`` so the caller can build
-    the IEX invocation using the renamed PS function.
-    """
+    """Obfuscate a ConPtyShell PS1 in memory, returning it with its new name."""
     payload = ps1_data.decode("utf-8", errors="replace")
 
     renames: list[tuple[str, str]] = [
@@ -206,10 +200,8 @@ _PS_VAR_RE = re.compile(r'\$[a-zA-Z_][a-zA-Z0-9_]*')
 def ps_variable_obfuscate(payload: str) -> str:
     """Rename user-defined PowerShell variables in a single regex pass.
 
-    Matching full variable tokens (not substrings) avoids prefix-collision
-    corruption such as $a mangling $ab. Automatic/reserved variables and scope
-    qualifiers are left untouched, and PowerShell's case-insensitivity is
-    honoured so $Data and $data map to the same new name.
+    Matches full tokens so $a cannot mangle $ab. Reserved variables and scope
+    qualifiers are left alone; $Data and $data map to the same new name.
     """
     mapping: dict[str, str] = {}
 

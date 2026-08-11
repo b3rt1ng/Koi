@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import os
 import time
 import zipfile
 
@@ -94,7 +93,9 @@ class PopulateWinModule(KoiModule):
         # Batch-verify all uploaded files in one query
         if uploaded_files:
             with self.spinner("Verifying uploads..."):
-                paths_expr = "@(" + ",".join(f"'{d}'" for d, _ in uploaded_files.values()) + ")"
+                paths_expr = "@(" + ",".join(
+                    f"'{self._ps_quote(d)}'" for d, _ in uploaded_files.values()
+                ) + ")"
                 verify_raw = self._win_query(f"({paths_expr} | ForEach-Object {{(Test-Path $_).ToString()}}) -join '{self.REC_SEP}'")
                 exists_list = [x.strip().lower() == "true" for x in verify_raw.split(self.REC_SEP)]
 

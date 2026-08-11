@@ -75,9 +75,8 @@ def _load() -> dict:
 def persist(key: str, value) -> bool:
     """Write a single top-level key to the user's config file.
 
-    Re-reads the file first so a concurrent edit is not clobbered, and tightens
-    permissions to 0600 because the config now holds the MCP bearer token.
-    Returns False when the file cannot be written; callers must stay usable.
+    Re-reads first so a concurrent edit is not clobbered, and chmods 0600
+    because the config holds the MCP bearer token. False if unwritable.
     """
     try:
         data = {}

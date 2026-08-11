@@ -1,6 +1,5 @@
 from __future__ import annotations
 from koi.modules.blueprint import KoiModule
-from koi.utils.config import TIMEOUTS
 import json
 import re
 import os
@@ -109,12 +108,10 @@ def filter_env_vars(content: str) -> Dict[str, str]:
 
 
 def _count_findings(value) -> int:
-    """Count leaf data points in a nested hunt result (dict / list / scalar).
+    """Count leaf data points in a nested hunt result.
 
-    Each hunt returns a dict of category -> data, where data may itself be a
-    dict (e.g. 34 git remotes) or a list (e.g. history lines). Counting the
-    top-level keys would report one finding per category; this walks into the
-    nested collections so the total reflects the actual number of items found.
+    Walks into nested collections: counting top-level keys would report one
+    finding per category rather than the number of items actually found.
     """
     if isinstance(value, dict):
         return sum(_count_findings(v) for v in value.values())
@@ -242,7 +239,8 @@ class SecretsDumpModule(KoiModule):
                 if not gitdir:
                     continue
                 repo = os.path.dirname(gitdir)
-                git_config = self._try_exec(f"cat '{gitdir}/config' 2>/dev/null")
+                config_path = self._shell_quote(f"{gitdir}/config")
+                git_config = self._try_exec(f"cat {config_path} 2>/dev/null")
                 if git_config:
                     parsed = parse_git_config(git_config)
                     for remote_section, url in parsed.items():
@@ -395,7 +393,8 @@ class SecretsDumpModule(KoiModule):
 
             # Get git log with format for better parsing
             git_log = self._try_exec(
-                f"cd '{repo}' && git --no-pager log --oneline -n 20 2>/dev/null"
+                f"cd {self._shell_quote(repo)} && "
+                f"git --no-pager log --oneline -n 20 2>/dev/null"
             )
 
             if git_log:

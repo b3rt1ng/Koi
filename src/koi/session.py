@@ -26,9 +26,8 @@ class SessionBusy(RuntimeError):
         detail = f" (held by {holder})" if holder else ""
         super().__init__(f"Session #{session_id} is busy{detail}")
 
-# POLLRDHUP alone reports the peer's FIN while its last bytes sit unread - the
-# common case, a shell having written a prompt nobody consumed. Linux-only:
-# elsewhere the mask collapses and probe() falls back to peeking.
+# POLLRDHUP reports the peer's FIN while its last bytes sit unread. Linux-only:
+# elsewhere the mask collapses to 0 and _peer_gone() falls back to peeking.
 _POLL_HUP = (
     getattr(select, "POLLRDHUP", 0)
     | getattr(select, "POLLHUP", 0)
@@ -40,6 +39,17 @@ OS_LABEL_NAMES: dict[str, str] = {
     "windows_cmd": "cmd",
     "windows_ps":  "powershell",
 }
+
+OS_WIRE: dict[str, tuple[str, str]] = {
+    "linux":       ("utf-8",  "\n"),
+    "windows_cmd": ("cp1252", "\r\n"),
+    "windows_ps":  ("cp1252", "\r\n"),
+}
+
+
+def wire_settings(os_type: Optional[str]) -> tuple[str, str]:
+    """The ``(encoding, eol)`` pair for *os_type*, utf-8/LF when unknown."""
+    return OS_WIRE.get(os_type or "", ("utf-8", "\n"))
 
 
 @dataclass
@@ -64,18 +74,18 @@ class Session:
     def attach_logger(self, logger) -> None:
         self._logger = logger
 
+    def set_os_type(self, os_type: OsType) -> None:
+        """Set os_type with the encoding and eol it implies; never set it alone."""
+        self.os_type = os_type
+        self.encoding, self.eol = wire_settings(os_type)
+
     @contextmanager
     def io(self, holder: str = "?", timeout: Optional[float] = None) -> Iterator["Session"]:
         """Take exclusive ownership of this session's socket.
 
-        Anything that reads from ``self.conn`` must hold this, or concurrent
-        readers (the interactive REPL and an out-of-band caller such as the MCP
-        server) will steal each other's bytes and lose command sentinels.
-
-        Reentrant per thread, so a module may hold it for its whole run while
-        ``exec()`` re-takes it per command. ``timeout=None`` blocks forever,
-        which is what the REPL wants; callers that must not hang pass a timeout
-        and handle :class:`SessionBusy`.
+        Anything reading ``self.conn`` must hold this or concurrent readers
+        steal each other's bytes and lose command sentinels. Reentrant per
+        thread. ``timeout=None`` blocks; otherwise raises :class:`SessionBusy`.
         """
         if not self._io_lock.acquire(timeout=-1 if timeout is None else timeout):
             raise SessionBusy(self.id, self._io_holder)
@@ -110,12 +120,10 @@ class Session:
         return accent("◆") if self.upgraded else alert("●")
 
     def probe(self) -> bool:
-        """Refresh :attr:`alive` by looking at the socket, and return it.
+        """Refresh :attr:`alive` from the socket and return it.
 
-        Otherwise ``alive`` only drops on a failed ``send``, leaving a shell that
-        died quietly in the table with a climbing uptime. Nothing here consumes
-        from the stream, and a session owned by another operation is skipped -
-        that owner will notice a death first-hand.
+        Consumes nothing from the stream. A session owned by another operation
+        is skipped: that owner will notice a death first-hand.
         """
         if not self.alive:
             return False
@@ -135,9 +143,8 @@ class Session:
             poller.register(self.conn, _POLL_HUP)
             return bool(poller.poll(0))
 
-        # Fallback: a readable socket yielding nothing has been closed. Misses a
-        # peer that died leaving output unread, where the leftover bytes come
-        # back instead - there the death still surfaces on the next write.
+        # A readable socket yielding nothing has been closed. Misses a peer that
+        # died leaving output unread; that death surfaces on the next write.
         try:
             ready, _, _ = select.select([self.conn], [], [], 0)
             return bool(ready) and self.conn.recv(1, socket.MSG_PEEK) == b""

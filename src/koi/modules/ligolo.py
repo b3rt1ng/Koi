@@ -65,15 +65,9 @@ class LigoloModule(KoiModule):
     def resolve_external_resources(cls) -> list[dict]:
         """List every agent asset of the latest release for ``--local-prepare``.
 
-        'Always latest' cannot be pre-listed statically: the version is only
-        known once GitHub answers, and the target's OS/arch is only known once a
-        session exists. So prep resolves the latest release now (which, as a side
-        effect, caches the release JSON under ``_RELEASE_CACHE_NAME``, the very
-        key run time reads back in ``--local``) and lists every agent archive.
-        Each entry is keyed exactly like :meth:`_fetch_agent`'s lookup
-        (``ligolo_agent_<name>``) so the offline run finds it in the cache
-        instead of missing. A network failure here propagates to
-        ``collect_external_resources``, which skips this module with a warning.
+        'Always latest' cannot be pre-listed statically, so prep resolves the
+        release now (caching the JSON under the key run time reads back) and
+        keys each asset exactly like :meth:`_fetch_agent` looks it up.
         """
         _tag, assets, _source = cls._latest_release()
         resources: list[dict] = []
@@ -192,7 +186,9 @@ class LigoloModule(KoiModule):
             dest_dir = ntpath.dirname(dest)
             with self.spinner("Adding Defender exclusion..."):
                 self._win_query(
-                    f"Add-MpPreference -ExclusionPath '{dest_dir}' -ExclusionProcess '{dest}'"
+                    f"Add-MpPreference"
+                    f" -ExclusionPath '{self._ps_quote(dest_dir)}'"
+                    f" -ExclusionProcess '{self._ps_quote(dest)}'"
                 )
             self.status(f"Defender exclusion added for {dest_dir}")
 
@@ -210,13 +206,14 @@ class LigoloModule(KoiModule):
         time.sleep(1.5)
 
         if os_name == "linux":
-            result = self.exec(f"test -s {dest} && echo OK || echo MISS")
+            quoted = self._shell_quote(dest)
+            result = self.exec(f"test -s {quoted} && echo OK || echo MISS")
             if "OK" not in result.stdout:
                 self.err("Upload failed or file not present on target after transfer.")
                 return
-            self.exec(f"chmod +x {dest}")
+            self.exec(f"chmod +x {quoted}")
         else:
-            check = self._win_query(f"(Test-Path '{dest}').ToString()")
+            check = self._win_query(f"(Test-Path '{self._ps_quote(dest)}').ToString()")
             if check.strip().lower() != "true":
                 self.err("Upload failed or file not present on target after transfer.")
                 return

@@ -5,6 +5,9 @@ import threading
 from typing import Callable, Optional
 import random
 
+from koi.utils.config import TIMEOUTS
+from koi.utils.constants import SOCKET_BUFFER_SIZE
+
 
 def _try_bind_port(port: int) -> tuple[socket.socket, int] | None:
     """Try to bind to a specific port. Returns (socket, port) or None if port is in use."""
@@ -77,7 +80,7 @@ def spawn_send_server(
             conn, _ = srv.accept()
             sent = 0
             while sent < len(data):
-                chunk = data[sent:sent + 65536]
+                chunk = data[sent:sent + SOCKET_BUFFER_SIZE]
                 conn.sendall(chunk)
                 sent += len(chunk)
                 if on_progress:
@@ -93,31 +96,63 @@ def spawn_send_server(
     return port, t, errors
 
 
-def spawn_recv_server(
-    timeout: float = 60.0,
-) -> tuple[int, Callable[[], bytes]]:
-    """
-    Open a one-shot TCP server that collects data from the first incoming connection.
+class TCPReceiveServer:
+    """One-shot TCP server that collects bytes from the first incoming connection."""
 
-    Returns ``(port, collect)``.
-    Call ``collect()`` to block until the connection is received and all data is read;
-    returns the raw bytes (empty on timeout or error).
-    """
-    srv, port = bind_side_channel_port()
-    srv.listen(1)
-    srv.settimeout(timeout)
+    def __init__(self, timeout: float = TIMEOUTS["download"], on_progress=None):
+        self._timeout     = timeout
+        self._on_progress = on_progress
+        self._sock        = None
+        self._done        = threading.Event()
+        self._data        = b""
+        self._error       = None
+        self.port: int    = 0
 
-    def collect() -> bytes:
+    def start(self) -> "TCPReceiveServer":
+        self._sock, self.port = bind_side_channel_port()
+        self._sock.listen(1)
+        self._sock.settimeout(self._timeout)
+        threading.Thread(target=self._run, daemon=True).start()
+        return self
+
+    def _run(self) -> None:
         try:
-            conn, _ = srv.accept()
-            chunks: list[bytes] = []
-            while chunk := conn.recv(65536):
-                chunks.append(chunk)
+            conn, _ = self._sock.accept()
+            buf = b""
+            while chunk := conn.recv(SOCKET_BUFFER_SIZE):
+                buf += chunk
+                if self._on_progress:
+                    self._on_progress(len(buf))
             conn.close()
-            return b"".join(chunks)
-        except Exception:
-            return b""
+            self._data = buf
+        except Exception as exc:
+            self._error = str(exc)
         finally:
-            srv.close()
+            self._close()
+            self._done.set()
 
-    return port, collect
+    def collect(self) -> bytes:
+        """Block until all data is received. Raises RuntimeError or TimeoutError."""
+        self._done.wait(timeout=self._timeout + 2)
+        if self._error:
+            raise RuntimeError(self._error)
+        if not self._done.is_set():
+            raise TimeoutError("TCP receive server timed out")
+        return self._data
+
+    def stop(self) -> None:
+        self._close()
+
+    def _close(self) -> None:
+        if self._sock:
+            try:
+                self._sock.close()
+            except OSError:
+                pass
+            self._sock = None
+
+    def __enter__(self) -> "TCPReceiveServer":
+        return self.start()
+
+    def __exit__(self, *_) -> None:
+        self.stop()

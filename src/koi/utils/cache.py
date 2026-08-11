@@ -18,9 +18,8 @@ def _cache_dir() -> Path:
 def cache_path(name: str) -> Path:
     """Resolve *name* inside the cache directory.
 
-    Cache keys are declared by modules, and third-party modules are a documented
-    feature, so a key holding ``..`` or an absolute path must not be allowed to
-    write outside ``~/.koi/cache``.
+    Cache keys come from modules, third-party ones included, so a key holding
+    ``..`` or an absolute path must not escape ``~/.koi/cache``.
     """
     root = _cache_dir().resolve()
     candidate = (root / name).resolve()
@@ -46,16 +45,12 @@ def fetch_or_cache(
     timeout: float | None = None,
     headers: dict[str, str] | None = None,
 ) -> tuple[bytes, str]:
-    """Download *url* and cache the response bytes under *name*.
+    """Download *url* and cache the bytes under *name*.
 
-    Returns ``(data, source)`` where *source* is ``"remote"`` when the download
-    succeeds (the bytes are also written to the cache) or ``"cache"`` when the
-    download fails but a previously cached copy exists. If the download fails
-    and nothing is cached, the original download error is re-raised.
-
-    In LOCAL_MODE, skips network calls and uses cache only.
+    Returns ``(data, source)``, *source* being ``"remote"`` or ``"cache"`` when
+    the download failed but a copy exists. Re-raises if neither works.
+    LOCAL_MODE skips the network entirely.
     """
-    # In LOCAL_MODE, use cache only (no network calls)
     if config_module.LOCAL_MODE:
         cached = get_cache(name)
         if cached is not None:

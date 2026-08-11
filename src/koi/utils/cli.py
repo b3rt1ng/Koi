@@ -38,18 +38,11 @@ _ALIAS_TO_CANON: dict[str, str] = {
 
 
 def tokenize(raw: str) -> list[str]:
-    """Split a command line into tokens, honouring quotes but keeping
-    backslashes literal.
+    """Split a command line into tokens, honouring quotes, backslashes literal.
 
-    Quotes are stripped so paths with spaces stay in one piece, and
-    backslashes are left alone so Windows paths survive (``shlex.split``
-    would turn ``"C:\\Users\\my dir"`` into ``C:Usersmy dir``)::
-
-        run upload   1 "/home/my file.txt" -o "/opt/dest dir"
-        run download 1 "C:\\Users\\Bob\\My Documents\\creds.txt"
-
-    An unbalanced quote falls back to a plain whitespace split instead of
-    raising.
+    Backslashes are left alone so Windows paths survive: ``shlex.split`` would
+    turn ``"C:\\Users\\my dir"`` into ``C:Usersmy dir``. An unbalanced quote
+    falls back to a whitespace split instead of raising.
     """
     lexer = shlex.shlex(raw, posix=True)
     lexer.whitespace_split = True
@@ -137,11 +130,9 @@ readline.parse_and_bind(rf'"\C-o": "\C-e\C-u{TOGGLE_SENTINEL}\n"')
 
 
 def _fuzzy_match(text: str, candidates: list[str], cutoff: float = 0.35) -> list[str]:
-    """Typo-tolerant fallback (e.g. 'paload'/'pyload'/'pld' -> 'payload').
+    """Typo-tolerant fallback ('paload' -> 'payload').
 
-    Ranks candidates by similarity ratio. When one candidate is a clear
-    winner over the runner-up, return only that one so tab jumps straight
-    to it instead of just cycling through look-alikes.
+    A clear winner is returned alone so tab jumps straight to it.
     """
     if not text or not candidates:
         return []
