@@ -56,32 +56,33 @@ def _interact_raw(sess: Session, logger=None) -> str:
 
     recv_thread = threading.Thread(target=_recv, daemon=True)
 
-    with RawTerminal():
-        recv_thread.start()
-        try:
-            while not stop_event.is_set():
-                r, _, _ = select.select([sys.stdin], [], [], 0.1)
-                if not r:
-                    continue
-                key = os.read(sys.stdin.fileno(), 1024)
+    try:
+        with RawTerminal():
+            recv_thread.start()
+            try:
+                while not stop_event.is_set():
+                    r, _, _ = select.select([sys.stdin], [], [], 0.1)
+                    if not r:
+                        continue
+                    key = os.read(sys.stdin.fileno(), 1024)
 
-                if CTRL_Z in key:
-                    before = key[: key.index(CTRL_Z)]
-                    if before:
-                        sess.send(before)
-                    result[0] = "backgrounded"
-                    stop_event.set()
-                    break
+                    if CTRL_Z in key:
+                        before = key[: key.index(CTRL_Z)]
+                        if before:
+                            sess.send(before)
+                        result[0] = "backgrounded"
+                        stop_event.set()
+                        break
 
-                if not sess.send(key):
-                    result[0] = "disconnected"
-                    stop_event.set()
-                    break
-        except OSError:
-            pass
-
-    stop_event.set()
-    recv_thread.join(timeout=_RECV_TIMEOUT)
+                    if not sess.send(key):
+                        result[0] = "disconnected"
+                        stop_event.set()
+                        break
+            except OSError:
+                pass
+    finally:
+        stop_event.set()
+        recv_thread.join(timeout=_RECV_TIMEOUT)
     return result[0]
 
 
@@ -131,20 +132,26 @@ def _interact_windows(sess: Session, logger=None) -> str:
     input_queue: queue.Queue = queue.Queue()
 
     def _read_input():
+        buf = ""
+        fd = sys.stdin.fileno()
         while not stop_event.is_set():
             try:
                 r, _, _ = select.select([sys.stdin], [], [], _QUEUE_TIMEOUT)
-                if r:
-                    line = sys.stdin.readline()
-                    if line:
-                        input_queue.put(line.rstrip('\n'))
-                    else:
-                        input_queue.put(None)
-                        return
+                if not r:
+                    continue
+                chunk = os.read(fd, 1024)
+                if not chunk:
+                    input_queue.put(None)
+                    return
+                buf += chunk.decode(errors="replace")
+                while "\n" in buf:
+                    line, buf = buf.split("\n", 1)
+                    input_queue.put(line.rstrip("\r"))
             except Exception:
                 return
 
-    threading.Thread(target=_read_input, daemon=True).start()
+    reader_thread = threading.Thread(target=_read_input, daemon=True)
+    reader_thread.start()
 
     try:
         while not stop_event.is_set() and sess.alive:
@@ -174,4 +181,5 @@ def _interact_windows(sess: Session, logger=None) -> str:
 
     stop_event.set()
     recv_thread.join(timeout=_RECV_TIMEOUT)
+    reader_thread.join(timeout=_QUEUE_TIMEOUT * 3)
     return result[0]

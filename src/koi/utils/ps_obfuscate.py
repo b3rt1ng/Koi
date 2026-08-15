@@ -82,8 +82,9 @@ def ps_format_obfuscate(payload: str) -> str:
 def _xor_encode_str(s: str) -> str:
     key = random.randint(1, 255)
     var = f"k{random.randint(1000, 9999)}"
+    bvar = f"b{random.randint(1000, 9999)}"
     hex_bytes = ",".join(f"0x{(ord(c) ^ key):02x}" for c in s)
-    return f"$(${var}={key};$b=[byte[]]({hex_bytes});-join($b|%{{[char]($_-bxor${var})}}))"
+    return f"$(${var}={key};${bvar}=[byte[]]({hex_bytes});-join(${bvar}|%{{[char]($_-bxor${var})}}))"
 
 
 def ps_xor_obfuscate(payload: str) -> str:

@@ -28,8 +28,9 @@ Full documentation lives in the [wiki](https://b3rt1ng.github.io/koi-wiki/).
 * **PTY Upgrade**: upgrade a raw shell to a full PTY (Linux via `script`/`socat`, Windows via obfuscated ConPtyShell) for tab completion, Ctrl+C forwarding, and terminal resizing.
 * **Modules**: automate post-exploitation tasks, file transfer, enumeration, pivoting, AD collection, and more. Easily extensible with your own modules.
 * **Obfuscator**: built-in payload obfuscator with chainable techniques (XOR, hex, format strings, char-array) to evade Defender and EDR solutions.
+* **Connect out**: `connect ssh user@host` turns credentials you already own into a session. ssh only delivers the payload, so the shell keeps living after ssh exits.
 * **Session logging**: every session is logged automatically. Replay any session with `koireview`. ([docs](https://b3rt1ng.github.io/koi-wiki/logs/))
-* **MCP server**: expose your sessions and modules to an LLM client, read-only by default. ([docs](https://b3rt1ng.github.io/koi-wiki/mcp/))
+* **MCP server**: expose your sessions and modules to an LLM client, read-only by default, shipped with core. ([docs](https://b3rt1ng.github.io/koi-wiki/mcp/))
 * **Screenable mode**: masks IPs and MAC addresses from output for safe screen sharing during CTFs or live demos.
 * **Clean signals**: `Ctrl+Z` backgrounds the session, `Ctrl+C` sends `SIGINT` to the remote, never kills your listener by accident.
 
@@ -45,11 +46,8 @@ Full documentation lives in the [wiki](https://b3rt1ng.github.io/koi-wiki/).
 ## 🚀 Installation
 
 ```bash
-# Recommended: stable release from PyPI
+# Recommended: stable release from PyPI (MCP support included)
 pipx install koi-handler
-
-# With MCP support
-pipx install "koi-handler[mcp]"
 
 # Or directly from the repo
 pipx install git+https://github.com/b3rt1ng/Koi
@@ -59,6 +57,11 @@ git clone https://github.com/b3rt1ng/koi
 cd koi
 pipx install --editable .
 ```
+
+> [!NOTE]
+> As of 0.11, the MCP server ships with core: `--mcp` works on any install, no
+> extra needed. The `[mcp]` extra is kept as an empty alias so older install
+> commands still resolve.
 
 `koifuscator` is the direct shortcut to the obfuscator module.
 

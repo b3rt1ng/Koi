@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 _LOG_DIR         = Path.home() / ".koi" / "logs"
 _CTRL            = re.compile(r"[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f]")
-_PROMPT_SUFFIXES = ("$", "#", "❯", ">", "% ")
+_PROMPT_SUFFIXES = ("$", "#", "❯", "% ")
 
 
 def log_dir() -> Path:
@@ -59,7 +59,7 @@ class SessionLogger:
         # 0600 at creation, not whatever the umask allows; chmod too, so a log
         # from an older version is tightened on reopen.
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-        self._f = open(fd, "a", buffering=1)
+        self._f = open(fd, "a", buffering=1, encoding="utf-8")
         try:
             os.chmod(path, 0o600)
         except OSError:
@@ -132,10 +132,19 @@ def list_logs() -> list[Path]:
 
 
 def resolve_log(name: str) -> Path | None:
-    p = Path(name)
-    if p.exists():
-        return p
-    matches = sorted(log_dir().glob(f"*{p.name}*"), reverse=True)
+    """Resolve a log by name or path, confined to the log directory.
+
+    A path is honoured only when it lands directly inside ~/.koi/logs, so
+    `koireview --clear <path>` can never unlink a file elsewhere. A bare name is
+    substring-matched in Python, never fed to glob, so `[` or `*` cannot inject.
+    """
+    root = log_dir().resolve()
+    if "/" in name or "\\" in name or Path(name).is_absolute():
+        candidate = Path(name).resolve()
+        if candidate.parent == root and candidate.is_file():
+            return candidate
+        return None
+    matches = sorted((q for q in root.glob("*.log") if name in q.name), reverse=True)
     return matches[0] if matches else None
 
 
@@ -198,7 +207,7 @@ def _render_event(entry: dict) -> None:
     elif msg == "upgrade_done":
         print(gradient_text("[✔] PTY upgrade done", CORAL, SILVER) + "\n")
 
-    elif not msg.startswith("module_"):
+    else:
         print("\n" + DIM + "/!\\  " + msg + "  /!\\" + RST + "\n")
 
 
@@ -218,7 +227,7 @@ def review(name: str) -> None:
         recent_cmds.clear()
 
     print()
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         for raw_line in f:
             raw_line = raw_line.strip()
             if not raw_line:
@@ -238,10 +247,12 @@ def review(name: str) -> None:
             elif kind == "input":
                 input_buf += base64.b64decode(entry["data"])
                 while b"\n" in input_buf or b"\r" in input_buf:
-                    for sep in (b"\r\n", b"\n", b"\r"):
-                        if sep in input_buf:
-                            cmd_bytes, input_buf = input_buf.split(sep, 1)
-                            break
+                    positions = [(input_buf.find(s), s) for s in (b"\r\n", b"\n", b"\r")]
+                    _, sep = min(
+                        ((i, s) for i, s in positions if i != -1),
+                        key=lambda t: (t[0], -len(t[1])),
+                    )
+                    cmd_bytes, input_buf = input_buf.split(sep, 1)
                     cmd = _CTRL.sub("", _clean(cmd_bytes, encoding)).strip()
                     if cmd and _printable(cmd):
                         _render_cmd(ts_str, cmd)

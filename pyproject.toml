@@ -4,15 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "koi-handler"
-version = "0.10.8"
+version = "0.10.9"
 description = "Reverse shell listener"
 requires-python = ">=3.10"
+dependencies = [
+    "mcp>=2.0",
+    "uvicorn>=0.30",
+    "starlette>=0.40",
+]
 
 [project.optional-dependencies]
-# Koi's core stays dependency-free; MCP support is opt-in.
-# mcp 2.x only: the server is built with the on_* callback API, which 1.x
-# (decorator-based) does not accept.
-mcp = ["mcp>=2.0", "uvicorn>=0.30", "starlette>=0.40"]
+# Kept as an empty alias so `pipx install "koi-handler[mcp]"` still resolves for
+# anyone with it in a script or doc; the deps now live in core.
+mcp = []
 
 [project.scripts]
 koi = "koi.main:main"

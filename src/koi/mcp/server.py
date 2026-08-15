@@ -440,6 +440,7 @@ class KoiMCPServer:
         argv = schema_to_argv(mod_cls, {k: v for k, v in arguments.items() if k != "session"})
 
         error: Optional[str] = None
+        logger_obj = None
         with _capture_output() as buffer:
             try:
                 logger_obj = self.listener._ensure_logger(sess)
@@ -451,7 +452,7 @@ class KoiMCPServer:
                 raise RuntimeError(str(exc)) from exc
             except Exception as exc:
                 error = f"{type(exc).__name__}: {exc}"
-                if logger_obj := self.listener._loggers.get(sess.id):
+                if logger_obj is not None:
                     logger_obj.log_event(f"module_error  {mod_name}  {exc}")
 
         payload = {
@@ -560,7 +561,8 @@ class KoiMCPServer:
         inner = server.streamable_http_app(streamable_http_path="/mcp", host=self.host)
 
         async def app(scope, receive, send):
-            if scope.get("type") == "http":
+            scope_type = scope.get("type")
+            if scope_type == "http":
                 from starlette.responses import JSONResponse
 
                 headers = dict(scope.get("headers") or [])
@@ -570,6 +572,10 @@ class KoiMCPServer:
                         scope, receive, send
                     )
                     return
+            elif scope_type != "lifespan":
+                # Fail closed: only authenticated HTTP and the ASGI lifespan pass;
+                # any other transport (e.g. websocket) must not bypass the token.
+                return
             await inner(scope, receive, send)
 
         return app

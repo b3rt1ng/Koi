@@ -1,6 +1,8 @@
 """MCP server exposing Koi's sessions and modules to an MCP client.
 
-The server itself lives in :mod:`koi.mcp.server` and requires the optional
-``mcp`` dependency (``pipx install 'koi-handler[mcp]'``). Importing this package
-does not pull it in, so ``koi.mcp.schema`` stays usable on a bare install.
+The server lives in :mod:`koi.mcp.server`. Its dependencies (mcp, uvicorn,
+starlette) ship with core as of 0.11, so ``--mcp`` works on any install. They
+are still imported lazily, only when the server starts, to keep ``koi`` startup
+free of them on the common no-MCP path; the server itself stays off until the
+flag or config enables it.
 """

@@ -6,6 +6,7 @@ import shlex
 from typing import Callable, Optional
 
 from koi.modules.loader import load_modules
+from koi.utils.connect import TRANSPORTS, get_transport
 from koi.utils.payloads import get_interfaces
 from koi.utils.ui import (
     print_report_box,
@@ -30,6 +31,7 @@ ALIASES: dict[str, list[str]] = {
     "run":        ["run"],
     "setshell":   ["setshell", "sh"],
     "tag":        ["tag"],
+    "connect":    ["connect", "conn"],
 }
 
 _ALIAS_TO_CANON: dict[str, str] = {
@@ -93,6 +95,7 @@ USAGE: dict[str, tuple[int, str]] = {
     "kill":     (1, f"Usage: kill {accent('<id|tag>')}"),
     "setshell": (2, f"Usage: setshell {accent('<id|tag>')} {accent('<linux|windows_ps|windows_cmd>')}"),
     "tag":      (1, f"Usage: tag {accent('<id|tag>')} {accent('[name]')}"),
+    "connect":  (2, f"Usage: connect {accent('|'.join(TRANSPORTS))} {accent('<target>')} {accent('[args...]')}"),
 }
 
 
@@ -120,6 +123,11 @@ def set_session_provider(fn: Callable[[], list[str]]) -> None:
 
 def _session_refs() -> list[str]:
     return _session_provider() if _session_provider else []
+
+
+def _transport_hosts(name: str) -> list[str]:
+    transport = get_transport(name)
+    return transport.completions() if transport else []
 
 
 _READLINE_HISTORY_LENGTH = 200
@@ -166,6 +174,8 @@ def _match(text: str, candidates: list[str]) -> list[str]:
 def completer(text: str, state: int):
     line = readline.get_line_buffer()
     parts = line.strip().split()
+    if parts:
+        parts[0] = resolve_command(parts[0])
 
     if len(parts) == 0 or (len(parts) == 1 and not line.endswith(" ")):
         alias_hit = _ALIAS_TO_CANON.get(text.lower())
@@ -189,6 +199,18 @@ def completer(text: str, state: int):
         (len(parts) == 3 and not line.endswith(" "))
     ):
         options = _match(text, _session_refs())
+
+    elif parts[0] in ALIASES["connect"] and (
+        (len(parts) == 1 and line.endswith(" ")) or
+        (len(parts) == 2 and not line.endswith(" "))
+    ):
+        options = _match(text, list(TRANSPORTS))
+
+    elif parts[0] in ALIASES["connect"] and (
+        (len(parts) == 2 and line.endswith(" ")) or
+        (len(parts) == 3 and not line.endswith(" "))
+    ):
+        options = _match(text, _transport_hosts(parts[1]))
 
     elif parts[0] in _SESSION_ARG1_CMDS and (
         (len(parts) == 1 and line.endswith(" ")) or
@@ -225,6 +247,10 @@ def print_help() -> None:
             f"{accent('upgrade')} {bold('<id|tag>')}": "Upgrade session to a full PTY",
             f"{accent('kill')} {bold('<id|tag>')}": "Terminate and remove a session",
             f"{accent('tag')} {bold('<id|tag>')} {bold('[name]')}": "Assign or clear a tag on a session",
+            **{
+                f"{accent('connect')} {bold(t.name)} {bold(t.syntax)}": t.summary
+                for t in TRANSPORTS.values()
+            },
             f"{accent('payload')} {bold('[iface]')}": "Show reverse shell payloads",
             f"{accent('obfuscator')} {bold('[iface]')}": "Interactive payload obfuscator",
             f"{accent('modules')}": "List available modules",

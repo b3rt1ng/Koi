@@ -44,14 +44,23 @@ def _bash_quote_insert(payload: str) -> str:
 def _bash_var_split(payload: str) -> str:
     """Split key tokens across shell variables (_a=bas;_b=h;${_a}${_b} ...)."""
     assignments: list[str] = []
+    used: set[str] = set()
     result = payload
+
+    def _fresh() -> str:
+        while True:
+            v = _rand_var()
+            if v not in used:
+                used.add(v)
+                return v
+
     for token in sorted(_TOKENS, key=len, reverse=True):
         if token not in result:
             continue
         i = random.randint(1, len(token) - 1)
-        v1, v2 = _rand_var(), _rand_var()
+        v1, v2 = _fresh(), _fresh()
         assignments += [f"{v1}={token[:i]}", f"{v2}={token[i:]}"]
-        result = result.replace(token, f"${{{v1}}}${{{v2}}}", 1)
+        result = result.replace(token, f"${{{v1}}}${{{v2}}}")
     if assignments:
         return ";".join(assignments) + ";" + result
     return result
@@ -72,7 +81,7 @@ def _bash_ifs(payload: str) -> str:
     """
     v = _rand_var()
     safe = payload.replace("'", "'\\''")
-    return f"export {v}='{safe}';eval \"${v}\""
+    return f"{v}='{safe}';eval \"${v}\""
 
 
 _FAKE_PROC_NAMES = [

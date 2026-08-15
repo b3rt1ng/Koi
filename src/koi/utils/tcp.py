@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import socket
 import threading
+import time
 from typing import Callable, Optional
 import random
 
@@ -11,12 +12,13 @@ from koi.utils.constants import SOCKET_BUFFER_SIZE
 
 def _try_bind_port(port: int) -> tuple[socket.socket, int] | None:
     """Try to bind to a specific port. Returns (socket, port) or None if port is in use."""
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
-        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         srv.bind(("0.0.0.0", port))
         return (srv, port)
     except OSError:
+        srv.close()
         return None
 
 
@@ -60,6 +62,7 @@ def spawn_send_server(
     data: bytes,
     timeout: float = 30.0,
     on_progress: Optional[Callable[[int], None]] = None,
+    expected_ip: Optional[str] = None,
 ) -> tuple[int, threading.Thread, list[str]]:
     """
     Open a one-shot TCP server that sends *data* to the first incoming connection.
@@ -68,16 +71,29 @@ def spawn_send_server(
     - *thread* is already started (daemon); join it to wait for completion.
     - *errors* is a list that will contain an error string if the transfer fails.
     - *on_progress*: optional ``callback(bytes_sent)`` called after each chunk.
+    - *expected_ip*: when set, connections from any other peer are dropped, so a
+      stray scan on this side-channel port cannot steal the payload.
     """
     srv, port = bind_side_channel_port()
     srv.listen(1)
-    srv.settimeout(timeout)
 
     errors: list[str] = []
 
     def _run() -> None:
+        deadline = time.monotonic() + timeout
         try:
-            conn, _ = srv.accept()
+            conn = None
+            while conn is None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("no matching connection before timeout")
+                srv.settimeout(remaining)
+                candidate, peer = srv.accept()
+                if expected_ip is not None and peer[0] != expected_ip:
+                    candidate.close()
+                    continue
+                conn = candidate
+            conn.settimeout(timeout)
             sent = 0
             while sent < len(data):
                 chunk = data[sent:sent + SOCKET_BUFFER_SIZE]
@@ -116,18 +132,22 @@ class TCPReceiveServer:
         return self
 
     def _run(self) -> None:
+        buf = b""
         try:
             conn, _ = self._sock.accept()
-            buf = b""
-            while chunk := conn.recv(SOCKET_BUFFER_SIZE):
-                buf += chunk
-                if self._on_progress:
-                    self._on_progress(len(buf))
+            conn.settimeout(self._timeout)
+            try:
+                while chunk := conn.recv(SOCKET_BUFFER_SIZE):
+                    buf += chunk
+                    if self._on_progress:
+                        self._on_progress(len(buf))
+            except socket.timeout:
+                pass
             conn.close()
-            self._data = buf
         except Exception as exc:
             self._error = str(exc)
         finally:
+            self._data = buf
             self._close()
             self._done.set()
 

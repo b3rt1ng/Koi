@@ -179,8 +179,11 @@ class RawTerminal:
         self._fd = sys.stdin.fileno()
 
     def __enter__(self):
-        self._old = termios.tcgetattr(self._fd)
-        tty.setraw(self._fd)
+        try:
+            self._old = termios.tcgetattr(self._fd)
+            tty.setraw(self._fd)
+        except termios.error:
+            self._old = None
         return self
 
     def __exit__(self, *_):

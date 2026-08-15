@@ -11,11 +11,16 @@ if TYPE_CHECKING:
     from koi.session import Session
 
 from koi.utils.config import TIMEOUTS
+from koi.utils.constants import SOCKET_BUFFER_SIZE
 
 logger = logging.getLogger("koi.detect")
 
 _TIMEOUT = TIMEOUTS["session_detect"]
 _SELECT_TIMEOUT = 0.1
+
+_NIX_TOKENS = ("linux", "darwin", "freebsd", "openbsd", "netbsd")
+_WIN_TOKENS = ("windows", "microsoft", "c:\\", "is not recognized")
+_FALLBACK_TOKENS = _NIX_TOKENS + _WIN_TOKENS
 
 
 def _recv_for(
@@ -37,7 +42,7 @@ def _recv_for(
         try:
             r, _, _ = select.select([session.conn], [], [], min(remaining, _SELECT_TIMEOUT))
             if r:
-                chunk = session.conn.recv(4096)
+                chunk = session.conn.recv(SOCKET_BUFFER_SIZE)
                 if not chunk:
                     session.alive = False
                     break
@@ -82,7 +87,6 @@ def detect_os(session: "Session") -> None:
         )
         logger.debug(f"[detect] session #{session.id} raw response: {response!r}")
 
-        # Inside the lock: _apply may fall through to _fallback, which probes again.
         _apply(session, response, expected)
 
 
@@ -134,10 +138,9 @@ def _fallback(session: "Session") -> None:
     try:
         session.conn.sendall(b"uname\r\n")
     except OSError:
+        session.alive = False
         return
 
-    _FALLBACK_TOKENS = ("linux", "darwin", "freebsd", "openbsd", "netbsd",
-                        "windows", "microsoft", "c:\\")
     response = _recv_for(
         session, _TIMEOUT,
         stop_when=lambda text: any(x in text.lower() for x in _FALLBACK_TOKENS),
@@ -145,9 +148,9 @@ def _fallback(session: "Session") -> None:
     r = response.lower()
     logger.debug(f"[detect] session #{session.id} fallback response: {response!r}")
 
-    if any(x in r for x in ("linux", "darwin", "freebsd", "openbsd", "netbsd")):
+    if any(x in r for x in _NIX_TOKENS):
         session.set_os_type("linux")
-    elif any(x in r for x in ("windows", "microsoft", "c:\\")):
+    elif any(x in r for x in _WIN_TOKENS):
         session.set_os_type("windows_cmd")
     else:
         logger.debug(f"[detect] session #{session.id}, detection failed, os_type stays None")

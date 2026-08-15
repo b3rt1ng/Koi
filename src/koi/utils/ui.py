@@ -18,9 +18,11 @@ RST = "\033[0m"
 DIM = "\033[2m"
 BOLD = "\033[1m"
 
-__version__ = importlib.metadata.version("koi-handler")
+try:
+    __version__ = importlib.metadata.version("koi-handler")
+except importlib.metadata.PackageNotFoundError:
+    __version__ = "dev"
 
-# UI constants
 _READLINE_HISTORY_LENGTH = 200
 _SPINNER_FRAME_DELAY = 0.08
 
@@ -596,7 +598,11 @@ def yesno(question: str, prechosen: bool = True) -> bool:
     choice_hint = "[Y/n]" if prechosen else "[y/N]"
 
     while True:
-        answer = _input_no_history(f"  {color_signal(PUMPKIN)}?  {color_signal(WHITE)}{question} {color_signal(SILVER)}{choice_hint}{color_signal(WHITE)} ").strip().lower()
+        try:
+            answer = _input_no_history(f"  {color_signal(PUMPKIN)}?  {color_signal(WHITE)}{question} {color_signal(SILVER)}{choice_hint}{color_signal(WHITE)} ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return False
 
         if answer == "":
             return prechosen
@@ -649,7 +655,7 @@ def print_payloads(iface: str | None, port: int) -> None:
             return
         interfaces = gen.get_interfaces()
         for name, payloads in all_payloads.items():
-            _show(f"{name}  {interfaces[name]}", payloads)
+            _show(f"{name}  {interfaces.get(name, '')}", payloads)
     else:
         payloads = gen.for_interface(iface)
         if payloads is None:

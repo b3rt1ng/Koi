@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 
@@ -62,14 +63,14 @@ def _load() -> dict:
                 return _deep_merge(DEFAULTS, data)
         except (json.JSONDecodeError, OSError):
             pass
-        return dict(DEFAULTS)
+        return copy.deepcopy(DEFAULTS)
 
     try:
         _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         _CONFIG_PATH.write_text(json.dumps(DEFAULTS, indent=4) + "\n")
     except OSError:
         pass
-    return dict(DEFAULTS)
+    return copy.deepcopy(DEFAULTS)
 
 
 def persist(key: str, value) -> bool:
@@ -86,7 +87,10 @@ def persist(key: str, value) -> bool:
                 if isinstance(loaded, dict):
                     data = loaded
             except json.JSONDecodeError:
-                pass  # malformed file: rewrite it rather than lose the key
+                try:
+                    _CONFIG_PATH.replace(_CONFIG_PATH.with_name(_CONFIG_PATH.name + ".bak"))
+                except OSError:
+                    pass
         data[key] = value
         _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         _CONFIG_PATH.write_text(json.dumps(data, indent=4) + "\n")
@@ -105,7 +109,6 @@ COLORS   = CONFIG["colors"]
 TIMEOUTS = CONFIG["timeouts"]
 SIDETCPS = CONFIG.get("sidetcps", DEFAULTS["sidetcps"])
 
-# Runtime mode: set to True when --local flag is used
 LOCAL_MODE = False
 
 
