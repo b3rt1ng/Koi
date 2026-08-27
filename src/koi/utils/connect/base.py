@@ -8,11 +8,7 @@ from koi.utils.ui import accent
 
 @dataclass
 class Target:
-    """Where a transport should drop the callback payload.
-
-    ``destination`` is what the transport binary itself takes, ``host`` the bare
-    hostname Koi resolves to pick the interface the payload calls back to.
-    """
+    """``destination`` goes to the transport binary; ``host`` resolves the callback interface."""
     destination: str
     host: str
     password: Optional[str] = field(default=None, repr=False)
@@ -20,12 +16,7 @@ class Target:
 
 
 class Transport:
-    """A way to run one command on a host we already have access to.
-
-    The transport is only the delivery vector: the payload it carries calls back
-    to the listener on its own socket, so a subclass never deals with the
-    session that lands. Only ``parse`` and ``build_command`` are required.
-    """
+    """``parse`` and ``build_command`` are required; the payload calls back on its own socket."""
 
     name: str = ""
     syntax: str = ""   # destination spec, shown in `help` and usage errors
@@ -42,6 +33,15 @@ class Transport:
     def build_command(self, target: Target, remote_script: str) -> list[str]:
         """The local argv that runs *remote_script* on *target*."""
         raise NotImplementedError
+
+    def remote_script(self, local_ip: str, port: int) -> str:
+        """The payload to run on the target; defaults to the POSIX callback."""
+        from koi.utils.payloads import linux_callback_script
+        return linux_callback_script(local_ip, port)
+
+    def resolve_host(self, target: Target) -> Optional[str]:
+        """Hostname for the callback interface; None when Koi cannot route to the target itself."""
+        return target.host
 
     def resolve_auth(self, target: Target) -> bool:
         """Settle authentication, prompting if needed. False aborts the connect."""

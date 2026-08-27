@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import copy
 import json
+import os
+import tempfile
 from pathlib import Path
 
 _CONFIG_PATH = Path.home() / ".koi" / "config.json"
@@ -36,8 +38,8 @@ DEFAULTS = {
 
     "sidetcps": [5985, 5986, 445, 3389],
 
-    "mcp_activate":   False,   # start the MCP server without passing --mcp
-    "mcp_exec_allow": False,   # allow exec/modules over MCP without --mcp-allow-exec
+    "mcp_activate":   False,
+    "mcp_exec_allow": False,
     "mcp_port":       7331,
     "mcp_token":      None,
 }
@@ -55,12 +57,39 @@ def _deep_merge(defaults: dict, overrides: dict) -> dict:
     return merged
 
 
+def _coerce(cfg: dict) -> dict:
+    """Repair values whose type would crash a consumer that reads them raw."""
+    st = cfg.get("sidetcps")
+    if not isinstance(st, list) or not all(
+        isinstance(x, int) and not isinstance(x, bool) for x in st
+    ):
+        cfg["sidetcps"] = list(DEFAULTS["sidetcps"])
+
+    to = cfg.get("timeouts")
+    if isinstance(to, dict):
+        for k, dv in DEFAULTS["timeouts"].items():
+            v = to.get(k, dv)
+            if isinstance(v, bool) or not isinstance(v, (int, float)):
+                to[k] = dv
+    else:
+        cfg["timeouts"] = dict(DEFAULTS["timeouts"])
+
+    for k in ("port", "mcp_port"):
+        v = cfg.get(k)
+        if isinstance(v, bool) or not isinstance(v, int):
+            try:
+                cfg[k] = int(v)
+            except (TypeError, ValueError):
+                cfg[k] = DEFAULTS[k]
+    return cfg
+
+
 def _load() -> dict:
     if _CONFIG_PATH.exists():
         try:
             data = json.loads(_CONFIG_PATH.read_text())
             if isinstance(data, dict):
-                return _deep_merge(DEFAULTS, data)
+                return _coerce(_deep_merge(DEFAULTS, data))
         except (json.JSONDecodeError, OSError):
             pass
         return copy.deepcopy(DEFAULTS)
@@ -74,11 +103,7 @@ def _load() -> dict:
 
 
 def persist(key: str, value) -> bool:
-    """Write a single top-level key to the user's config file.
-
-    Re-reads first so a concurrent edit is not clobbered, and chmods 0600
-    because the config holds the MCP bearer token. False if unwritable.
-    """
+    """Re-reads first so a concurrent edit is kept; 0600 because the config holds the MCP token."""
     try:
         data = {}
         if _CONFIG_PATH.exists():
@@ -86,6 +111,11 @@ def persist(key: str, value) -> bool:
                 loaded = json.loads(_CONFIG_PATH.read_text())
                 if isinstance(loaded, dict):
                     data = loaded
+                else:
+                    try:
+                        _CONFIG_PATH.replace(_CONFIG_PATH.with_name(_CONFIG_PATH.name + ".bak"))
+                    except OSError:
+                        pass
             except json.JSONDecodeError:
                 try:
                     _CONFIG_PATH.replace(_CONFIG_PATH.with_name(_CONFIG_PATH.name + ".bak"))
@@ -93,11 +123,18 @@ def persist(key: str, value) -> bool:
                     pass
         data[key] = value
         _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _CONFIG_PATH.write_text(json.dumps(data, indent=4) + "\n")
+        fd, tmp = tempfile.mkstemp(dir=str(_CONFIG_PATH.parent), prefix=".config.", suffix=".tmp")
         try:
-            _CONFIG_PATH.chmod(0o600)
+            os.chmod(tmp, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(json.dumps(data, indent=4) + "\n")
+            os.replace(tmp, _CONFIG_PATH)
         except OSError:
-            pass
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
         CONFIG[key] = value
         return True
     except OSError:
@@ -113,7 +150,6 @@ LOCAL_MODE = False
 
 
 def color(name: str) -> tuple[int, int, int]:
-    """Return an RGB tuple for `name`, falling back to the built-in default on bad config."""
     value = COLORS.get(name, DEFAULTS["colors"][name])
     try:
         r, g, b = value
@@ -124,7 +160,6 @@ def color(name: str) -> tuple[int, int, int]:
 
 
 def timeout(name: str) -> float:
-    """Return a timeout in seconds for `name`, falling back to the built-in default on bad config."""
     value = TIMEOUTS.get(name, DEFAULTS["timeouts"][name])
     try:
         return float(value)

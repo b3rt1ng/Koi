@@ -31,6 +31,10 @@ _PS_PROMPT = re.compile(r'^PS\s+\S+>\s*')
 # Lines exec_stream holds while learning whether the shell echoes.
 _ECHO_PREAMBLE_LINES = 8
 _SELECT_TIMEOUT = 0.1
+# Ceilings so a command that streams endlessly (or without newlines) cannot grow
+# unbounded in memory while exec() waits for its sentinel or its timeout.
+_MAX_EXEC_OUTPUT_BYTES = 8 * 1024 * 1024
+_MAX_LINE_BYTES = 1024 * 1024
 
 
 def _owns_io(fn):
@@ -241,7 +245,9 @@ class KoiModule(ABC):
 
         buf = b""
         deadline = time.monotonic() + timeout
-        lines: list[str] = []
+        # Only the last line before the marker is the answer, so keep just that
+        # one rather than accumulating a whole (possibly huge) output in memory.
+        last_line = ""
 
         while True:
             remaining = deadline - time.monotonic()
@@ -261,15 +267,15 @@ class KoiModule(ABC):
                 if not text or "Write-Host" in text:
                     continue
                 if marker in text:
-                    result = lines[-1] if lines else ""
+                    result = last_line
                     if self._logger and result:
                         self._logger.log_event(f"exec  {ps_expr}")
                         self._logger.log_output(result.encode("utf-8", errors="replace"))
                     return result
-                lines.append(text)
+                last_line = text
 
         # timeout path
-        result = lines[-1] if lines else ""
+        result = last_line
         if self._logger and result:
             self._logger.log_event(f"exec  {ps_expr}")
             self._logger.log_output(result.encode("utf-8", errors="replace"))
@@ -482,6 +488,9 @@ class KoiModule(ABC):
             while b"\n" in buf:
                 raw_line, buf = buf.split(b"\n", 1)
                 yield raw_line.decode("utf-8", errors="replace").strip("\r")
+            if len(buf) > _MAX_LINE_BYTES:
+                yield buf.decode("utf-8", errors="replace").strip("\r")
+                buf = b""
 
     @_owns_io
     def exec(self, command: str, timeout: float = TIMEOUTS["exec_command"], _silent: bool = False):
@@ -494,17 +503,27 @@ class KoiModule(ABC):
 
         started = time.monotonic()
         output_lines: List[str] = []
-        returncode = 1  # the socket closing mid-command is a failure
+        output_bytes = 0
+        truncated = False
+        returncode = 1
 
         for text in self._read_lines(command, timeout):
             if match := done_re.match(text):
                 returncode = int(match.group(1))
                 break
             if marker in text:
-                # The echo: everything up to it is prompt and command noise.
                 output_lines.clear()
+                output_bytes = 0
+                truncated = False
                 continue
-            output_lines.append(text)
+            if truncated:
+                continue
+            output_bytes += len(text) + 1
+            if output_bytes > _MAX_EXEC_OUTPUT_BYTES:
+                truncated = True
+                output_lines.append(f"[output truncated at {_MAX_EXEC_OUTPUT_BYTES} bytes]")
+            else:
+                output_lines.append(text)
 
         output = "\n".join(output_lines)
         if self._logger and not _silent:

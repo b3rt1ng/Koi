@@ -1,17 +1,15 @@
-"""MCP server exposing Koi's live sessions and modules.
-
-Runs in a listener thread and shares the session table directly, hence HTTP
-rather than stdio: stdin/stdout belong to the REPL. Every shell operation takes
-the session I/O lock with a timeout, so a call during ``go`` fails fast.
-"""
+"""MCP server over HTTP, not stdio: stdin/stdout belong to the REPL."""
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import io
 import json
 import logging
+import ntpath
+import posixpath
 import secrets
 import sys
 import threading
@@ -38,24 +36,61 @@ _LOG_URI_PREFIX = "koi://logs/"
 
 _DEFAULT_EXEC_TIMEOUT = 30.0
 _MAX_EXEC_TIMEOUT = 600.0
+_MAX_TAG_LEN = 64
+_MAX_OUTPUT_BYTES = 256 * 1024
+
+# MCP file transfers are confined here; a CLI operator stays unrestricted.
+_DOWNLOAD_ROOT = Path.home() / ".koi" / "downloads"
+_UPLOAD_ROOT = Path.home() / ".koi" / "uploads"
+
+# Tools that mutate state or run code: never offered on a read-only connection.
+_EXEC_ONLY_TOOLS = {"koi_exec", "koi_tag"}
 
 _REQUIRED_PACKAGES = ("mcp", "uvicorn", "starlette")
 
 
 def missing_dependencies() -> List[str]:
-    """Return the optional packages MCP support needs but that are not installed."""
     import importlib.util
 
     return [n for n in _REQUIRED_PACKAGES if importlib.util.find_spec(n) is None]
 
 
+def _cap(text: str) -> tuple[str, bool]:
+    encoded = text.encode("utf-8", errors="replace")
+    if len(encoded) <= _MAX_OUTPUT_BYTES:
+        return text, False
+    return encoded[:_MAX_OUTPUT_BYTES].decode("utf-8", errors="ignore"), True
+
+
+def _render_log(path: Path) -> str:
+    out: list[str] = []
+    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            entry = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        kind = entry.get("type")
+        if kind in ("input", "output"):
+            try:
+                text = base64.b64decode(entry["data"]).decode("utf-8", errors="replace")
+            except Exception:
+                continue
+            out.append(_strip_ansi(text))
+        elif kind == "event":
+            out.append(f"[{entry.get('msg', '')}]")
+        elif kind == "meta":
+            out.append(f"[session #{entry.get('id')} {entry.get('ip')} {entry.get('os')}]")
+    return "".join(out)
+
+
 def _strip_ansi(text: str) -> str:
-    """Flatten a terminal stream into text a model can read."""
     return ANSI_RE.sub("", text).replace("\r", "")
 
 
 def _exec_timeout(value) -> float:
-    """Validate the timeout a client asked for, clamped to something survivable."""
     if value is None:
         return _DEFAULT_EXEC_TIMEOUT
     if isinstance(value, bool) or not isinstance(value, (int, float, str)):
@@ -67,6 +102,28 @@ def _exec_timeout(value) -> float:
     if timeout <= 0 or timeout != timeout:  # NaN compares unequal to itself
         raise ValueError(f"timeout must be greater than 0, got {value!r}")
     return min(timeout, _MAX_EXEC_TIMEOUT)
+
+
+def _confine_download_output(client_value, remote_path: str) -> str:
+    _DOWNLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+    if client_value:
+        base = Path(str(client_value)).name  # drop any directory component
+    else:
+        stripped = remote_path.rstrip("/\\")
+        base = ntpath.basename(stripped) or posixpath.basename(stripped)
+    return str(_DOWNLOAD_ROOT / (base or "download"))
+
+
+def _confine_upload_source(client_value) -> str:
+    _UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+    root = _UPLOAD_ROOT.resolve()
+    candidate = Path(str(client_value or ""))
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    candidate = candidate.resolve()
+    if candidate != root and root not in candidate.parents:
+        raise ValueError(f"upload local_path must stay under {root}")
+    return str(candidate)
 
 
 def _uptime(since: Optional[float]) -> Optional[str]:
@@ -87,20 +144,18 @@ def _version() -> str:
         return "unknown"
 
 
-def _tool(name: str, description: str, properties=None, required=None) -> Dict[str, Any]:
+def _tool(name: str, description: str, properties=None, required=None, annotations=None) -> Dict[str, Any]:
     schema: Dict[str, Any] = {"type": "object", "properties": properties or {}}
     if required:
         schema["required"] = required
-    return {"name": name, "description": description, "input_schema": schema}
+    tool: Dict[str, Any] = {"name": name, "description": description, "input_schema": schema}
+    if annotations:
+        tool["annotations"] = annotations
+    return tool
 
 
 class _ThreadStream:
-    """A ``sys.stdout``/``sys.stderr`` stand-in that redirects one thread at a time.
-
-    ``contextlib.redirect_stdout`` swaps process-wide: it swallows the REPL's
-    output, breaks ``isatty()``, and on overlapping calls can strand
-    ``sys.stdout`` on a dead buffer. Keying off the thread avoids all three.
-    """
+    """Per-thread stdout/stderr stand-in: contextlib.redirect_stdout swaps process-wide and would break the REPL."""
 
     _THREAD_ATTRS = frozenset({"write", "writelines", "flush", "isatty"})
 
@@ -109,8 +164,7 @@ class _ThreadStream:
         self._local = threading.local()
 
     def for_thread(self):
-        """The stream this thread writes to. ``ui.Spinner`` asks, to inherit its
-        caller's capture from the thread it spawns."""
+        """The stream this thread writes to; ui.Spinner calls it to inherit its caller's capture."""
         return getattr(self._local, "buffer", None) or self._target
 
     @contextlib.contextmanager
@@ -129,27 +183,64 @@ class _ThreadStream:
         return getattr(target, name)
 
 
+class _ThreadStdin:
+    """input() on an MCP worker thread would block forever on the operator's terminal, so reads raise EOFError."""
+
+    def __init__(self, target):
+        self._target = target
+        self._local = threading.local()
+
+    @contextlib.contextmanager
+    def block(self):
+        prev = getattr(self._local, "blocked", False)
+        self._local.blocked = True
+        try:
+            yield
+        finally:
+            self._local.blocked = prev
+
+    def _blocked(self):
+        return getattr(self._local, "blocked", False)
+
+    def readline(self, *a):
+        if self._blocked():
+            raise EOFError("stdin is not available to MCP tools")
+        return self._target.readline(*a)
+
+    def read(self, *a):
+        if self._blocked():
+            raise EOFError("stdin is not available to MCP tools")
+        return self._target.read(*a)
+
+    def __getattr__(self, name):
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return getattr(self._target, name)
+
+
 _streams_lock = threading.Lock()
 _streams: Optional[tuple] = None
+_stdin: Optional[_ThreadStdin] = None
 
 
 @contextlib.contextmanager
 def _capture_output():
-    """Collect this thread's stdout and stderr into one buffer."""
-    global _streams
+    global _streams, _stdin
     with _streams_lock:
         if _streams is None:
             _streams = (_ThreadStream(sys.stdout), _ThreadStream(sys.stderr))
             sys.stdout, sys.stderr = _streams
+        if _stdin is None:
+            _stdin = _ThreadStdin(sys.stdin)
+            sys.stdin = _stdin
 
     out, err = _streams
     buffer = io.StringIO()
-    with out.capture(buffer), err.capture(buffer):
+    with out.capture(buffer), err.capture(buffer), _stdin.block():
         yield buffer
 
 
 def resolve_token(explicit: Optional[str] = None) -> str:
-    """Bearer token surviving restarts: flag, then $KOI_MCP_TOKEN, then config."""
     import os
 
     from koi.utils.config import CONFIG, persist
@@ -167,8 +258,6 @@ def resolve_token(explicit: Optional[str] = None) -> str:
 
 
 class KoiMCPServer:
-    """Wraps a running :class:`~koi.listener.Listener` as an MCP server."""
-
     def __init__(
         self,
         listener: "Listener",
@@ -214,8 +303,6 @@ class KoiMCPServer:
         }
 
     def _status(self) -> Dict[str, Any]:
-        """Where Koi listens, where a payload calls back, what is degraded, and
-        what this connection is allowed to do."""
         from koi.utils.config import SIDETCPS
         from koi.utils.payloads import get_interfaces
 
@@ -334,6 +421,8 @@ class KoiMCPServer:
                     f"{(cls.description or '').strip()} (targets: {targets})",
                     schema["properties"],
                     schema["required"],
+                    # camelCase: ToolAnnotations fields carry no alias in mcp 2.x.
+                    annotations={"destructiveHint": True},
                 )
             )
         return tools
@@ -342,10 +431,9 @@ class KoiMCPServer:
         if self.allow_exec:
             return self._static_tools() + self._module_tools()
 
-        return [t for t in self._static_tools() if t["name"] != "koi_exec"]
+        return [t for t in self._static_tools() if t["name"] not in _EXEC_ONLY_TOOLS]
 
     def call_tool(self, name: str, arguments: Dict[str, Any]) -> str:
-        """Run a tool and return its textual result, on a worker thread."""
         arguments = arguments or {}
 
         if name == "koi_status":
@@ -364,8 +452,24 @@ class KoiMCPServer:
             )
 
         if name == "koi_tag":
+            self._require_exec()
             sess = self._resolve(arguments["session"])
-            sess.tag = arguments.get("tag") or None
+            raw = arguments.get("tag")
+            tag = _strip_ansi(str(raw)).strip()[:_MAX_TAG_LEN] if raw else ""
+            if not tag:
+                sess.tag = None
+                return json.dumps({"id": sess.id, "tag": None})
+            if tag.isdigit():
+                raise ValueError(
+                    f"Tag {tag!r} is numeric and would be unreachable (ids resolve first)"
+                )
+            conflict = next(
+                (s for s in self.listener._snapshot() if s.tag == tag and s.id != sess.id),
+                None,
+            )
+            if conflict is not None:
+                raise ValueError(f"Tag {tag!r} already used by session #{conflict.id}")
+            sess.tag = tag
             return json.dumps({"id": sess.id, "tag": sess.tag})
 
         if name == "koi_exec":
@@ -395,12 +499,18 @@ class KoiMCPServer:
     def _do_exec(self, arguments: Dict[str, Any]) -> str:
         self._require_exec()
         sess = self._resolve(arguments["session"])
+        if sess.os_type != "linux":
+            raise ValueError(
+                f"koi_exec runs POSIX shell and only supports Linux sessions; "
+                f"#{sess.id} is {sess.os_type or 'unknown OS'} — use a module instead."
+            )
 
         command = arguments["command"]
         if not isinstance(command, str) or not command.strip():
             raise ValueError("command must be a non-empty string")
         timeout = _exec_timeout(arguments.get("timeout"))
 
+        self.listener._announce('status', f"MCP: exec on session #{sess.id}")
         with _capture_output():
             logger_obj = self.listener._ensure_logger(sess)
         sess.attach_logger(logger_obj)
@@ -411,16 +521,17 @@ class KoiMCPServer:
         except SessionBusy as exc:
             raise RuntimeError(str(exc)) from exc
 
-        return json.dumps(
-            {
-                "session": sess.id,
-                "command": result.command,
-                "returncode": result.returncode,
-                "stdout": _strip_ansi(result.stdout),
-                "duration": round(result.duration, 3),
-            },
-            indent=2,
-        )
+        stdout, truncated = _cap(_strip_ansi(result.stdout))
+        payload = {
+            "session": sess.id,
+            "command": result.command,
+            "returncode": result.returncode,
+            "stdout": stdout,
+            "duration": round(result.duration, 3),
+        }
+        if truncated:
+            payload["truncated"] = True
+        return json.dumps(payload, indent=2)
 
     def _do_run_module(self, mod_name: str, arguments: Dict[str, Any]) -> str:
         self._require_exec()
@@ -437,7 +548,17 @@ class KoiMCPServer:
                 f"({sess.os_type or 'unknown OS'})"
             )
 
-        argv = schema_to_argv(mod_cls, {k: v for k, v in arguments.items() if k != "session"})
+        self.listener._announce('status', f"MCP: module {mod_name} on session #{sess.id}")
+
+        # Local paths from an MCP client stay confined to ~/.koi, never the operator's disk at large.
+        safe_args = {k: v for k, v in arguments.items() if k != "session"}
+        if mod_name == "download":
+            remote = safe_args.get("remote_path")
+            remote_str = " ".join(remote) if isinstance(remote, list) else str(remote or "")
+            safe_args["output"] = _confine_download_output(safe_args.get("output"), remote_str)
+        elif mod_name == "upload":
+            safe_args["local_path"] = _confine_upload_source(safe_args.get("local_path"))
+        argv = schema_to_argv(mod_cls, safe_args)
 
         error: Optional[str] = None
         logger_obj = None
@@ -455,12 +576,15 @@ class KoiMCPServer:
                 if logger_obj is not None:
                     logger_obj.log_event(f"module_error  {mod_name}  {exc}")
 
+        output, truncated = _cap(_strip_ansi(buffer.getvalue()).strip())
         payload = {
             "session": sess.id,
             "module": mod_name,
             "argv": argv,
-            "output": _strip_ansi(buffer.getvalue()).strip(),
+            "output": output,
         }
+        if truncated:
+            payload["truncated"] = True
         if error is not None:
             payload["error"] = error
         return json.dumps(payload, indent=2)
@@ -488,7 +612,8 @@ class KoiMCPServer:
         if path.parent != root or not path.is_file():
             raise ValueError(f"Log not found: {uri}")
 
-        return _strip_ansi(path.read_text(encoding="utf-8", errors="replace"))
+        text, _ = _cap(_render_log(path))
+        return text
 
     def _instructions(self) -> str:
         """Sent once at initialize: anything runtime-varying belongs in koi_status."""
@@ -516,7 +641,6 @@ class KoiMCPServer:
         )
 
     def _build_app(self):
-        """Assemble the MCP server and its ASGI wrapper (mcp 2.x low-level API)."""
         import mcp.types as types
         from mcp.server.lowlevel import Server
 
@@ -573,8 +697,7 @@ class KoiMCPServer:
                     )
                     return
             elif scope_type != "lifespan":
-                # Fail closed: only authenticated HTTP and the ASGI lifespan pass;
-                # any other transport (e.g. websocket) must not bypass the token.
+                # Fail closed: any other transport (e.g. websocket) must not bypass the token.
                 return
             await inner(scope, receive, send)
 

@@ -1,20 +1,23 @@
 from __future__ import annotations
 
-import getpass
 import os
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Optional
 
 from koi.utils.connect.base import Target, Transport
-from koi.utils.ui import accent, bold, muted, notify
+from koi.utils.ui import accent, muted, notify
 
 _VALUE_FLAGS = set("BbcDEeFIiJLlmOopQRSWw")
 
 _SSHPASS_EXIT: dict[int, str] = {
     5: "invalid or incorrect password",
-    6: "host key unknown or changed",
+    6: "host key not accepted",
 }
+
+_CONFIG_TIMEOUT = 5.0
+_CONNECT_TIMEOUT = 10
 
 
 class SshTransport(Transport):
@@ -52,32 +55,25 @@ class SshTransport(Transport):
         ssh = ["ssh"]
         if not any("StrictHostKeyChecking" in a for a in target.args):
             ssh += ["-o", "StrictHostKeyChecking=accept-new"]
+        if not any("ConnectTimeout" in a for a in target.args):
+            ssh += ["-o", f"ConnectTimeout={_CONNECT_TIMEOUT}"]
 
         argv = ssh + target.args + [target.destination, remote_script]
         return ["sshpass", "-e"] + argv if target.password else argv
 
+    def resolve_host(self, target: Target) -> Optional[str]:
+        config = self._effective_config(target)
+        if config is None:
+            return target.host
+        if "proxyjump" in config or "proxycommand" in config:
+            return None
+        return config.get("hostname") or target.host
+
     def resolve_auth(self, target: Target) -> bool:
-        """An inline password or an ``-i`` key needs nothing from the operator."""
-        have_sshpass = bool(shutil.which("sshpass"))
-
-        if target.password:
-            if not have_sshpass:
-                notify('error', f"An inline password needs {accent('sshpass')}, which is not installed.")
-                notify('status', muted("Install it, or drop the password and let ssh prompt for it."))
-                return False
-            return True
-
-        if any(a == "-i" or a.startswith("-i") for a in target.args):
-            return True
-
-        if not have_sshpass:
-            notify('status', muted(f"{accent('sshpass')} is not installed; ssh will prompt for the password itself."))
-            return True
-
-        pw = self._prompt_password(target.destination)
-        if pw is None:
+        if target.password and not shutil.which("sshpass"):
+            notify('error', f"An inline password needs {accent('sshpass')}, which is not installed.")
+            notify('status', muted("Install it, or drop the password and let ssh prompt for it."))
             return False
-        target.password = pw or None
         return True
 
     def env(self, target: Target) -> Optional[dict[str, str]]:
@@ -89,7 +85,6 @@ class SshTransport(Transport):
         return f"exit code {code}"
 
     def completions(self) -> list[str]:
-        """Host aliases from ~/.ssh/config, patterns excluded (they are not targets)."""
         hosts: list[str] = []
         try:
             lines = (Path.home() / ".ssh" / "config").read_text().splitlines()
@@ -102,11 +97,20 @@ class SshTransport(Transport):
         return hosts
 
     @staticmethod
-    def _prompt_password(destination: str) -> Optional[str]:
-        """None if the operator cancels, the raw string otherwise, empty included."""
+    def _effective_config(target: Target) -> Optional[dict[str, str]]:
+        """``ssh -G`` only expands the config, it never contacts the host."""
         try:
-            return getpass.getpass(f"  {accent('password')} for {bold(destination)}: ")
-        except (KeyboardInterrupt, EOFError):
-            print()
-            notify('warning', "Cancelled.")
+            probe = subprocess.run(
+                ["ssh", "-G"] + target.args + [target.destination],
+                capture_output=True, text=True, timeout=_CONFIG_TIMEOUT,
+            )
+        except (OSError, subprocess.SubprocessError):
             return None
+        if probe.returncode != 0:
+            return None
+
+        config: dict[str, str] = {}
+        for line in probe.stdout.splitlines():
+            key, _, value = line.partition(" ")
+            config.setdefault(key.lower(), value)
+        return config

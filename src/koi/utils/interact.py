@@ -20,16 +20,15 @@ _INITIAL_SLEEP = 0.3
 _EXIT_SLEEP = 0.2
 
 
-def interact(sess: Session, logger=None) -> str:
-    # Held for the whole session: the receive thread reads continuously, so
-    # nothing else may touch the socket until backgrounded or dropped.
-    with sess.io(holder="interact"):
+def interact(sess: Session, logger=None, poll_resize=None, io_timeout=None) -> str:
+    # The recv thread reads the socket continuously: nothing else may touch it until this returns.
+    with sess.io(holder="interact", timeout=io_timeout):
         if sess.os_type in ("windows_cmd", "windows_ps") and not sess.upgraded:
             return _interact_windows(sess, logger)
-        return _interact_raw(sess, logger)
+        return _interact_raw(sess, logger, poll_resize)
 
 
-def _interact_raw(sess: Session, logger=None) -> str:
+def _interact_raw(sess: Session, logger=None, poll_resize=None) -> str:
     stop_event = threading.Event()
     result = ["backgrounded"]
 
@@ -61,6 +60,8 @@ def _interact_raw(sess: Session, logger=None) -> str:
             recv_thread.start()
             try:
                 while not stop_event.is_set():
+                    if poll_resize is not None:
+                        poll_resize()
                     r, _, _ = select.select([sys.stdin], [], [], 0.1)
                     if not r:
                         continue

@@ -11,7 +11,6 @@ from koi.utils.constants import SOCKET_BUFFER_SIZE
 
 
 def _try_bind_port(port: int) -> tuple[socket.socket, int] | None:
-    """Try to bind to a specific port. Returns (socket, port) or None if port is in use."""
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
@@ -23,11 +22,6 @@ def _try_bind_port(port: int) -> tuple[socket.socket, int] | None:
 
 
 def bind_side_channel_port() -> tuple[socket.socket, int]:
-    """
-    Try to bind to a configured side-channel port.
-    Falls back to port 0 (OS-assigned) if all configured ports fail.
-    Returns (socket, port).
-    """
     from koi.utils.config import SIDETCPS, DEFAULTS
     ports = SIDETCPS if SIDETCPS else DEFAULTS["sidetcps"]
 
@@ -49,7 +43,6 @@ def bind_side_channel_port() -> tuple[socket.socket, int]:
 
 
 def get_local_ip(remote_addr: str) -> str:
-    """Return the local IP that routes toward *remote_addr*."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.connect((remote_addr, 80))
@@ -64,16 +57,7 @@ def spawn_send_server(
     on_progress: Optional[Callable[[int], None]] = None,
     expected_ip: Optional[str] = None,
 ) -> tuple[int, threading.Thread, list[str]]:
-    """
-    Open a one-shot TCP server that sends *data* to the first incoming connection.
-
-    Returns ``(port, thread, errors)``.
-    - *thread* is already started (daemon); join it to wait for completion.
-    - *errors* is a list that will contain an error string if the transfer fails.
-    - *on_progress*: optional ``callback(bytes_sent)`` called after each chunk.
-    - *expected_ip*: when set, connections from any other peer are dropped, so a
-      stray scan on this side-channel port cannot steal the payload.
-    """
+    """*expected_ip* drops any other peer so a stray scan cannot steal the payload."""
     srv, port = bind_side_channel_port()
     srv.listen(1)
 
@@ -81,8 +65,8 @@ def spawn_send_server(
 
     def _run() -> None:
         deadline = time.monotonic() + timeout
+        conn = None
         try:
-            conn = None
             while conn is None:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -101,10 +85,14 @@ def spawn_send_server(
                 sent += len(chunk)
                 if on_progress:
                     on_progress(sent)
-            conn.close()
         except Exception as exc:
             errors.append(str(exc))
         finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except OSError:
+                    pass
             srv.close()
 
     t = threading.Thread(target=_run, daemon=True)
@@ -113,8 +101,6 @@ def spawn_send_server(
 
 
 class TCPReceiveServer:
-    """One-shot TCP server that collects bytes from the first incoming connection."""
-
     def __init__(self, timeout: float = TIMEOUTS["download"], on_progress=None):
         self._timeout     = timeout
         self._on_progress = on_progress
@@ -142,8 +128,10 @@ class TCPReceiveServer:
                     if self._on_progress:
                         self._on_progress(len(buf))
             except socket.timeout:
-                pass
-            conn.close()
+                # No clean EOF: the buffer is partial, so fail instead of returning it.
+                self._error = f"receive stalled after {len(buf)} bytes"
+            finally:
+                conn.close()
         except Exception as exc:
             self._error = str(exc)
         finally:
@@ -152,12 +140,10 @@ class TCPReceiveServer:
             self._done.set()
 
     def collect(self) -> bytes:
-        """Block until all data is received. Raises RuntimeError or TimeoutError."""
-        self._done.wait(timeout=self._timeout + 2)
+        # _run always sets _done (socket timeouts bound it); a deadline here could fire mid-transfer.
+        self._done.wait()
         if self._error:
             raise RuntimeError(self._error)
-        if not self._done.is_set():
-            raise TimeoutError("TCP receive server timed out")
         return self._data
 
     def stop(self) -> None:

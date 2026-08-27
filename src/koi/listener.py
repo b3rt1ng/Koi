@@ -29,10 +29,9 @@ from koi.utils.cli import (
 from koi.utils.connect import TRANSPORTS, get_transport
 from koi.utils.powerupgrade import upgrade_windows_conptyshell
 from koi.utils.interact import interact
-from koi.utils.payloads import linux_callback_script
 from koi.utils.tcp import get_local_ip
 from koi.modules.loader import load_modules, get_module
-from koi.session import Session
+from koi.session import Session, SessionBusy
 from koi.utils.ui import (
     colored_text, display_art, print_report_box,
     breaker_with_text, notify, Spinner, print_payloads,
@@ -51,13 +50,15 @@ _MAC_TEXT   = re.compile(r'(?<![0-9a-fA-F])(?:[0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]
 _MAC_BYTES  = re.compile(rb'(?<![0-9a-fA-F])(?:[0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]{2}(?![0-9a-fA-F])')
 _PROMPT_ARROW = gradient_text(" ❯ ", PUMPKIN, CORAL)
 
-# Timing constants
 _ACCEPT_TIMEOUT = 1.0
 _SHORT_SLEEP = 0.15
 _MEDIUM_SLEEP = 0.2
 _LONG_SLEEP = 0.5
+_INTERACT_IO_TIMEOUT = 3.0
 _CONNECT_WAIT = 8.0
 _CONNECT_POLL = 0.1
+# Never contacted: get_local_ip only reads the routing table for the source IP.
+_DEFAULT_ROUTE_PROBE = "1.1.1.1"
 
 
 class _MaskBinary:
@@ -114,13 +115,14 @@ class Listener:
         self._conpty_staging: dict = {}
         self._conpty_lock = threading.Lock()
         self.screenable_mode: bool = False
+        self._winch_pending: bool = False
+        self._stopped: bool = False
         self._accepting: bool = True
         self._loggers: dict = {}
         self.mcp_server = None
         self.started_at: Optional[float] = None
 
     def _mask_ip(self, ip: str, kind: str = "remote") -> str:
-        """Return a placeholder instead of a real IP when screenable mode is active."""
         if self.screenable_mode:
             return "<LOCAL IP>" if kind == "local" else "<REMOTE IP>"
         return ip
@@ -139,11 +141,7 @@ class Listener:
         return sess
 
     def _snapshot(self) -> list[Session]:
-        """The session table as a list, taken under the lock.
-
-        Every reader goes through here: iterating the live dict raises when the
-        accept thread lands a shell mid-walk.
-        """
+        # Every reader goes through here: iterating the live dict raises if the accept thread inserts mid-walk.
         with self._id_lock:
             return list(self._sessions.values())
 
@@ -173,11 +171,6 @@ class Listener:
             del self._loggers[sid]
 
     def _prune(self, at_prompt: bool = False) -> None:
-        """Drop sessions whose far end is gone, announcing each loss.
-
-        ``at_prompt`` says whether the operator is sitting at the prompt rather
-        than inside a command they typed.
-        """
         for sess in self._snapshot():
             sess.probe()
 
@@ -199,8 +192,13 @@ class Listener:
                 conn, addr = self._server_sock.accept()
             except socket.timeout:
                 continue
-            except OSError:
-                break
+            except OSError as exc:
+                if not self._running:
+                    break
+                os.write(self._notify_w, b"1\n")
+                self._announce('error', f"Accept loop error, retrying: {exc}")
+                time.sleep(0.5)
+                continue
 
             pending = self._pending_conpty.get(addr[0])
             if pending is not None and time.monotonic() > pending[1]:
@@ -247,12 +245,7 @@ class Listener:
             self._pending_notifications.append((msg_type, text))
 
     def _announce(self, msg_type: str, text: str, at_prompt: bool = True) -> None:
-        """Print an unsolicited message, restoring the operator's line under it.
-
-        Redrawing prompt+buffer by hand puts the screen back exactly where
-        readline believes it is, so its state stays valid without calling
-        redisplay() - which would mutate that state from a background thread.
-        """
+        # Redraw prompt+buffer by hand: readline's redisplay() must not run from a background thread.
         if self._in_session:
             self._queue_notification(msg_type, text)
             return
@@ -301,9 +294,15 @@ class Listener:
         self._warn_log_accumulation()
         print()
 
-        self._main_loop()
+        try:
+            self._main_loop()
+        finally:
+            self.stop()
 
     def stop(self):
+        if self._stopped:
+            return
+        self._stopped = True
         self._running = False
         if self._server_sock:
             try:
@@ -384,7 +383,16 @@ class Listener:
                 notify('error', usage_err)
                 continue
 
-            if not self._dispatch_command(cmd, parts):
+            try:
+                keep_running = self._dispatch_command(cmd, parts)
+            except KeyboardInterrupt:
+                print()
+                notify('warning', "Command interrupted.")
+                continue
+            except Exception as exc:
+                notify('error', f"Command failed: {type(exc).__name__}: {exc}")
+                continue
+            if not keep_running:
                 return
 
     def _dispatch_run(self, parts: list) -> None:
@@ -405,12 +413,6 @@ class Listener:
         self._cmd_run(mod_name, parts[2], parts[3:])
 
     def _cmd_connect(self, argv: list[str]) -> None:
-        """Deliver a reverse shell over a transport, so it lands as an ordinary session.
-
-        The transport is only the delivery vector: the payload calls back to the
-        listener on its own socket, so the session outlives the delivering
-        command and needs no special casing anywhere else.
-        """
         transport = get_transport(argv[0])
         if transport is None:
             supported = ", ".join(bold(name) for name in TRANSPORTS)
@@ -422,11 +424,24 @@ class Listener:
             notify('error', transport.usage)
             return
 
-        try:
-            target_ip = socket.gethostbyname(target.host)
-        except OSError:
-            notify('error', f"Cannot resolve {accent(target.host)}.")
-            return
+        if target.password:
+            # The line just typed carries the password in clear, keep it out of recall.
+            self._scrub_last_history()
+
+        host = transport.resolve_host(target)
+        if host is None:
+            notify('warning', f"{accent(target.destination)} is reached through a jump host.")
+            notify('status', muted(
+                "The callback IP comes from the default route; it has to be "
+                "reachable from the target itself."
+            ))
+            target_ip = _DEFAULT_ROUTE_PROBE
+        else:
+            try:
+                target_ip = socket.gethostbyname(host)
+            except OSError:
+                notify('error', f"Cannot resolve {accent(host)}.")
+                return
 
         try:
             local_ip = get_local_ip(target_ip)
@@ -443,12 +458,15 @@ class Listener:
             return
 
         notify('info', f"Callback to {bold(self._mask_ip(local_ip, 'local'))}{muted(':')}{bold(self.port)}")
+        if self.host not in ("0.0.0.0", "::", local_ip):
+            notify('warning', f"Listener is bound to {bold(self._mask_ip(self.host, 'local'))}, the callback goes elsewhere.")
+            notify('status', muted(f"Nothing accepts it: rebind with {bold('--host 0.0.0.0')}, or the payload is lost."))
         if self.screenable_mode:
             # The transport inherits the real stdout, so _MaskStream never sees its prompts.
             notify('warning', f"{transport.name} writes straight to the terminal, its output is not masked.")
 
         known = {s.id for s in self._snapshot()}
-        cmd = transport.build_command(target, linux_callback_script(local_ip, self.port))
+        cmd = transport.build_command(target, transport.remote_script(local_ip, self.port))
         env = transport.env(target)
 
         try:
@@ -466,30 +484,35 @@ class Listener:
             notify('error', f"{transport.name} failed ({reason}), payload not delivered.")
             return
 
-        landed = self._wait_for_callback(known)
+        landed = self._wait_for_callback(known, None if host is None else target_ip)
         if not landed:
             notify('warning', f"No callback after {int(_CONNECT_WAIT)}s.")
             notify('status', muted(
                 "The payload ran but nothing came back: egress from the target is likely "
-                "filtered, or it has neither python nor bash."
+                "filtered, it has neither python nor bash, or it called back from another address."
             ))
 
-    def _wait_for_callback(self, known: set[int]) -> bool:
-        """Block until a session outside *known* shows up, or the wait runs out."""
+    def _wait_for_callback(self, known: set[int], peer_ip: Optional[str]) -> Optional[Session]:
+        # A NAT-ed target calls back from another address, so any new session is taken once the strict wait elapses.
+        fallback: Optional[Session] = None
         with Spinner("Waiting for callback..."):
             deadline = time.monotonic() + _CONNECT_WAIT
             while time.monotonic() < deadline:
-                if any(s.id not in known for s in self._snapshot()):
-                    return True
+                for sess in self._snapshot():
+                    if sess.id in known:
+                        continue
+                    if peer_ip is None or sess.addr[0] == peer_ip:
+                        return sess
+                    fallback = sess
                 time.sleep(_CONNECT_POLL)
-        return False
+        if fallback is not None:
+            notify('warning',
+                   f"Callback came from {self._mask_ip(fallback.addr[0])}, not the "
+                   f"target address — assuming it is the delivered shell.")
+        return fallback
 
     @staticmethod
     def _scrub_last_history() -> None:
-        """Drop the line just typed from readline's history.
-
-        Keeps keybinding sentinels out of the scrollback.
-        """
         import readline as _rl
         try:
             _rl.remove_history_item(_rl.get_current_history_length() - 1)
@@ -535,10 +558,7 @@ class Listener:
             self._execute_hidden_command(self._cmd_start_accepting)
 
     def _dispatch_command(self, cmd: str, parts: list[str]) -> bool:
-        """Dispatch a command to its handler.
-
-        Returns False to exit the main loop, True to continue.
-        """
+        """False exits the main loop."""
         if cmd in ("exit", "quit"):
             self.stop()
             return False
@@ -710,7 +730,8 @@ class Listener:
                 self._drain(sess, 0.3)
                 sess.send(b"\n")
                 time.sleep(_SHORT_SLEEP)
-            signal.signal(signal.SIGWINCH, lambda *_: self._winch(sess))
+            self._winch_pending = False
+            signal.signal(signal.SIGWINCH, lambda *_: setattr(self, "_winch_pending", True))
 
         if sess.os_type in ("windows_cmd", "windows_ps") and not sess.upgraded:
             sess.send(b"\r\n")
@@ -727,7 +748,15 @@ class Listener:
         sess.attach_logger(logger)
         logger.log_event(f"enter {self._mask_ip(ip)}:{port}")
         try:
-            reason = interact(sess, logger=logger)
+            reason = interact(
+                sess,
+                logger=logger,
+                poll_resize=lambda: self._poll_winch(sess),
+                io_timeout=_INTERACT_IO_TIMEOUT,
+            )
+        except SessionBusy:
+            notify('error', f"Session {accent(f'#{sid}')} is busy ({sess.io_holder}); try again shortly.")
+            return
         finally:
             self._in_session = False
             signal.signal(signal.SIGWINCH, signal.SIG_DFL)
@@ -871,7 +900,9 @@ class Listener:
                 try:
                     r, _, _ = select.select([sess.conn], [], [], min(remaining, 0.05))
                     if r:
-                        sess.conn.recv(SOCKET_BUFFER_SIZE)
+                        if sess.conn.recv(SOCKET_BUFFER_SIZE) == b"":
+                            sess.alive = False
+                            break
                 except OSError:
                     break
 
@@ -882,7 +913,11 @@ class Listener:
             return
         sess.send(f"stty rows {rows} cols {cols} 2>/dev/null\n".encode())
 
-    def _winch(self, sess: Session) -> None:
+    def _poll_winch(self, sess: Session) -> None:
+        # Handler must not touch the socket: applied from the interact loop instead.
+        if not self._winch_pending:
+            return
+        self._winch_pending = False
         if sess.os_type in ("windows_cmd", "windows_ps"):
             if sess.is_conptyshell:
                 try:
@@ -892,4 +927,3 @@ class Listener:
                     pass
             return
         self._sync_winsize(sess)
-        self._drain(sess, 0.15)

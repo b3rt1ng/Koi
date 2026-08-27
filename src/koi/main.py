@@ -15,7 +15,6 @@ from koi.utils.logger import clear_log as _clear_log
 
 
 def _prepare_local_cache() -> None:
-    """Download and cache all external resources declared by modules."""
     from koi.modules.loader import collect_external_resources
     from koi.utils.powerupgrade import get_external_resources as pw_resources
     from koi.utils.cache import fetch_or_cache
@@ -76,7 +75,6 @@ def _prepare_local_cache() -> None:
 
 
 def _onoff(value) -> str:
-    """Render a config-sourced boolean for a --help default hint."""
     return "on" if value else "off"
 
 
@@ -131,17 +129,23 @@ def main():
         keep_history=bool(CONFIG["keep_history"]),
         logging=bool(CONFIG["logging"]),
         local=bool(CONFIG["local_mode"]),
+        mcp=bool(CONFIG["mcp_activate"]),
+        mcp_allow_exec=bool(CONFIG["mcp_exec_allow"]),
     )
 
     mcp_group = parser.add_argument_group("AI / MCP")
-    mcp_group.add_argument("--mcp", action="store_true", default=bool(CONFIG["mcp_activate"]),
+    mcp_group.add_argument("--mcp", dest="mcp", action="store_true",
                            help="Expose sessions and modules over MCP (loopback HTTP). "
                                 "Default from config: mcp_activate")
+    mcp_group.add_argument("--no-mcp", dest="mcp", action="store_false",
+                           help="Do not start the MCP server, even if config enables it")
     mcp_group.add_argument("--mcp-port", type=int, default=CONFIG.get("mcp_port", 7331), metavar="PORT",
                            help="Port for the MCP server (default from config: mcp_port, else 7331)")
-    mcp_group.add_argument("--mcp-allow-exec", action="store_true", default=bool(CONFIG["mcp_exec_allow"]),
+    mcp_group.add_argument("--mcp-allow-exec", dest="mcp_allow_exec", action="store_true",
                            help="Let MCP clients run commands and modules on live sessions "
                                 "(read-only without it). Default from config: mcp_exec_allow")
+    mcp_group.add_argument("--no-mcp-allow-exec", dest="mcp_allow_exec", action="store_false",
+                           help="Keep MCP read-only, even if config allows exec")
     mcp_group.add_argument("--mcp-token", default=None, metavar="TOKEN",
                            help="Bearer token for the MCP server (default: saved in ~/.koi/config.json, or $KOI_MCP_TOKEN)")
 
@@ -171,7 +175,6 @@ def main():
     if args.mcp:
         from koi.mcp.server import KoiMCPServer, missing_dependencies
 
-        # thread, where the failure would land as a traceback over the prompt.
         if missing := missing_dependencies():
             notify('error', f"MCP dependencies missing: {', '.join(missing)}")
             notify('status', "Reinstall to restore them:  pipx install --force koi-handler")

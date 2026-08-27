@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 _LOG_DIR         = Path.home() / ".koi" / "logs"
 _CTRL            = re.compile(r"[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f]")
 _PROMPT_SUFFIXES = ("$", "#", "❯", "% ")
+_MAX_LOG_BYTES   = 50 * 1024 * 1024
 
 
 def log_dir() -> Path:
@@ -56,17 +57,34 @@ def _dim_ts(entry: dict) -> str:
 class SessionLogger:
     def __init__(self, path: Path):
         self.path = path
-        # 0600 at creation, not whatever the umask allows; chmod too, so a log
-        # from an older version is tightened on reopen.
+        # 0600 at creation regardless of umask; chmod also tightens older logs.
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
         self._f = open(fd, "a", buffering=1, encoding="utf-8")
         try:
             os.chmod(path, 0o600)
         except OSError:
             pass
+        try:
+            self._bytes = path.stat().st_size
+        except OSError:
+            self._bytes = 0
+        self._capped = False
 
     def _write(self, entry: dict) -> None:
-        self._f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        if self._capped:
+            return
+        line = json.dumps(entry, ensure_ascii=False) + "\n"
+        if self._bytes + len(line.encode("utf-8", errors="replace")) > _MAX_LOG_BYTES:
+            self._capped = True
+            marker = json.dumps(
+                {"ts": time.time(), "type": "event",
+                 "msg": f"log capped at {_MAX_LOG_BYTES} bytes"},
+                ensure_ascii=False,
+            ) + "\n"
+            self._f.write(marker)
+            return
+        self._bytes += len(line.encode("utf-8", errors="replace"))
+        self._f.write(line)
 
     def log_meta(self, sess: "Session") -> None:
         self._write({
@@ -96,11 +114,7 @@ class SessionLogger:
 
 
 class NullLogger:
-    """No-op stand-in for --no-log.
-
-    A real object rather than None: callers invoke log_event/log_input without
-    guarding, so None would turn "no logs" into an AttributeError mid-session.
-    """
+    """No-op stand-in for --no-log: callers call log_* unguarded, so None would crash."""
 
     path = None
 
@@ -132,12 +146,7 @@ def list_logs() -> list[Path]:
 
 
 def resolve_log(name: str) -> Path | None:
-    """Resolve a log by name or path, confined to the log directory.
-
-    A path is honoured only when it lands directly inside ~/.koi/logs, so
-    `koireview --clear <path>` can never unlink a file elsewhere. A bare name is
-    substring-matched in Python, never fed to glob, so `[` or `*` cannot inject.
-    """
+    """Paths must resolve directly inside ~/.koi/logs; bare names are substring-matched, never globbed."""
     root = log_dir().resolve()
     if "/" in name or "\\" in name or Path(name).is_absolute():
         candidate = Path(name).resolve()

