@@ -32,6 +32,7 @@ ALIASES: dict[str, list[str]] = {
     "setshell":   ["setshell", "sh"],
     "tag":        ["tag"],
     "connect":    ["connect", "conn"],
+    "tunnel":     ["tunnel", "tun"],
 }
 
 _ALIAS_TO_CANON: dict[str, str] = {
@@ -88,6 +89,7 @@ _SESSION_ARG1_CMDS = {
     alias for canon in ("go", "upgrade", "kill", "tag") for alias in ALIASES[canon]
 }
 _PAYLOAD_LIKE_CMDS = set(ALIASES["payload"]) | set(ALIASES["obfuscator"])
+_TUNNEL_SUBCMDS = ("start", "status", "stop")
 
 USAGE: dict[str, tuple[int, str]] = {
     "go":       (1, f"Usage: go {accent('<id|tag>')}"),
@@ -96,6 +98,7 @@ USAGE: dict[str, tuple[int, str]] = {
     "setshell": (2, f"Usage: setshell {accent('<id|tag>')} {accent('<linux|windows_ps|windows_cmd>')}"),
     "tag":      (1, f"Usage: tag {accent('<id|tag>')} {accent('[name]')}"),
     "connect":  (2, f"Usage: connect {accent('|'.join(TRANSPORTS))} {accent('<target>')} {accent('[args...]')}"),
+    "tunnel":   (2, f"Usage: tunnel {accent('<start|status|stop>')} {accent('<id>')}"),
 }
 
 
@@ -200,6 +203,17 @@ def completer(text: str, state: int):
     ):
         options = _match(text, _session_refs())
 
+    elif parts[0] == "tunnel" and (
+        len(parts) == 1 or (len(parts) == 2 and not line.endswith(" "))
+    ):
+        options = _match(text, list(_TUNNEL_SUBCMDS))
+
+    elif parts[0] == "tunnel" and (
+        (len(parts) == 2 and line.endswith(" ")) or
+        (len(parts) == 3 and not line.endswith(" "))
+    ):
+        options = _match(text, _session_refs())
+
     elif parts[0] in ALIASES["connect"] and (
         (len(parts) == 1 and line.endswith(" ")) or
         (len(parts) == 2 and not line.endswith(" "))
@@ -257,6 +271,7 @@ def print_help() -> None:
             f"{accent('reload')}": "Reload modules from disk (useful during development)",
             f"{accent('run')} {bold('<module>')} {bold('<id>')} {bold('[args...]')}": "Run a module against a session",
             f"{accent('setshell')} {bold('<id>')} {bold('<os_type>')}": "Manually set the OS type of a session",
+            f"{accent('tunnel')} {bold('<start|status|stop>')} {bold('<id>')}": "Start, inspect or stop a background tunnel on a session",
             f"{accent('logs')}": "List recorded session logs",
             f"{accent('start/stop')}": "Start or stop the listener",
             f"{accent('help')}": "Show this message",

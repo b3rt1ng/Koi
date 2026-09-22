@@ -23,8 +23,8 @@ class DuplicateModule(KoiModule):
         {"flags": ["-i", "--iface"], "default": None, "metavar": "IFACE|IP",
          "help": "Interface name, or an IP to call back to directly "
                  "(share a foothold to another listener). Default: wlan0 with confirmation"},
-        {"flags": ["-p", "--port"], "type": int, "default": CONFIG["port"], "metavar": "PORT",
-         "help": f"Listener port (default: {CONFIG['port']})"},
+        {"flags": ["-p", "--port"], "type": int, "default": None, "metavar": "PORT",
+         "help": "Listener port (default: the port this session connected to)"},
     ]
 
     def run(self) -> None:
@@ -41,6 +41,12 @@ class DuplicateModule(KoiModule):
         except ValueError:
             return None
 
+    def _listener_port(self) -> int:
+        try:
+            return self.session.conn.getsockname()[1]
+        except OSError:
+            return CONFIG["port"]
+
     def _select_interface(self) -> tuple[str, int] | None:
         """Resolve (lhost, lport) from args, prompting if no interface was given.
 
@@ -48,7 +54,9 @@ class DuplicateModule(KoiModule):
         listener on another host rather than one of ours. None if cancelled.
         """
         iface_arg = getattr(self.args, "iface", None)
-        port_arg = getattr(self.args, "port", CONFIG["port"])
+        port_arg = getattr(self.args, "port", None)
+        if port_arg is None:
+            port_arg = self._listener_port()
 
         if iface_arg and (ip := self._as_ip(iface_arg)) is not None:
             return ip, port_arg

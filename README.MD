@@ -29,6 +29,7 @@ Full documentation lives in the [wiki](https://b3rt1ng.github.io/koi-wiki/).
 * **Modules**: automate post-exploitation tasks, file transfer, enumeration, pivoting, AD collection, and more. Easily extensible with your own modules.
 * **Obfuscator**: built-in payload obfuscator with chainable techniques (XOR, hex, format strings, char-array) to evade Defender and EDR solutions.
 * **Connect out**: `connect ssh user@host` turns credentials you already own into a session. ssh only delivers the payload, so the shell keeps living after ssh exits.
+* **Tunneling**: `tunnel start <id> <cidr>` turns a shell into a Layer 3 pivot: a userland TCP stack on the target (no root, no dropped binary, Python only) with the routes on your side. ([docs](https://b3rt1ng.github.io/koi-wiki/tunnel/))
 * **Session logging**: every session is logged automatically. Replay any session with `koireview`. ([docs](https://b3rt1ng.github.io/koi-wiki/logs/))
 * **MCP server**: expose your sessions and modules to an LLM client, read-only by default, shipped with core. ([docs](https://b3rt1ng.github.io/koi-wiki/mcp/))
 * **Screenable mode**: masks IPs and MAC addresses from output for safe screen sharing during CTFs or live demos.
@@ -39,29 +40,20 @@ Full documentation lives in the [wiki](https://b3rt1ng.github.io/koi-wiki/).
 > Read more [here](https://b3rt1ng.github.io/koi-wiki/go-online/)
 
 ## 🚧 WIP
-* **Tunneling**: once you have your shell, a simple way to tunnel into that network with minimal input would be very convenient. The `ligolo` module automates agent deployment, but native tunnel management is planned.
 * **EDR evasion**: Koi bypasses casual and mid-tier EDR solutions, but more aggressive environments (expensive commercial EDR, heavily monitored networks) may still flag activity. Further improvements (TLS transport, HTTP C2) are under consideration.
 ---
 
 ## 🚀 Installation
 
 ```bash
-# Recommended: stable release from PyPI (MCP support included)
+# Recommended: stable release from PyPI
 pipx install koi-handler
-
-# Or directly from the repo
-pipx install git+https://github.com/b3rt1ng/Koi
 
 # From source if you want to dev your own modules
 git clone https://github.com/b3rt1ng/koi
 cd koi
 pipx install --editable .
 ```
-
-> [!NOTE]
-> As of 0.11, the MCP server ships with core: `--mcp` works on any install, no
-> extra needed. The `[mcp]` extra is kept as an empty alias so older install
-> commands still resolve.
 
 `koifuscator` is the direct shortcut to the obfuscator module.
 

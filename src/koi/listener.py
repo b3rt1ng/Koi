@@ -32,6 +32,7 @@ from koi.utils.interact import interact
 from koi.utils.tcp import get_local_ip
 from koi.modules.loader import load_modules, get_module
 from koi.session import Session, SessionBusy
+from koi.tunnel.manager import TunnelManager
 from koi.utils.ui import (
     colored_text, display_art, print_report_box,
     breaker_with_text, notify, Spinner, print_payloads,
@@ -120,6 +121,7 @@ class Listener:
         self._accepting: bool = True
         self._loggers: dict = {}
         self.mcp_server = None
+        self._tunnels = TunnelManager(self)
         self.started_at: Optional[float] = None
 
     def _mask_ip(self, ip: str, kind: str = "remote") -> str:
@@ -161,6 +163,7 @@ class Listener:
         return refs
 
     def _remove(self, sid: int) -> None:
+        self._tunnels.stop(sid, quiet=True)
         with self._id_lock:
             sess = self._sessions.pop(sid, None)
         if sess:
@@ -303,6 +306,7 @@ class Listener:
         if self._stopped:
             return
         self._stopped = True
+        self._tunnels.shutdown_all()
         self._running = False
         if self._server_sock:
             try:
@@ -411,6 +415,27 @@ class Listener:
 
         mod_name = parts[1]
         self._cmd_run(mod_name, parts[2], parts[3:])
+
+    def _cmd_tunnel(self, argv: list[str]) -> None:
+        usage = (f"Usage: tunnel {accent('<start|status|stop>')} {accent('<id>')} "
+                 f"{muted('[cidr ...]  (routes, start only)')}")
+        if not argv or argv[0] not in ("start", "status", "stop"):
+            notify('error', usage)
+            return
+        sub = argv[0]
+        if len(argv) < 2:
+            notify('error', f"A session id is required.  {usage}")
+            return
+        sess = self._resolve_session(argv[1])
+        if sess is None:
+            notify('error', f"Session {accent(argv[1])} not found.")
+            return
+        if sub == "start":
+            self._tunnels.start(sess, argv[2:])
+        elif sub == "status":
+            self._tunnels.status(sess)
+        else:
+            self._tunnels.stop(sess.id)
 
     def _cmd_connect(self, argv: list[str]) -> None:
         transport = get_transport(argv[0])
@@ -569,6 +594,10 @@ class Listener:
 
         if cmd == "connect":
             self._cmd_connect(parts[1:])
+            return True
+
+        if cmd == "tunnel":
+            self._cmd_tunnel(parts[1:])
             return True
 
         handlers = {

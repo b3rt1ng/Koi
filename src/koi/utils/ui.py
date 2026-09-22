@@ -1,3 +1,4 @@
+import getpass
 import shutil
 import sys
 import threading
@@ -610,6 +611,17 @@ def yesno(question: str, prechosen: bool = True) -> bool:
             return True
         if answer in {"n", "no"}:
             return False
+
+
+def password_prompt(question: str) -> str:
+    try:
+        return getpass.getpass(
+            f"  {color_signal(PUMPKIN)}?  {color_signal(WHITE)}{question} "
+            f"{color_signal(SILVER)}(hidden){color_signal(WHITE)} "
+        )
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return ""
 
 
 def platform_badge(platform) -> str:

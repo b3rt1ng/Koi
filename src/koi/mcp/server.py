@@ -44,7 +44,7 @@ _DOWNLOAD_ROOT = Path.home() / ".koi" / "downloads"
 _UPLOAD_ROOT = Path.home() / ".koi" / "uploads"
 
 # Tools that mutate state or run code: never offered on a read-only connection.
-_EXEC_ONLY_TOOLS = {"koi_exec", "koi_tag"}
+_EXEC_ONLY_TOOLS = {"koi_exec", "koi_tag", "koi_tunnel_start", "koi_tunnel_stop"}
 
 _REQUIRED_PACKAGES = ("mcp", "uvicorn", "starlette")
 
@@ -398,6 +398,42 @@ class KoiMCPServer:
                 },
                 ["session"],
             ),
+            _tool(
+                "koi_tunnel_list",
+                "List active L3 pivot tunnels, each with its interface, routed CIDRs, "
+                "whether the agent is connected and packet counts.",
+            ),
+            _tool(
+                "koi_tunnel_status",
+                "Show the tunnel on one session: state, interface, routed CIDRs, agent "
+                "connection, packet counts and uptime.",
+                {"session": session},
+                ["session"],
+            ),
+            _tool(
+                "koi_tunnel_start",
+                "Bring up an L3 pivot tunnel on a session: create the TUN device "
+                "(needs Koi running as root or cached sudo credentials), deploy the "
+                "tunel agent to the target (needs Python 3.13+, Linux only) and route "
+                "the given CIDRs through it. Non-interactive: it never prompts for a "
+                "password, so authorise sudo beforehand if Koi is not root.",
+                {
+                    "session": session,
+                    "routes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "CIDRs to route through the tunnel, e.g. [\"10.0.0.0/24\"].",
+                    },
+                },
+                ["session"],
+            ),
+            _tool(
+                "koi_tunnel_stop",
+                "Tear down the tunnel on a session: kill the remote agent, stop the "
+                "relay and remove the TUN device and its routes.",
+                {"session": session},
+                ["session"],
+            ),
         ]
 
     def _module_tools(self) -> List[Dict[str, Any]]:
@@ -471,6 +507,22 @@ class KoiMCPServer:
                 raise ValueError(f"Tag {tag!r} already used by session #{conflict.id}")
             sess.tag = tag
             return json.dumps({"id": sess.id, "tag": sess.tag})
+
+        if name == "koi_tunnel_list":
+            return json.dumps({"tunnels": self.listener._tunnels.snapshot()}, indent=2)
+
+        if name == "koi_tunnel_status":
+            sess = self._resolve(arguments["session"])
+            return json.dumps(
+                self.listener._tunnels.describe(sess.id) or {"session": sess.id, "tunnel": None},
+                indent=2,
+            )
+
+        if name == "koi_tunnel_start":
+            return self._do_tunnel_start(arguments)
+
+        if name == "koi_tunnel_stop":
+            return self._do_tunnel_stop(arguments)
 
         if name == "koi_exec":
             return self._do_exec(arguments)
@@ -587,6 +639,37 @@ class KoiMCPServer:
             payload["truncated"] = True
         if error is not None:
             payload["error"] = error
+        return json.dumps(payload, indent=2)
+
+    def _do_tunnel_start(self, arguments: Dict[str, Any]) -> str:
+        self._require_exec()
+        sess = self._resolve(arguments["session"])
+        routes = arguments.get("routes") or []
+        if isinstance(routes, str):
+            routes = [routes]
+        self.listener._announce('status', f"MCP: tunnel start on session #{sess.id}")
+        with _capture_output() as buffer:
+            self.listener._tunnels.start(sess, [str(r) for r in routes], interactive=False)
+        output, truncated = _cap(_strip_ansi(buffer.getvalue()).strip())
+        payload = {
+            "session": sess.id,
+            "tunnel": self.listener._tunnels.describe(sess.id),
+            "output": output,
+        }
+        if truncated:
+            payload["truncated"] = True
+        return json.dumps(payload, indent=2)
+
+    def _do_tunnel_stop(self, arguments: Dict[str, Any]) -> str:
+        self._require_exec()
+        sess = self._resolve(arguments["session"])
+        self.listener._announce('status', f"MCP: tunnel stop on session #{sess.id}")
+        with _capture_output() as buffer:
+            stopped = self.listener._tunnels.stop(sess.id, interactive=False)
+        output, truncated = _cap(_strip_ansi(buffer.getvalue()).strip())
+        payload = {"session": sess.id, "stopped": stopped, "output": output}
+        if truncated:
+            payload["truncated"] = True
         return json.dumps(payload, indent=2)
 
     def list_resources(self) -> List[Dict[str, str]]:
