@@ -221,6 +221,10 @@ class TunnelManager:
 
         self._kill_agent(tun)
 
+        deadline = time.time() + 2.0
+        while (tun.loop is None or tun.task is None) and tun.thread is not None \
+                and tun.thread.is_alive() and time.time() < deadline:
+            time.sleep(0.02)
         if tun.loop is not None and tun.task is not None:
             try:
                 tun.loop.call_soon_threadsafe(tun.task.cancel)

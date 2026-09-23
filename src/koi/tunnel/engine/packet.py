@@ -285,7 +285,10 @@ def verify_checksum(data: bytes) -> bool:
 
 
 def verify_transport_checksum(ip: IPv4) -> bool:
-    if ip.proto == PROTO_UDP and struct.unpack("!H", ip.payload[6:8])[0] == 0:
-        return True
+    if ip.proto == PROTO_UDP:
+        if len(ip.payload) < UDP.HEADER_LEN:
+            return False  # truncated UDP: reject rather than crash on the checksum field
+        if struct.unpack("!H", ip.payload[6:8])[0] == 0:
+            return True
     pseudo = _pseudo_header(ip.src, ip.dst, ip.proto, len(ip.payload))
     return checksum(pseudo + ip.payload) == 0

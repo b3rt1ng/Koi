@@ -189,7 +189,8 @@ class UdpBridge:
         if self.sock is not None:
             self.sock.close()
             self.sock = None
-        self.stack.udp_flows.pop(self.key, None)
+        if self.stack.udp_flows.get(self.key) is self:
+            self.stack.udp_flows.pop(self.key, None)
 
 
 class Stack:
@@ -278,7 +279,10 @@ class Stack:
         self.emit_ip(ip.dst, ip.src, P.PROTO_TCP, rst.build(ip.dst, ip.src))
 
     def forget(self, tcb: TCB) -> None:
-        self.conns.pop((tcb.raddr, tcb.rport, tcb.laddr, tcb.lport), None)
+        key = (tcb.raddr, tcb.rport, tcb.laddr, tcb.lport)
+        bridge = self.conns.get(key)
+        if bridge is not None and bridge.tcb is tcb:
+            del self.conns[key]
 
     def _handle_udp(self, ip: IPv4) -> None:
         try:
