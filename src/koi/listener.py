@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import readline
 import select
 import shutil
 import signal
@@ -61,6 +62,32 @@ _CONNECT_POLL = 0.1
 # Never contacted: get_local_ip only reads the routing table for the source IP.
 _DEFAULT_ROUTE_PROBE = "1.1.1.1"
 
+_RL_LIB_UNSET = object()
+_rl_lib = _RL_LIB_UNSET
+
+
+def _readline_lib():
+    # Python's readline module can't swap the prompt readline caches mid-input(),
+    # so reach into the live GNU libreadline for rl_set_prompt/rl_on_new_line.
+    global _rl_lib
+    if _rl_lib is not _RL_LIB_UNSET:
+        return _rl_lib
+    _rl_lib = None
+    try:
+        import ctypes
+        import ctypes.util
+        name = ctypes.util.find_library("readline")
+        if name and "GNU readline" in (readline.__doc__ or ""):
+            lib = ctypes.CDLL(name)
+            lib.rl_set_prompt.argtypes = [ctypes.c_char_p]
+            lib.rl_set_prompt.restype = ctypes.c_int
+            lib.rl_on_new_line.restype = ctypes.c_int
+            lib.rl_redisplay.restype = None
+            _rl_lib = lib
+    except Exception:
+        _rl_lib = None
+    return _rl_lib
+
 
 class _MaskBinary:
     def __init__(self, real, check):
@@ -107,7 +134,6 @@ class Listener:
         self._id_lock = threading.Lock()
         self._running = False
         self._server_sock: Optional[socket.socket] = None
-        self._notify_r, self._notify_w = os.pipe()
         self._in_session = False
         self._pending_notifications: list = []
         self._notif_lock = threading.Lock()
@@ -198,7 +224,6 @@ class Listener:
             except OSError as exc:
                 if not self._running:
                     break
-                os.write(self._notify_w, b"1\n")
                 self._announce('error', f"Accept loop error, retrying: {exc}")
                 time.sleep(0.5)
                 continue
@@ -240,7 +265,6 @@ class Listener:
         os_tag = f" {muted('[')}{sess.os_label()}{muted(']')}" if sess.os_type else ""
         masked_ip = self._mask_ip(sess.addr[0])
         msg = f"{bold(plain(f'#{sess.id}'))}  {plain(masked_ip)}{muted(f':{sess.addr[1]}')}{os_tag}"
-        os.write(self._notify_w, b"1\n")
         self._announce('new', msg)
 
     def _queue_notification(self, msg_type: str, text: str) -> None:
@@ -248,7 +272,10 @@ class Listener:
             self._pending_notifications.append((msg_type, text))
 
     def _announce(self, msg_type: str, text: str, at_prompt: bool = True) -> None:
-        # Redraw prompt+buffer by hand: readline's redisplay() must not run from a background thread.
+        # The notice takes the current line and its newline frees the one below;
+        # we redraw the prompt there with the *fresh* session count. rl_set_prompt
+        # makes readline adopt that prompt so a later keypress doesn't repaint the
+        # stale one; rl_on_new_line resyncs its cursor after the notice scrolled up.
         if self._in_session:
             self._queue_notification(msg_type, text)
             return
@@ -257,13 +284,20 @@ class Listener:
             notify(msg_type, text)
             return
 
-        import readline as _rl
         with self._term_lock:
-            buf = _rl.get_line_buffer()
+            prompt = self._prompt()
             sys.stdout.write("\r\033[K")
             notify(msg_type, text)
-            sys.stdout.write(self._prompt() + buf)
             sys.stdout.flush()
+            lib = _readline_lib()
+            if lib is not None:
+                lib.rl_set_prompt(prompt.encode())
+                lib.rl_on_new_line()
+                lib.rl_redisplay()
+            else:
+                visible = prompt.replace("\001", "").replace("\002", "")
+                sys.stdout.write(visible + readline.get_line_buffer())
+                sys.stdout.flush()
 
     def start(self):
         self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -346,17 +380,13 @@ class Listener:
         _ctrlc = 0
         while self._running:
             try:
-                r, _, _ = select.select([self._notify_r], [], [], 0)
-                if r:
-                    os.read(self._notify_r, 4096)
                 raw = input(self._prompt()).strip()
                 self._flush_pending_notifications()
                 _ctrlc = 0
             except EOFError:
                 break
             except KeyboardInterrupt:
-                import readline as _rl
-                had_text = bool(_rl.get_line_buffer().strip())
+                had_text = bool(readline.get_line_buffer().strip())
                 print()
                 self._flush_pending_notifications()
                 if had_text:
@@ -538,9 +568,8 @@ class Listener:
 
     @staticmethod
     def _scrub_last_history() -> None:
-        import readline as _rl
         try:
-            _rl.remove_history_item(_rl.get_current_history_length() - 1)
+            readline.remove_history_item(readline.get_current_history_length() - 1)
         except Exception:
             pass
 

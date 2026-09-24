@@ -118,7 +118,7 @@ class TunnelManager:
         with self._lock:
             index = self._alloc_index()
             tun = Tunnel(
-                session_id=sid, index=index, tun_name=f"tunel{index}",
+                session_id=sid, index=index, tun_name=f"Koi{index}",
                 address=f"240.0.{index}.1", port=_BASE_PORT + index,
                 psk=secrets.token_urlsafe(24), routes=list(routes),
                 callback_host=self._session_ip(sess),
@@ -341,7 +341,22 @@ class TunnelManager:
                 notify('error', f"  {desc} failed: {msg}")
                 self._teardown_device(tun, password=password)
                 return False
+        self._warn_shadowed_routes(tun)
         return True
+
+    def _warn_shadowed_routes(self, tun: Tunnel) -> None:
+        # a route add can hit "File exists" or be shadowed by a more specific local
+        # route; confirm each CIDR actually egresses via the tunnel and warn if not
+        for cidr in tun.routes:
+            try:
+                probe = str(ipaddress.ip_network(cidr, strict=False).network_address)
+            except ValueError:
+                continue
+            proc = subprocess.run(["ip", "route", "get", probe], text=True, capture_output=True)
+            if proc.returncode == 0 and f"dev {tun.tun_name}" not in proc.stdout:
+                notify('warning', f"Route {accent(cidr)} is shadowed by a local route; "
+                                  f"traffic won't enter the tunnel. Use a more specific prefix "
+                                  f"(a tighter /24, or the target /32).")
 
     def _spawn_proxy(self, tun: Tunnel) -> None:
         tun.proxy = Proxy(

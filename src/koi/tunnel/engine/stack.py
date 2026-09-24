@@ -6,6 +6,11 @@ import socket
 import time
 from typing import Callable
 
+try:
+    import resource
+except ImportError:
+    resource = None
+
 from . import packet as P
 from .packet import ICMP, TCP, UDP, IPv4
 from .tcp import TCB, State
@@ -17,6 +22,32 @@ LOW_WATER = 64 * 1024
 UDP_IDLE_TIMEOUT = 60.0
 CONNECT_TIMEOUT = 10.0
 TICK_INTERVAL = 0.1
+
+FD_HEADROOM = 64
+DEFAULT_MAX_CONNS = 8192
+
+
+def raise_fd_limit() -> None:
+    if resource is None:
+        return
+    try:
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        if soft < hard:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
+    except (ValueError, OSError):
+        pass
+
+
+def _conn_budget() -> int:
+    if resource is None:
+        return DEFAULT_MAX_CONNS
+    try:
+        soft, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+    except (ValueError, OSError):
+        return DEFAULT_MAX_CONNS
+    if soft == resource.RLIM_INFINITY or soft <= 0:
+        return DEFAULT_MAX_CONNS
+    return max(64, soft - FD_HEADROOM)
 
 
 class TcpBridge:
@@ -195,9 +226,11 @@ class UdpBridge:
 
 class Stack:
 
-    def __init__(self, send_packet: Callable[[bytes], None], mtu: int = 1500):
+    def __init__(self, send_packet: Callable[[bytes], None], mtu: int = 1500,
+                 max_conns: int | None = None):
         self.send_packet = send_packet
         self.mtu = mtu
+        self.max_conns = max_conns if max_conns is not None else _conn_budget()
         self.conns: dict[tuple, TcpBridge] = {}
         self.udp_flows: dict[tuple, UdpBridge] = {}
         self._ident = 0
@@ -260,6 +293,10 @@ class Stack:
             self._reject(ip, seg)
 
     def _open(self, ip: IPv4, seg: TCP, key: tuple) -> None:
+        if len(self.conns) + len(self.udp_flows) >= self.max_conns:
+            # at cap: drop the SYN silently (a RST reads as 'closed' to a scan); the client retransmits
+            log.debug("conn cap %d reached, dropping SYN %s:%d", self.max_conns, ip.src, seg.sport)
+            return
         tcb = TCB.accept(
             seg, laddr=ip.dst, raddr=ip.src,
             emit=self._emitter(ip.dst, ip.src), mtu=self.mtu,
@@ -295,6 +332,10 @@ class Stack:
         flow = self.udp_flows.get(key)
         if flow is not None:
             flow.send(dg.payload)
+            return
+
+        if len(self.conns) + len(self.udp_flows) >= self.max_conns:
+            log.debug("conn cap %d reached, dropping UDP %s:%d", self.max_conns, ip.src, dg.sport)
             return
 
         flow = UdpBridge(self, key, src=ip.src, sport=dg.sport, dst=ip.dst, dport=dg.dport)

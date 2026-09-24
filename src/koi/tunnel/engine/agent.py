@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from .stack import Stack
+from .stack import Stack, raise_fd_limit
 from .transport import Channel, client_context
 
 log = logging.getLogger("tunel.agent")
@@ -56,6 +56,7 @@ class Agent:
             self.channel = None
 
     async def run(self) -> None:
+        raise_fd_limit()   # push the soft fd cap to the hard cap so the stack can hold many sockets
         attempts = 0
         while True:
             try:
