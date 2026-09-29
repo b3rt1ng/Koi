@@ -102,7 +102,8 @@ class DownloadModule(KoiModule):
         if not is_dir:
             bar = self.ui.ProgressBar(total=remote_size or 0)
             with TCPReceiveServer(
-                timeout=TIMEOUTS.get("download", 300), on_progress=bar.update
+                timeout=TIMEOUTS.get("download", 300), on_progress=bar.update,
+                expected_ip=self.session.addr[0],
             ) as srv:
                 port = srv.port
                 self.status(
@@ -161,7 +162,8 @@ class DownloadModule(KoiModule):
             bar = self.ui.ProgressBar(total=remote_size or 0)
 
             if os_type == "linux":
-                with TCPReceiveServer(timeout=_DIR_TIMEOUT, on_progress=bar.update) as srv:
+                with TCPReceiveServer(timeout=_DIR_TIMEOUT, on_progress=bar.update,
+                                     expected_ip=self.session.addr[0]) as srv:
                     port = srv.port
                     self.status(
                         f"Downloading {remote_path}/"
@@ -179,7 +181,8 @@ class DownloadModule(KoiModule):
                         return
 
             else:
-                with TCPReceiveServer(timeout=_DIR_TIMEOUT, on_progress=bar.update) as srv:
+                with TCPReceiveServer(timeout=_DIR_TIMEOUT, on_progress=bar.update,
+                                     expected_ip=self.session.addr[0]) as srv:
                     port = srv.port
                     self.status(
                         f"Downloading {remote_path}\\"
@@ -239,8 +242,15 @@ class DownloadModule(KoiModule):
                             file_count = sum(1 for m in tar.getmembers() if m.isfile())
                     else:
                         with zipfile.ZipFile(io.BytesIO(raw)) as zf:
-                            zf.extractall(path=local_out)
-                            file_count = sum(1 for n in zf.namelist() if not n.endswith("/"))
+                            base = os.path.abspath(local_out)
+                            safe = [
+                                info for info in zf.infolist()
+                                if os.path.abspath(os.path.join(local_out, info.filename)) == base
+                                or os.path.abspath(os.path.join(local_out, info.filename)).startswith(base + os.sep)
+                            ]
+                            for info in safe:
+                                zf.extract(info, path=local_out)
+                            file_count = sum(1 for i in safe if not i.filename.endswith("/"))
                 except zipfile.BadZipFile as exc:
                     self.err(f"Received incomplete archive — {exc}")
                     return

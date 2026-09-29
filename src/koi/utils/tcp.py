@@ -101,9 +101,11 @@ def spawn_send_server(
 
 
 class TCPReceiveServer:
-    def __init__(self, timeout: float = TIMEOUTS["download"], on_progress=None):
+    def __init__(self, timeout: float = TIMEOUTS["download"], on_progress=None,
+                 expected_ip: Optional[str] = None):
         self._timeout     = timeout
         self._on_progress = on_progress
+        self._expected_ip = expected_ip
         self._sock        = None
         self._done        = threading.Event()
         self._data        = b""
@@ -120,7 +122,13 @@ class TCPReceiveServer:
     def _run(self) -> None:
         buf = b""
         try:
-            conn, _ = self._sock.accept()
+            conn = None
+            while conn is None:
+                candidate, peer = self._sock.accept()
+                if self._expected_ip is not None and peer[0] != self._expected_ip:
+                    candidate.close()
+                    continue
+                conn = candidate
             conn.settimeout(self._timeout)
             try:
                 while chunk := conn.recv(SOCKET_BUFFER_SIZE):
@@ -128,7 +136,6 @@ class TCPReceiveServer:
                     if self._on_progress:
                         self._on_progress(len(buf))
             except socket.timeout:
-                # No clean EOF: the buffer is partial, so fail instead of returning it.
                 self._error = f"receive stalled after {len(buf)} bytes"
             finally:
                 conn.close()
@@ -140,7 +147,6 @@ class TCPReceiveServer:
             self._done.set()
 
     def collect(self) -> bytes:
-        # _run always sets _done (socket timeouts bound it); a deadline here could fire mid-transfer.
         self._done.wait()
         if self._error:
             raise RuntimeError(self._error)
