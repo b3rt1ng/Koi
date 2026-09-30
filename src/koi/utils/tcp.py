@@ -120,7 +120,8 @@ class TCPReceiveServer:
         return self
 
     def _run(self) -> None:
-        buf = b""
+        chunks: list[bytes] = []
+        total = 0
         try:
             conn = None
             while conn is None:
@@ -132,17 +133,18 @@ class TCPReceiveServer:
             conn.settimeout(self._timeout)
             try:
                 while chunk := conn.recv(SOCKET_BUFFER_SIZE):
-                    buf += chunk
+                    chunks.append(chunk)
+                    total += len(chunk)
                     if self._on_progress:
-                        self._on_progress(len(buf))
+                        self._on_progress(total)
             except socket.timeout:
-                self._error = f"receive stalled after {len(buf)} bytes"
+                self._error = f"receive stalled after {total} bytes"
             finally:
                 conn.close()
         except Exception as exc:
             self._error = str(exc)
         finally:
-            self._data = buf
+            self._data = b"".join(chunks)
             self._close()
             self._done.set()
 

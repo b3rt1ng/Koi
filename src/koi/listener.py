@@ -179,6 +179,18 @@ class Listener:
         except ValueError:
             return next((s for s in self._snapshot() if s.tag == ref), None)
 
+    def _require_alive_session(self, ref: str) -> Optional[Session]:
+        self._prune()
+        sess = self._resolve_session(ref)
+        if sess is None:
+            notify('error', f"Session {accent(ref)} not found.")
+            return None
+        if not sess.alive:
+            notify('error', f"Session {accent(f'#{sess.id}')} is no longer alive.")
+            self._remove(sess.id)
+            return None
+        return sess
+
     def _session_refs(self) -> list[str]:
         refs = []
         for s in self._snapshot():
@@ -689,16 +701,10 @@ class Listener:
         notify('info', f"Loaded {accent(str(len(modules)))} modules.")
 
     def _cmd_upgrade(self, ref: str) -> None:
-        self._prune()
-        sess = self._resolve_session(ref)
+        sess = self._require_alive_session(ref)
         if sess is None:
-            notify('error', f"Session {accent(ref)} not found.")
             return
         sid = sess.id
-        if not sess.alive:
-            notify('error', f"Session {accent(f'#{sid}')} is no longer alive.")
-            self._remove(sid)
-            return
         if sess.upgraded:
             notify('warning', f"Session {accent(f'#{sid}')} is already upgraded.")
             if not yesno("Do you want to try upgrading again?"):
@@ -760,16 +766,10 @@ class Listener:
         notify('success', f"Session {accent(f'#{sid}')} terminated.")
 
     def _cmd_go(self, ref: str) -> None:
-        self._prune()
-        sess = self._resolve_session(ref)
+        sess = self._require_alive_session(ref)
         if sess is None:
-            notify('error', f"Session {accent(ref)} not found.")
             return
         sid = sess.id
-        if not sess.alive:
-            notify('error', f"Session {accent(f'#{sid}')} is no longer alive.")
-            self._remove(sid)
-            return
 
         ip, port = sess.addr
         is_windows_pty = sess.os_type in ("windows_cmd", "windows_ps") and sess.upgraded
@@ -852,16 +852,10 @@ class Listener:
             print_report_box("Modules", data)
 
     def _cmd_run(self, mod_name: str, ref: str, mod_args: list) -> None:
-        self._prune()
-        sess = self._resolve_session(ref)
+        sess = self._require_alive_session(ref)
         if sess is None:
-            notify('error', f"Session {accent(ref)} not found.")
             return
         sid = sess.id
-        if not sess.alive:
-            notify('error', f"Session {accent(f'#{sid}')} is no longer alive.")
-            self._remove(sid)
-            return
 
         mod_cls = get_module(mod_name)
         if mod_cls is None:

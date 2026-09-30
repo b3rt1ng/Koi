@@ -4,7 +4,6 @@ import io
 import json
 import re
 import tarfile
-import time
 import zipfile
 
 from koi.modules.blueprint import KoiModule
@@ -192,37 +191,17 @@ class LigoloModule(KoiModule):
                 )
             self.status(f"Defender exclusion added for {dest_dir}")
 
-        self.status(f"Uploading to {dest}...")
-        transfer_timeout = max(60, len(agent_bytes) // 50_000 + 30)
-        bar = self.ui.ProgressBar(total=len(agent_bytes))
-        ok = self._upload_bytes(agent_bytes, dest, timeout=transfer_timeout, on_progress=bar.update)
-        bar.done()
-        print()
-
-        if not ok:
-            self.err("Upload failed or file not present on target after transfer.")
+        raw = self._fetch_and_deploy(
+            dest, raw=agent_bytes, label="ligolo agent",
+            chmod=(os_name == "linux"),
+        )
+        if raw is None:
             return
 
-        time.sleep(1.5)
-
-        if os_name == "linux":
-            quoted = self._shell_quote(dest)
-            result = self.exec(f"test -s {quoted} && echo OK || echo MISS")
-            if "OK" not in result.stdout:
-                self.err("Upload failed or file not present on target after transfer.")
-                return
-            self.exec(f"chmod +x {quoted}")
-        else:
-            check = self._win_query(f"(Test-Path '{self._ps_quote(dest)}').ToString()")
-            if check.strip().lower() != "true":
-                self.err("Upload failed or file not present on target after transfer.")
-                return
-
-        print()
         self.box("ligolo-ng agent deployed", {
             "version": tag,
             "asset": asset["name"],
             "arch": arch,
             "remote": dest,
-            "size": f"{len(agent_bytes)} bytes  ({len(agent_bytes)/1024:.1f} KB)",
+            "size": f"{len(raw)} bytes  ({len(raw)/1024:.1f} KB)",
         })

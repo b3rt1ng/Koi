@@ -140,6 +140,25 @@ def _vlen(s) -> int:
     return len(_ANSI.sub("", str(s)))
 
 
+_C1_AND_CTRL = __import__("re").compile(r'[\x00-\x08\x0b\x0c\x0e-\x1a\x1c-\x1f\x7f\x80-\x9f]')
+
+def _sanitize(text: str) -> str:
+    """Strip dangerous escape sequences (OSC, cursor, erase…) but keep SGR (colors/bold).
+
+    Two passes: the ANSI regex handles ESC-initiated sequences (keeping only
+    SGR), then a character-class pass strips C1 single-byte controls (0x80-0x9F,
+    which some terminals interpret as CSI/OSC/DCS without a leading ESC) and
+    other dangerous C0 controls.  TAB, LF, CR and ESC are preserved.
+    """
+    def _keep_sgr(m: "re.Match[str]") -> str:
+        seq = m.group(0)
+        if seq.startswith("\033[") and seq.endswith("m"):
+            return seq
+        return ""
+    result = _ANSI.sub(_keep_sgr, str(text))
+    return _C1_AND_CTRL.sub("", result)
+
+
 def _ansi_tokens(text: str):
     tokens = []
     pos = 0
@@ -265,6 +284,13 @@ def print_report_box(title, data_dict, top_left_color=PUMPKIN, bottom_right_colo
     if not data_dict:
         return
 
+    data_dict = {
+        _sanitize(k): {_sanitize(sk): _sanitize(sv) for sk, sv in v.items()}
+        if isinstance(v, dict)
+        else _sanitize(v)
+        for k, v in data_dict.items()
+    }
+
     categorized = any(isinstance(v, dict) for v in data_dict.values())
 
     if categorized:
@@ -369,6 +395,9 @@ def print_table(
 ) -> None:
     if not headers or not rows:
         return
+
+    headers = [_sanitize(h) for h in headers]
+    rows = [[_sanitize(cell) for cell in row] for row in rows]
 
     terminal_width = shutil.get_terminal_size().columns
     n_cols = len(headers)

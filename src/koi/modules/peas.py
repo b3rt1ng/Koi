@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-import shlex
-
 from koi.modules.blueprint import KoiModule
-from koi.utils.cache import cache_path, fetch_or_cache
-from koi.utils.config import TIMEOUTS
 
 LINPEAS_URL = "https://github.com/peass-ng/PEASS-ng/releases/latest/download/linpeas.sh"
 WINPEAS_URL = "https://github.com/peass-ng/PEASS-ng/releases/latest/download/winPEASx64.exe"
@@ -33,43 +29,22 @@ class PeasModule(KoiModule):
     ]
 
     def run(self) -> None:
-        os_type = self.session.os_type
-
-        if os_type == "linux":
+        if self.session.os_type == "linux":
             url, name = LINPEAS_URL, "linpeas.sh"
             dest = self.args.output or f"./{name}"
         else:
             url, name = WINPEAS_URL, "winPEASx64.exe"
             dest = self.args.output or f".\\{name}"
 
-        with self.spinner(f"Fetching {name}..."):
-            try:
-                raw, source = fetch_or_cache(url, name)
-            except Exception as exc:
-                self.err(f"Could not fetch {name}: {exc}")
-                return
-
-        if source == "cache":
-            self.ok(f"Using cached {name} ({cache_path(name)})")
-        else:
-            self.ok(f"{name} fetched from PEASS-ng releases")
-
-        total = len(raw)
-        bar = self.ui.ProgressBar(total=total)
-        self.status(f"Uploading {name} -> {dest} ({total} bytes)...")
-        ok = self._upload_bytes(raw, dest, timeout=TIMEOUTS["upload"], on_progress=bar.update)
-        bar.done()
-        print()
-
-        if not ok:
-            self.err("Transfer failed.")
+        raw = self._fetch_and_deploy(
+            dest, url=url, cache_key=name, label=name,
+            chmod=(self.session.os_type == "linux"),
+        )
+        if raw is None:
             return
-
-        if os_type == "linux":
-            self.exec(f"chmod +x {shlex.quote(dest)}")
 
         self.box("Upload complete", {
             "tool":        name,
             "remote path": dest,
-            "size":        f"{total} bytes  ({total/1024:.1f} KB)",
+            "size":        f"{len(raw)} bytes  ({len(raw)/1024:.1f} KB)",
         })

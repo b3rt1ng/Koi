@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Callable, Iterator, List, Literal, Optional, U
 if TYPE_CHECKING:
     from koi.session import Session
 
+from koi.utils.cache import cache_path, fetch_or_cache
 from koi.utils.config import TIMEOUTS
 from koi.utils.constants import ANSI_RE, SOCKET_BUFFER_SIZE
 from koi.utils.models import CommandResult, StreamLine
@@ -431,6 +432,49 @@ class KoiModule(ABC):
         if self.session.os_type == "linux":
             return self._upload_bytes_lin(raw, dest, timeout, on_progress)
         return self._upload_bytes_win(raw, dest, timeout, on_progress)
+
+    def _fetch_and_deploy(
+        self,
+        dest: str,
+        *,
+        url: Optional[str] = None,
+        cache_key: Optional[str] = None,
+        raw: Optional[bytes] = None,
+        label: Optional[str] = None,
+        chmod: bool = False,
+        timeout: Optional[float] = None,
+    ) -> Optional[bytes]:
+        """Fetch a resource (or use provided bytes) and upload it to the target.
+
+        Returns the raw bytes on success, None on failure.
+        """
+        if raw is None:
+            display = label or cache_key or "resource"
+            with self.spinner(f"Fetching {display}..."):
+                try:
+                    raw, source = fetch_or_cache(url, cache_key)
+                except Exception as exc:
+                    self.err(f"Could not fetch {display}: {exc}")
+                    return None
+            if source == "cache":
+                self.ok(f"Using cached {display} ({cache_path(cache_key)})")
+
+        timeout = timeout or max(TIMEOUTS["upload"], len(raw) // 50_000 + 30)
+
+        bar = self.ui.ProgressBar(total=len(raw))
+        self.status(f"Uploading {label or 'file'} -> {dest} ({len(raw):,} bytes)...")
+        ok = self._upload_bytes(raw, dest, timeout=timeout, on_progress=bar.update)
+        bar.done()
+        print()
+
+        if not ok:
+            self.err("Transfer failed.")
+            return None
+
+        if chmod and self.session.os_type == "linux":
+            self.exec(f"chmod +x {self._shell_quote(dest)}")
+
+        return raw
 
     def run_module(self, io_timeout: Optional[float] = None) -> None:
         """Run the module while owning the session socket throughout.
