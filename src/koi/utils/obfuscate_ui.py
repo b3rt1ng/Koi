@@ -36,11 +36,13 @@ WIN_METHODS: list[tuple[str, str, Callable[[str], str]]] = [
     ("bullshit", "insert random no-op statements",            ps_bullshit_obfuscate),
 ]
 
-_HIDE    = "\033[?25l"
-_SHOW    = "\033[?25h"
-_ALT_ON  = "\033[?1049h"
-_ALT_OFF = "\033[?1049l"
-_CLEAR   = "\033[2J\033[H"
+_HIDE       = "\033[?25l"
+_SHOW       = "\033[?25h"
+_ALT_ON     = "\033[?1049h"
+_ALT_OFF    = "\033[?1049l"
+_CLEAR      = "\033[2J\033[H"
+_BPASTE_ON  = "\033[?2004h"
+_BPASTE_OFF = "\033[?2004l"
 
 
 def _getch() -> bytes:
@@ -52,7 +54,31 @@ def _getch() -> bytes:
         if ch == b'\x1b':
             r, _, _ = select.select([sys.stdin], [], [], 0.05)
             if r:
-                ch += os.read(fd, 2)
+                nxt = os.read(fd, 1)
+                if nxt == b'[':
+                    param = bytearray()
+                    while True:
+                        b = os.read(fd, 1)
+                        if not b:
+                            break
+                        param.extend(b)
+                        if 0x40 <= b[0] <= 0x7E:
+                            break
+                        if len(param) > 16:
+                            break
+                    seq = b'[' + bytes(param)
+                    if seq == b'[200~':
+                        paste = bytearray()
+                        while len(paste) < 500_000:
+                            b = os.read(fd, 1)
+                            if not b:
+                                break
+                            paste.extend(b)
+                            if paste.endswith(b'\x1b[201~'):
+                                return b'\x1b[200~' + bytes(paste[:-6])
+                        return b'\x1b[200~' + bytes(paste)
+                    return b'\x1b' + seq
+                return b'\x1b' + nxt
         return ch
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
@@ -67,7 +93,7 @@ def _render_menu(title: str, options: list[str], cursor: int) -> None:
             sys.stdout.write(f"  {accent('►')} {bold(accent(opt))}\n")
         else:
             sys.stdout.write(f"    {dim(opt)}\n")
-    sys.stdout.write(f"\n  {dim('↑/↓')} navigate  {dim('Enter')} select  {dim('q')} cancel\n")
+    sys.stdout.write(f"\n  {dim('↑/↓')} navigate  {dim('Enter')} select  {dim('⌫')} back  {dim('q')} cancel\n")
     sys.stdout.flush()
 
 
@@ -115,6 +141,9 @@ def _render_obfuscator(
         f"\n{indent}{dim('↑/↓')} navigate  "
         f"{dim('Enter')} apply  "
         f"{dim('r')} reset  "
+        f"{dim('^R')} original  "
+        f"{dim('paste')} replace  "
+        f"{dim('⌫')} back  "
         f"{dim('q')} quit & print\n"
     )
     sys.stdout.flush()
@@ -124,8 +153,8 @@ def _run_obfuscator_loop(
     title: str,
     base: str,
     methods: list[tuple[str, str, Callable]],
-) -> tuple[str, list[str]]:
-    """Run the interactive obfuscator. Returns (final_payload, chain)."""
+) -> tuple[str, list[str]] | None:
+    original = base
     current = base
     chain: list[str] = []
     cursor = 0
@@ -134,7 +163,13 @@ def _run_obfuscator_loop(
         _render_obfuscator(title, current, chain, cursor, methods)
         ch = _getch()
 
-        if ch == b'\x1b[A':
+        if ch.startswith(b'\x1b[200~'):
+            pasted = ch[6:].decode("utf-8", errors="replace").strip()
+            if pasted:
+                base = pasted
+                current = pasted
+                chain = []
+        elif ch == b'\x1b[A':
             cursor = (cursor - 1) % len(methods)
         elif ch == b'\x1b[B':
             cursor = (cursor + 1) % len(methods)
@@ -145,6 +180,12 @@ def _run_obfuscator_loop(
         elif ch in (b'r', b'R'):
             current = base
             chain = []
+        elif ch == b'\x12':
+            base = original
+            current = original
+            chain = []
+        elif ch in (b'\x7f', b'\x08'):
+            return None
         elif ch in (b'q', b'Q', b'\x03', b'\x04'):
             break
 
@@ -172,58 +213,83 @@ def run_obfuscate_ui(iface: str | None, port: int) -> None:
     final_chain: list[str] = []
     final_label = ""
 
-    sys.stdout.write(_ALT_ON + _HIDE)
+    iface_names = list(interfaces.keys())
+    has_iface_menu = selected_iface is None
+    gen = PayloadGenerator(port)
+    iface_cursor = 0
+    os_cursor = 0
+
+    sys.stdout.write(_ALT_ON + _HIDE + _BPASTE_ON)
     sys.stdout.flush()
     try:
-        if selected_iface is None:
-            iface_names = list(interfaces.keys())
-            iface_cursor = 0
-            while True:
-                _render_menu("Obfuscate Select Interface", iface_names, iface_cursor)
-                ch = _getch()
-                if ch == b'\x1b[A':
-                    iface_cursor = (iface_cursor - 1) % len(iface_names)
-                elif ch == b'\x1b[B':
-                    iface_cursor = (iface_cursor + 1) % len(iface_names)
-                elif ch in (b'\r', b'\n'):
-                    selected_iface = iface_names[iface_cursor]
-                    break
-                elif ch in (b'q', b'Q', b'\x03'):
-                    raise _Cancelled
-
-        gen = PayloadGenerator(port)
-
-        os_cursor = 0
+        step = "interface" if has_iface_menu else "platform"
         while True:
-            _render_menu("Obfuscate Select Platform", ["Windows", "Linux"], os_cursor)
-            ch = _getch()
-            if ch == b'\x1b[A':
-                os_cursor = (os_cursor - 1) % 2
-            elif ch == b'\x1b[B':
-                os_cursor = (os_cursor + 1) % 2
-            elif ch in (b'\r', b'\n'):
-                break
-            elif ch in (b'q', b'Q', b'\x03'):
-                raise _Cancelled
+            if step == "interface":
+                while True:
+                    _render_menu("Obfuscate Select Interface", iface_names, iface_cursor)
+                    ch = _getch()
+                    if ch == b'\x1b[A':
+                        iface_cursor = (iface_cursor - 1) % len(iface_names)
+                    elif ch == b'\x1b[B':
+                        iface_cursor = (iface_cursor + 1) % len(iface_names)
+                    elif ch in (b'\r', b'\n'):
+                        selected_iface = iface_names[iface_cursor]
+                        step = "platform"
+                        break
+                    elif ch in (b'\x7f', b'\x08', b'q', b'Q', b'\x03'):
+                        raise _Cancelled
+                if step != "platform":
+                    continue
 
-        payloads = gen.for_interface(selected_iface)
-        if payloads is None:
-            raise _Cancelled
-        if os_cursor == 0:
-            final_payload, final_chain = _run_obfuscator_loop(
-                "Windows Payload Obfuscator", payloads["powershell"], WIN_METHODS
-            )
-            final_label = "powershell"
-        else:
-            final_payload, final_chain = _run_obfuscator_loop(
-                "Linux Payload Obfuscator", payloads["bash (alt)"], LINUX_METHODS
-            )
-            final_label = "bash"
+            if step == "platform":
+                back = False
+                while True:
+                    _render_menu("Obfuscate Select Platform", ["Windows", "Linux"], os_cursor)
+                    ch = _getch()
+                    if ch == b'\x1b[A':
+                        os_cursor = (os_cursor - 1) % 2
+                    elif ch == b'\x1b[B':
+                        os_cursor = (os_cursor + 1) % 2
+                    elif ch in (b'\r', b'\n'):
+                        step = "obfuscate"
+                        break
+                    elif ch in (b'\x7f', b'\x08'):
+                        if has_iface_menu:
+                            step = "interface"
+                        else:
+                            raise _Cancelled
+                        back = True
+                        break
+                    elif ch in (b'q', b'Q', b'\x03'):
+                        raise _Cancelled
+                if back:
+                    continue
+
+            if step == "obfuscate":
+                payloads = gen.for_interface(selected_iface)
+                if payloads is None:
+                    raise _Cancelled
+                if os_cursor == 0:
+                    result = _run_obfuscator_loop(
+                        "Windows Payload Obfuscator", payloads["powershell"], WIN_METHODS
+                    )
+                    final_label = "powershell"
+                else:
+                    result = _run_obfuscator_loop(
+                        "Linux Payload Obfuscator", payloads["bash (alt)"], LINUX_METHODS
+                    )
+                    final_label = "bash"
+
+                if result is None:
+                    step = "platform"
+                    continue
+                final_payload, final_chain = result
+                break
 
     except (_Cancelled, KeyboardInterrupt):
         pass
     finally:
-        sys.stdout.write(_SHOW + _ALT_OFF + "\n")
+        sys.stdout.write(_BPASTE_OFF + _SHOW + _ALT_OFF + "\n")
         sys.stdout.flush()
 
     if not final_payload:
