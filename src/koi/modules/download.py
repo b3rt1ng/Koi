@@ -141,7 +141,7 @@ class DownloadModule(KoiModule):
 
             if remote_size is not None and len(raw) != remote_size:
                 self.err(
-                    f"Size mismatch: expected {remote_size} bytes, got {len(raw)} — file not saved."
+                    f"Size mismatch: expected {remote_size} bytes, got {len(raw)} bytes. File not saved."
                 )
                 return
 
@@ -221,7 +221,7 @@ class DownloadModule(KoiModule):
             print()
 
             if not raw:
-                self.err("Received empty archive — transfer may have timed out.")
+                self.err("Received empty archive, transfer may have timed out.")
                 return
 
             with self.spinner(f"Extracting into {local_out}/..."):
@@ -252,7 +252,7 @@ class DownloadModule(KoiModule):
                                 zf.extract(info, path=local_out)
                             file_count = sum(1 for i in safe if not i.filename.endswith("/"))
                 except zipfile.BadZipFile as exc:
-                    self.err(f"Received incomplete archive — {exc}")
+                    self.err(f"Received incomplete archive: {exc}")
                     return
                 except Exception as exc:
                     self.err(f"Could not extract archive: {exc}")

@@ -554,7 +554,7 @@ class KoiMCPServer:
         if sess.os_type != "linux":
             raise ValueError(
                 f"koi_exec runs POSIX shell and only supports Linux sessions; "
-                f"#{sess.id} is {sess.os_type or 'unknown OS'} — use a module instead."
+                f"#{sess.id} is {sess.os_type or 'unknown OS'}, use a module instead."
             )
 
         command = arguments["command"]

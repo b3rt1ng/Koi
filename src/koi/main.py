@@ -88,14 +88,35 @@ class _ArtHelpAction(argparse.Action):
         parser.exit()
 
 
+def _print_version() -> None:
+    from koi.utils.ui import accent, bold, dim
+    print(f"koi {bold(__version__)}")
+    try:
+        from urllib.request import urlopen, Request
+        import json
+        req = Request(
+            "https://api.github.com/repos/b3rt1ng/Koi/releases/latest",
+            headers={"User-Agent": "koi/update-check", "Accept": "application/json"},
+        )
+        with urlopen(req, timeout=3) as resp:
+            latest = json.loads(resp.read())["tag_name"].lstrip("vV")
+        local = __version__.lstrip("vV")
+        if latest == local:
+            print(dim("  up to date"))
+        else:
+            print(f"\n{accent(f'v{latest}')} is available! {dim('pip install --upgrade koi-handler')}")
+    except Exception:
+        print(dim("  could not check for updates"))
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="koi – multi-session reverse shell listener",
         add_help=False,
     )
     parser.add_argument("-h", "--help", action=_ArtHelpAction, help="show this help message and exit")
-    parser.add_argument("-v", "--version", action="version", version=f"koi {__version__}",
-                        help="show the koi version and exit")
+    parser.add_argument("-v", "--version", action="store_true",
+                        help="show the koi version, check for updates, and exit")
 
     listener_group = parser.add_argument_group("listener")
     listener_group.add_argument("--host", default=CONFIG["host"], help=f"Bind address (default: {CONFIG['host']})")
@@ -150,7 +171,11 @@ def main():
                            help="Bearer token for the MCP server (default: saved in ~/.koi/config.json, or $KOI_MCP_TOKEN)")
 
     args = parser.parse_args()
-    
+
+    if args.version:
+        _print_version()
+        sys.exit(0)
+
     if args.purge_cache:
         from koi.utils.cache import purge_cache
         ok = purge_cache()

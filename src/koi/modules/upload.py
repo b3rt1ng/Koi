@@ -112,7 +112,7 @@ class UploadModule(KoiModule):
             print()
 
             if not ok:
-                self.err("Transfer failed — archive not delivered to target.")
+                self.err("Transfer failed! Archive not delivered to target.")
                 return
 
             # 6. Extract on target
