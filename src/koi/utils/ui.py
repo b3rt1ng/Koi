@@ -35,9 +35,9 @@ def accent(t): return colored_text(t, PUMPKIN)
 def muted(t):  return colored_text(t, SILVER)
 def cyan(t):   return colored_text(t, BLUE)
 
-MOTD = ["The serene shell handler", 
+MOTD = ["流れに逆らう鯉のように",
+        "The serene shell handler", 
         "La root est longue mais la voie est libre ;)",
-        "流れに逆らう鯉のように",
         "¯＼(º_o)/¯",
         "Do not download and run random modules...",
         "AD is not that scary, I promise!",
@@ -85,13 +85,13 @@ def display_art(small: bool = False):
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(PUMPKIN)}⡀⡀⡀⡀⡀⡀⡀⡀⡀{color_signal(WHITE)}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
 ⠀⠀⠀⠀⠀⠀⠀⠀⢀⢠⠰{color_signal(PUMPKIN)}⠠⡱⣳⡳⣟⢞⡝⣝⢮⢪⢮⣪⡪⡢⡢{color_signal(WHITE)}⡀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
 ⠀⠀⠀⠀⠀⠀⢄⠌⢎⠣⠡⠡{color_signal(PUMPKIN)}⡙⢜⠘{color_signal(WHITE)}⠄⡑⠌⠂⠁⠁⠃⠳{color_signal(PUMPKIN)}⡝⣞⢼⢜⣌{color_signal(WHITE)}⠢⠀⠀⠀⠀⠀⠀⠀⠀⠀⡀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⢠⢵⠱⡑⠅⠅⢅⠑⢌⠂⠅⠁⠀⠀⠀⠀⠀⠀⠀⠈⡊⡊{color_signal(PUMPKIN)}⡊⠪⡑{color_signal(WHITE)}⢕⢐⢄⢀⠀⠀⠀⡀⡂⡂⠢⠡⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(PUMPKIN)}oooo    {color_signal(UMBER)}oooo {color_signal(WHITE)}  .oooooo.   oo{color_signal(UMBER)}ooo ⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(WHITE)}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⢬⢺⢱⢑⢌⢌⢌⠢⠨⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠐⠈⠂⢌⢂⢂⢂⢂⠂⢀⢢⢪⢢⠪⠨⠨⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(PUMPKIN)}`888 {color_signal(UMBER)}  .8P' {color_signal(WHITE)}  d8P'  `Y8b  `{color_signal(UMBER)}888' ⠀⠀⠀⠀⠀{color_signal(WHITE)}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⢌⢎⢎⢎⢎⢎⢆⠅⠅⠁⠀⠀⠀⠀⠀⠀⠀⠀⢀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠂⠂⠀⠀⢢⢣⢣⡣⡣⡡⡑⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀ {color_signal(PUMPKIN)}888  d8{color_signal(UMBER)}'  {color_signal(WHITE)}  888      888  8{color_signal(UMBER)}88  ⠀⠀{color_signal(WHITE)}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⢌⢮⢪⢪⢪⢪⢪⢢⠡⠁⠀⠀⠀⠀⠀⠀⠀{color_signal(UMBER)}⢀⠐⠔⡘⢜⠘⠌⢮⢢{color_signal(WHITE)}⢢⢢⢢⢢⢠⠠⡈⡎⣎⢮⢪⢪⠢⠨⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(PUMPKIN)} 88888[    {color_signal(WHITE)}  888      888  88{color_signal(UMBER)}8  ⠀⠀⠀⠀⠀⠀⠀{color_signal(WHITE)}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠈⢮{color_signal(CORAL)}⣺⢸⢸⢸⢸⢸⢐{color_signal(WHITE)}⢕⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(UMBER)}⡂⠌⡐⢌⠢⠡⡑⡑⡑{color_signal(WHITE)}⢕⢕⢕⠵⢽⢽⡺⣵⣣⡳⡱⡱⠡⠡⠀⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(PUMPKIN)}⠀ 888`88b.  {color_signal(WHITE)}  888      888  888  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⢵⢯{color_signal(CORAL)}⡺⡸⡸⡸⡸⡸⡐{color_signal(WHITE)}⡐⡐⡐⢄⠀⠀⠀⠀⠀{color_signal(UMBER)}⢑⢈⠢⠡⡑⡐⡐{color_signal(WHITE)}⢌⢂⠢⡑⡑⢕⠳⡱⡱⣱⢹⢜⠌⠌⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(PUMPKIN)}⠀ 888  `88b. {color_signal(WHITE)} {color_signal(SILVER)}`88b   {color_signal(WHITE)} d88'  888  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⢯⣻⡪⡪⠪⡪⡪⡪⡪⡂⡪⡨⢢⠂⠀⠀⠀⠀⠀⠀⠅⡑⡐⡐⢌⢆⠢⡑⡐⢌⠢⡑⠌⢎⢎⢇⢗⢵⡱⡠⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(PUMPKIN)}⠀⠀o888o  o888o {color_signal(WHITE)} {color_signal(SILVER)}`Y8bo{color_signal(WHITE)}od8P'  o888o ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⢠⢵⠱⡑⠅⠅⢅⠑⢌⠂⠅⠁⠀⠀⠀⠀⠀⠀⠀⠈⡊⡊{color_signal(PUMPKIN)}⡊⠪⡑{color_signal(WHITE)}⢕⢐⢄⢀⠀⠀⠀⡀⡂⡂⠢⠡⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(PUMPKIN)}oooo    {color_signal(UMBER)}oooo {color_signal(WHITE)}  .oooooo.   oo{color_signal(UMBER)}ooo ⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(WHITE)}
+⠀⠀⠀⢬⢺⢱⢑⢌⢌⢌⠢⠨⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠐⠈⠂⢌⢂⢂⢂⢂⠂⢀⢢⢪⢢⠪⠨⠨⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(PUMPKIN)}`888 {color_signal(UMBER)}  .8P' {color_signal(WHITE)}  d8P'  `Y8b  `{color_signal(UMBER)}888' ⠀⠀⠀⠀⠀{color_signal(WHITE)}
+⠀⠀⢌⢎⢎⢎⢎⢎⢆⠅⠅⠁⠀⠀⠀⠀⠀⠀⠀⠀⢀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠂⠂⠀⠀⢢⢣⢣⡣⡣⡡⡑⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀ {color_signal(PUMPKIN)}888  d8{color_signal(UMBER)}'  {color_signal(WHITE)}  888      888  8{color_signal(UMBER)}88  ⠀⠀{color_signal(WHITE)}
+⠀⢌⢮⢪⢪⢪⢪⢪⢢⠡⠁⠀⠀⠀⠀⠀⠀⠀{color_signal(UMBER)}⢀⠐⠔⡘⢜⠘⠌⢮⢢{color_signal(WHITE)}⢢⢢⢢⢢⢠⠠⡈⡎⣎⢮⢪⢪⠢⠨⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(PUMPKIN)} 88888[    {color_signal(WHITE)}  888      888  88{color_signal(UMBER)}8  ⠀⠀⠀⠀⠀⠀⠀{color_signal(WHITE)}
+⠈⢮{color_signal(CORAL)}⣺⢸⢸⢸⢸⢸⢐{color_signal(WHITE)}⢕⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(UMBER)}⡂⠌⡐⢌⠢⠡⡑⡑⡑{color_signal(WHITE)}⢕⢕⢕⠵⢽⢽⡺⣵⣣⡳⡱⡱⠡⠡⠀⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(PUMPKIN)}⠀ 888`88b.  {color_signal(WHITE)}  888      888  888  
+⠀⢵⢯{color_signal(CORAL)}⡺⡸⡸⡸⡸⡸⡐{color_signal(WHITE)}⡐⡐⡐⢄⠀⠀⠀⠀⠀{color_signal(UMBER)}⢑⢈⠢⠡⡑⡐⡐{color_signal(WHITE)}⢌⢂⠢⡑⡑⢕⠳⡱⡱⣱⢹⢜⠌⠌⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(PUMPKIN)}⠀ 888  `88b. {color_signal(WHITE)} {color_signal(SILVER)}`88b   {color_signal(WHITE)} d88'  888  
+⠀⢯⣻⡪⡪⠪⡪⡪⡪⡪⡂⡪⡨⢢⠂⠀⠀⠀⠀⠀⠀⠅⡑⡐⡐⢌⢆⠢⡑⡐⢌⠢⡑⠌⢎⢎⢇⢗⢵⡱⡠⠀⠀⠀⠀⠀⠀⠀⠀{color_signal(PUMPKIN)}⠀⠀o888o  o888o {color_signal(WHITE)} {color_signal(SILVER)}`Y8bo{color_signal(WHITE)}od8P'  o888o 
 ⠀⢹⡾⣝⠆⠅⡂⠌⢎⢎⢎⢪⢈⠪⠀⠀⠀⠀⠀⠀⠀⠀⠐⠐⠈⠆⢇⢕⠐⢌⠢⠑⠌⢌⢆⢂⠊⡎⡎⡮⣺{color_signal(PUMPKIN)}⣦⢀⠀⠀⠀{color_signal(WHITE)}
 ⠀{color_signal(UMBER)}⠂⢿⡸⣣{color_signal(WHITE)}⡁⡢⠡⠡⡑⠌⢌⢪⢪⠠⢀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠠⠑⠕⢄⢅⢅⢑⢐⠐⠄⢕⢜⢜{color_signal(PUMPKIN)}⢼⢿⣾⣳⣔⢀⠀⠀⠀{color_signal(WHITE)}⠀⠀{choice(MOTD)}
 ⠀{color_signal(UMBER)}⠈⠸⡽⣿⣽⣮{color_signal(WHITE)}⡪⡢⡨⡨⡢⡣⡣⠣⠣⡪⡐⠄⢄⠀⠀⠀⠀⠀⠀⠀⠀⠁⠂⡑⡑⡐⠄⠅⢅⢑⠱⡱⡣{color_signal(PUMPKIN)}⡫⣺⢻⡚⣆⠀⠀⠀⠀⠀⠀⠀{color_signal(WHITE)}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀

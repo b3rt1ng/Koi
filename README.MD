@@ -16,7 +16,7 @@ Full documentation lives in the [wiki](https://b3rt1ng.github.io/koi-wiki/).
 
 ### Demo
 
-<img src="https://i.imgur.com/RFD2dkE.gif" alt="demonstration">
+<img src="https://i.imgur.com/6nZufAR.gif" alt="demonstration">
 
 > [!TIP]
 > This demo runs with dockerized OS. If you want to try yourself, you can use the [Ubuntu images](https://hub.docker.com/_/ubuntu) or the [dockur](https://github.com/dockur/windows) windows

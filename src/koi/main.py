@@ -102,7 +102,7 @@ def _print_version() -> None:
             latest = json.loads(resp.read())["tag_name"].lstrip("vV")
         local = __version__.lstrip("vV")
         if latest == local:
-            print(dim("  up to date"))
+            print(dim("up to date"))
         else:
             print(f"\n{accent(f'v{latest}')} is available! {dim('pip install --upgrade koi-handler')}")
     except Exception:
