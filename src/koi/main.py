@@ -104,7 +104,7 @@ def _print_version() -> None:
         if latest == local:
             print(dim("up to date"))
         else:
-            print(f"\n{accent(f'v{latest}')} is available! {dim('pip install --upgrade koi-handler')}")
+            print(f"\n{accent(f'v{latest}')} is available! {dim('pipx upgrade koi-handler')}")
     except Exception:
         print(dim("  could not check for updates"))
 

