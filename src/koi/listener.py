@@ -46,10 +46,52 @@ from koi.utils.obfuscate_ui import run_obfuscate_ui
 
 LOCALUSER = os.getenv("USER") or os.getenv("USERNAME") or "user"
 
-_IPV4_TEXT  = re.compile(r'(?<!\d)(?:25[0-5]|2[0-4]\d|[01]?\d\d?)(?:\.(?:25[0-5]|2[0-4]\d|[01]?\d\d?)){3}(?!\d)')
-_IPV4_BYTES = re.compile(rb'(?<!\d)(?:25[0-5]|2[0-4]\d|[01]?\d\d?)(?:\.(?:25[0-5]|2[0-4]\d|[01]?\d\d?)){3}(?!\d)')
-_MAC_TEXT   = re.compile(r'(?<![0-9a-fA-F])(?:[0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]{2}(?![0-9a-fA-F])')
-_MAC_BYTES  = re.compile(rb'(?<![0-9a-fA-F])(?:[0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]{2}(?![0-9a-fA-F])')
+_IPV4_PAT = r'(?<!\d)(?:25[0-5]|2[0-4]\d|[01]?\d\d?)(?:\.(?:25[0-5]|2[0-4]\d|[01]?\d\d?)){3}(?!\d)'
+_MAC_PAT  = r'(?<![0-9a-fA-F])(?:[0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]{2}(?![0-9a-fA-F])'
+_IPV6_PAT = (
+    r'(?<![0-9a-fA-F:])'
+    r'(?:'
+    r'(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}'
+    r'|(?:[0-9a-fA-F]{1,4}:){1,7}:'
+    r'|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}'
+    r'|(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}'
+    r'|(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}'
+    r'|(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}'
+    r'|(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}'
+    r'|[0-9a-fA-F]{1,4}:(?::[0-9a-fA-F]{1,4}){1,6}'
+    r'|:(?::[0-9a-fA-F]{1,4}){1,7}'
+    r')'
+    r'(?![0-9a-fA-F:])'
+)
+
+
+def _pad_tag(tag, *, bytes_mode=False):
+    label = tag.encode() if bytes_mode else tag
+    bra, ket, sp = (b'<', b'>', b' ') if bytes_mode else ('<', '>', ' ')
+    min_len = len(label) + 2
+    def _replace(m):
+        n = len(m.group())
+        if n <= min_len:
+            return bra + label + ket
+        pad = n - min_len
+        return bra + sp * (pad // 2) + label + sp * (pad - pad // 2) + ket
+    return _replace
+
+
+def _build_masks(specs):
+    text, binary = [], []
+    for pat, tag in specs:
+        rx_t, rx_b = re.compile(pat), re.compile(pat.encode())
+        text.append((rx_t, _pad_tag(tag)))
+        binary.append((rx_b, _pad_tag(tag, bytes_mode=True)))
+    return tuple(text), tuple(binary)
+
+
+_MASKS_TEXT, _MASKS_BYTES = _build_masks([
+    (_IPV4_PAT, "IP"),
+    (_MAC_PAT,  "MAC"),
+    (_IPV6_PAT, "IPv6"),
+])
 _PROMPT_ARROW = gradient_text(" ❯ ", PUMPKIN, CORAL)
 
 _ACCEPT_TIMEOUT = 1.0
@@ -89,35 +131,26 @@ def _readline_lib():
     return _rl_lib
 
 
-class _MaskBinary:
-    def __init__(self, real, check):
+class _Mask:
+    def __init__(self, real, check, masks):
         self._real  = real
         self._check = check
+        self._masks = masks
 
-    def write(self, b):
+    def write(self, data):
         if self._check():
-            b = _IPV4_BYTES.sub(b'<IP>', b)
-            b = _MAC_BYTES.sub(b'<MAC>', b)
-        return self._real.write(b)
+            for pat, repl in self._masks:
+                data = pat.sub(repl, data)
+        return self._real.write(data)
 
     def __getattr__(self, name):
         return getattr(self._real, name)
 
 
-class _MaskStream:
+class _MaskStream(_Mask):
     def __init__(self, real, check):
-        self._real  = real
-        self._check = check
-        self.buffer = _MaskBinary(real.buffer, check)
-
-    def write(self, s):
-        if self._check():
-            s = _IPV4_TEXT.sub('<IP>', s)
-            s = _MAC_TEXT.sub('<MAC>', s)
-        return self._real.write(s)
-
-    def __getattr__(self, name):
-        return getattr(self._real, name)
+        super().__init__(real, check, _MASKS_TEXT)
+        self.buffer = _Mask(real.buffer, check, _MASKS_BYTES)
 
 
 class Listener:
@@ -656,6 +689,8 @@ class Listener:
             "obfuscator": (self._cmd_obfuscate, 1),
             "tag":        (self._cmd_tag, 2),
             "setshell":   (self._cmd_setshell, 2),
+            "ifconfig":   (self._cmd_ifconfig, 0),
+            "ipconfig":   (self._cmd_ifconfig, 0),
         }
 
         entry = handlers.get(cmd)
@@ -850,6 +885,66 @@ class Listener:
         else:
             data = {accent(name): f"{cls.description}  {platform_badge(cls.platform)}" for name, cls in modules.items()}
             print_report_box("Modules", data)
+
+    def _cmd_ifconfig(self) -> None:
+        from koi.utils.ui import print_table
+        try:
+            raw = subprocess.check_output(
+                ["ip", "-o", "addr", "show"], text=True, stderr=subprocess.DEVNULL,
+            )
+            link_raw = subprocess.check_output(
+                ["ip", "-o", "link", "show"], text=True, stderr=subprocess.DEVNULL,
+            )
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            notify('error', "Could not run ip addr show.")
+            return
+
+        ifaces: dict[str, dict] = {}
+        for line in raw.splitlines():
+            m = re.search(r'^\d+:\s+(\S+)\s+(\S+)\s+(\S+)', line)
+            if not m:
+                continue
+            name, family, addr = m.group(1), m.group(2), m.group(3)
+            if name == "lo":
+                continue
+            entry = ifaces.setdefault(name, {"addrs": []})
+            entry["addrs"].append((family, addr))
+
+        for line in link_raw.splitlines():
+            lm = re.search(r'^\d+:\s+(\S+):', line)
+            if not lm:
+                continue
+            name = lm.group(1)
+            if name not in ifaces:
+                continue
+            state_m = re.search(r'state\s+(\S+)', line)
+            if state_m:
+                ifaces[name]["state"] = state_m.group(1)
+            mac_m = re.search(r'link/ether\s+([0-9a-f:]{17})', line)
+            if mac_m:
+                ifaces[name]["mac"] = mac_m.group(1)
+
+        if not ifaces:
+            notify('status', muted("No interfaces found (excluding loopback)."))
+            return
+
+        rows = []
+        for name, info in ifaces.items():
+            v4 = []
+            v6 = []
+            for family, addr in info["addrs"]:
+                if family == "inet":
+                    v4.append(addr)
+                else:
+                    v6.append(addr)
+            rows.append([
+                accent(name),
+                info.get("state", "?"),
+                info.get("mac", ""),
+                ", ".join(v4),
+                ", ".join(v6),
+            ])
+        print_table("Interfaces", ["iface", "state", "mac", "ipv4", "ipv6"], rows)
 
     def _cmd_run(self, mod_name: str, ref: str, mod_args: list) -> None:
         sess = self._require_alive_session(ref)

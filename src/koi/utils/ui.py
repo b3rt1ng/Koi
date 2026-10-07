@@ -266,15 +266,23 @@ def _make_color_fn(total_rows, total_cols, tl, br):
     return _color
 
 
-def _print_box_top(title, inner_width, get_color, title_color=PUMPKIN) -> None:
+def _print_box_top(title, inner_width, get_color, title_color=PUMPKIN, junctions=()) -> None:
     """Draw the rounded top border with *title* centred in it."""
     label   = f" {title} "
     padding = inner_width - len(label)
-    left    = "─" * (padding // 2)
-    right   = "─" * (padding - padding // 2)
+    left_len  = padding // 2
+    right_len = padding - left_len
+
+    junction_set = set(junctions)
+    title_start = 1 + left_len
+    right_start = title_start + len(label)
+
+    left  = "".join("┬" if (1 + i) in junction_set else "─" for i in range(left_len))
+    right = "".join("┬" if (right_start + i) in junction_set else "─" for i in range(right_len))
+
     colored_left  = "".join(get_color(0, c) + ch for c, ch in enumerate("╭" + left))
     colored_right = "".join(
-        get_color(0, 1 + len(left) + len(label) + c) + ch
+        get_color(0, right_start + c) + ch
         for c, ch in enumerate(right + "╮")
     )
     print("\n" + colored_left + gradient_text(label, title_color, WHITE) + colored_right + RST)
@@ -430,7 +438,15 @@ def print_table(
 
     r_idx = 0
 
-    _print_box_top(title, inner_width, get_color, top_left_color)
+    junctions = []
+    pos = 1
+    for i, w in enumerate(col_widths):
+        pos += w + 2
+        if i < n_cols - 1:
+            junctions.append(pos)
+            pos += 1
+
+    _print_box_top(title, inner_width, get_color, top_left_color, junctions)
 
     white_start = f"\033[38;2;{WHITE[0]};{WHITE[1]};{WHITE[2]}m"
 

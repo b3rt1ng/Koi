@@ -33,6 +33,7 @@ ALIASES: dict[str, list[str]] = {
     "tag":        ["tag"],
     "connect":    ["connect", "conn"],
     "tunnel":     ["tunnel", "tun"],
+    "ifconfig":   ["ifconfig", "ipconfig"],
 }
 
 _ALIAS_TO_CANON: dict[str, str] = {
@@ -272,6 +273,7 @@ def print_help() -> None:
             f"{accent('run')} {bold('<module>')} {bold('<id>')} {bold('[args...]')}": "Run a module against a session",
             f"{accent('setshell')} {bold('<id>')} {bold('<os_type>')}": "Manually set the OS type of a session",
             f"{accent('tunnel')} {bold('<start|status|stop>')} {bold('<id>')}": "Start, inspect or stop a background tunnel on a session",
+            f"{accent('ifconfig')}": "Show local network interfaces",
             f"{accent('logs')}": "List recorded session logs",
             f"{accent('start/stop')}": "Start or stop the listener",
             f"{accent('help')}": "Show this message",
