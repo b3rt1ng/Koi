@@ -10,8 +10,24 @@ def _to_ps_hex_str(s: str) -> str:
     return f"([System.Text.Encoding]::UTF8.GetString([byte[]]({hex_bytes})))"
 
 
+_SKIP_DQ = r'"(?:[^"`]|`.)*"'
+
+
+def _sub_sq(pattern, repl_fn, text):
+    combined = re.compile(_SKIP_DQ + r"|'[^']{0,1}'|" + pattern)
+    def _handler(m):
+        if m.group(1) is None:
+            return m.group(0)
+        pre = text[:m.start()].rstrip()
+        post = text[m.end():].lstrip()
+        if pre.endswith('+') or post.startswith('+'):
+            return m.group(0)
+        return repl_fn(m)
+    return combined.sub(_handler, text)
+
+
 def ps_hex_obfuscate(payload: str) -> str:
-    return re.sub(r"'([^']*)'", lambda m: _to_ps_hex_str(m.group(1)), payload)
+    return _sub_sq(r"'([^']*)'", lambda m: _to_ps_hex_str(m.group(1)), payload)
 
 
 def _split_parts(s: str) -> list[str]:
@@ -44,15 +60,21 @@ _PS_CMDLETS = [
 ]
 
 
+_SYNTAX_RE = re.compile(
+    r"""'[^']*'|"(?:[^"`]|`.)*"|"""
+    + "|".join(
+        rf'(?P<c{i}>(?<![.\w]){re.escape(c)}(?![\w]))'
+        for i, c in enumerate(_PS_CMDLETS)
+    )
+)
+
 def ps_syntax_obfuscate(payload: str) -> str:
-    result = payload
-    for cmdlet in _PS_CMDLETS:
-        result = re.sub(
-            rf'(?<![.\w]){re.escape(cmdlet)}(?![\w])',
-            lambda _, c=cmdlet: _random_split(c),
-            result,
-        )
-    return result
+    def _repl(m):
+        for i, cmdlet in enumerate(_PS_CMDLETS):
+            if m.group(f"c{i}") is not None:
+                return _random_split(cmdlet)
+        return m.group(0)
+    return _SYNTAX_RE.sub(_repl, payload)
 
 
 def _format_split(s: str) -> str:
@@ -71,11 +93,7 @@ def _format_split(s: str) -> str:
 
 
 def ps_format_obfuscate(payload: str) -> str:
-    return re.sub(
-        r"'([^']{2,})'",
-        lambda m: _format_split(m.group(1)),
-        payload,
-    )
+    return _sub_sq(r"'([^']{2,})'", lambda m: _format_split(m.group(1)), payload)
 
 
 def _xor_encode_str(s: str) -> str:
@@ -87,11 +105,7 @@ def _xor_encode_str(s: str) -> str:
 
 
 def ps_xor_obfuscate(payload: str) -> str:
-    return re.sub(
-        r"'([^']{2,})'",
-        lambda m: _xor_encode_str(m.group(1)),
-        payload,
-    )
+    return _sub_sq(r"'([^']{2,})'", lambda m: _xor_encode_str(m.group(1)), payload)
 
 
 def _rand_ident(length: int = 10) -> str:

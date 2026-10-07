@@ -73,15 +73,9 @@ def _bash_base64(payload: str) -> str:
 
 
 def _bash_ifs(payload: str) -> str:
-    """Store payload in a variable and eval it.
-
-    The payload is single-quote-safe: any single quote it already contains
-    (e.g. from ansi_c / printf_hex / quote_insert) is escaped with the shell
-    idiom '\\'' so chaining these methods before ifs stays valid.
-    """
+    encoded = base64.b64encode(payload.encode()).decode()
     v = _rand_var()
-    safe = payload.replace("'", "'\\''")
-    return f"{v}='{safe}';eval \"${v}\""
+    return f"{v}=$(base64 -d<<<{encoded});eval \"${v}\""
 
 
 _FAKE_PROC_NAMES = [
