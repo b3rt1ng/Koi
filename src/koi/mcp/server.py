@@ -22,6 +22,7 @@ from koi.modules.blueprint import KoiModule
 from koi.session import SessionBusy
 from koi.utils.constants import ANSI_RE
 from koi.utils.logger import list_logs, log_dir
+from koi.utils.ui import accent, muted, plain
 
 if TYPE_CHECKING:
     from koi.listener import Listener
@@ -557,7 +558,8 @@ class KoiMCPServer:
             raise ValueError("command must be a non-empty string")
         timeout = _exec_timeout(arguments.get("timeout"))
 
-        self.listener._announce('status', f"MCP: exec on session #{sess.id}")
+        ts = time.strftime("%H:%M:%S")
+        self.listener._announce('status', f"{accent(ts)} {plain('MCP: exec')} {muted(command)} {plain(f'on session #{sess.id}')}")
         with _capture_output():
             logger_obj = self.listener._ensure_logger(sess)
         sess.attach_logger(logger_obj)
@@ -595,7 +597,8 @@ class KoiMCPServer:
                 f"({sess.os_type or 'unknown OS'})"
             )
 
-        self.listener._announce('status', f"MCP: module {mod_name} on session #{sess.id}")
+        ts = time.strftime("%H:%M:%S")
+        self.listener._announce('status', f"{accent(ts)} {plain('MCP: module')} {muted(mod_name)} {plain(f'on session #{sess.id}')}")
 
         # Local paths from an MCP client stay confined to ~/.koi, never the operator's disk at large.
         safe_args = {k: v for k, v in arguments.items() if k != "session"}
@@ -642,7 +645,9 @@ class KoiMCPServer:
         routes = arguments.get("routes") or []
         if isinstance(routes, str):
             routes = [routes]
-        self.listener._announce('status', f"MCP: tunnel start on session #{sess.id}")
+        ts = time.strftime("%H:%M:%S")
+        routes_str = ", ".join(str(r) for r in routes) if routes else "default"
+        self.listener._announce('status', f"{accent(ts)} {plain('MCP: tunnel start')} {muted(routes_str)} {plain(f'on session #{sess.id}')}")
         with _capture_output() as buffer:
             self.listener._tunnels.start(sess, [str(r) for r in routes], interactive=False)
         output, truncated = _cap(_strip_ansi(buffer.getvalue()).strip())
@@ -658,7 +663,8 @@ class KoiMCPServer:
     def _do_tunnel_stop(self, arguments: Dict[str, Any]) -> str:
         self._require_exec()
         sess = self._resolve(arguments["session"])
-        self.listener._announce('status', f"MCP: tunnel stop on session #{sess.id}")
+        ts = time.strftime("%H:%M:%S")
+        self.listener._announce('status', f"{accent(ts)} {plain('MCP: tunnel stop')} {plain(f'on session #{sess.id}')}")
         with _capture_output() as buffer:
             stopped = self.listener._tunnels.stop(sess.id, interactive=False)
         output, truncated = _cap(_strip_ansi(buffer.getvalue()).strip())
