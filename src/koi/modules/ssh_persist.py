@@ -109,11 +109,18 @@ class SshPersistModule(KoiModule):
         )
 
         self.success(f"Public key installed in {auth}")
+
+        ip = self.session.addr[0]
+        connect_cmd = f"connect ssh {user}@{ip} -i {key_path}"
+        if self.args.port != 22:
+            connect_cmd += f" -p {self.args.port}"
+
         self.box("SSH persistence installed", {
             "Private key":      str(key_path),
-            "Target":           f"{user}@{self.session.addr[0]}",
+            "Target":           f"{user}@{ip}",
             "authorized_keys":  auth,
             "Key tag":          tag,
+            "Reconnect":        connect_cmd,
         })
 
         if not self.args.no_verify:
@@ -162,29 +169,32 @@ class SshPersistModule(KoiModule):
 
         if self.args.key:
             pub = self._read_pub(Path(self.args.key).expanduser())
-            fields = pub.split()
-            marker = fields[1] if len(fields) >= 2 else ""
+            if not pub:
+                self.err("Could not read the public key.")
+                return
+            marker = pub
+            grep_flag = "-vxF"
         elif self.args.tag:
             marker = self.args.tag
+            grep_flag = "-vF"
         else:
             self.err("--remove needs --key PATH or --tag TAG to identify the key.")
-            return
-        if not marker:
-            self.err("Could not determine which key to remove.")
             return
 
         auth = self._shell_quote(f"{home.rstrip('/')}/.ssh/authorized_keys")
         m = self._shell_quote(marker)
         cmd = (
             f"test -f {auth} || {{ echo 0; exit 0; }}; "
-            f"t=$(mktemp); grep -vF {m} {auth} > \"$t\"; cat \"$t\" > {auth}; rm -f \"$t\"; "
+            f"t=$(mktemp); grep {grep_flag} {m} {auth} > \"$t\"; "
+            f"cat \"$t\" > {auth}; rm -f \"$t\"; "
             f"grep -cF {m} {auth} || true"
         )
-        out = self._try_exec(cmd)
-        remaining = out.splitlines()[-1].strip() if out else "0"
-        if out == "":
-            self.err("Could not rewrite authorized_keys.")
+        result = self.exec(cmd, timeout=TIMEOUTS["exec_command"])
+        if result.returncode != 0:
+            self.err(f"Could not rewrite authorized_keys (rc {result.returncode}).")
             return
+        out = result.stdout.strip()
+        remaining = out.splitlines()[-1].strip() if out else "0"
         self.success(f"Removed matching key(s) from {user}'s authorized_keys (remaining: {remaining}).")
 
     # ---------------------------------------------------------------- helpers
