@@ -43,6 +43,7 @@ from koi.utils.ui import (
     gradient_text, yesno,
 )
 from koi.utils.obfuscate_ui import run_obfuscate_ui
+from koi.utils.config_ui import run_config_ui
 
 LOCALUSER = os.getenv("USER") or os.getenv("USERNAME") or "user"
 
@@ -517,16 +518,13 @@ class Listener:
         if transport is None:
             supported = ", ".join(bold(name) for name in TRANSPORTS)
             notify('error', f"Unknown transport {accent(argv[0])}, supported: {supported}.")
+            notify('status', muted(f"Example: connect ssh user@10.10.10.5  or  connect ssh user:pass@10.10.10.5"))
             return
 
         target = transport.parse(argv[1:])
         if target is None:
             notify('error', transport.usage)
             return
-
-        if target.password:
-            # The line just typed carries the password in clear, keep it out of recall.
-            self._scrub_last_history()
 
         host = transport.resolve_host(target)
         if host is None:
@@ -675,7 +673,7 @@ class Listener:
             return True
 
         handlers = {
-            "help":       (print_help, 0),
+            "help":       (print_help, 2),
             "stop":       (self._cmd_stop_accepting, 0),
             "start":      (self._cmd_start_accepting, 0),
             "ls":         (self._cmd_ls, 0),
@@ -687,6 +685,7 @@ class Listener:
             "kill":       (self._cmd_kill, 1),
             "payload":    (self._cmd_payload, 1),
             "obfuscator": (self._cmd_obfuscate, 1),
+            "settings":   (self._cmd_config, 0),
             "tag":        (self._cmd_tag, 2),
             "setshell":   (self._cmd_setshell, 2),
             "ifconfig":   (self._cmd_ifconfig, 0),
@@ -1029,6 +1028,9 @@ class Listener:
 
     def _cmd_obfuscate(self, iface: Optional[str] = None) -> None:
         run_obfuscate_ui(iface, self.port)
+
+    def _cmd_config(self) -> None:
+        run_config_ui()
 
     def _flush_pending_notifications(self) -> None:
         with self._notif_lock:

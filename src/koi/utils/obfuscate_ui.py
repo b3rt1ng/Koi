@@ -93,7 +93,7 @@ def _render_menu(title: str, options: list[str], cursor: int) -> None:
             sys.stdout.write(f"  {accent('►')} {bold(accent(opt))}\n")
         else:
             sys.stdout.write(f"    {dim(opt)}\n")
-    sys.stdout.write(f"\n  {dim('↑/↓')} navigate  {dim('Enter')} select  {dim('⌫')} back  {dim('q')} cancel\n")
+    sys.stdout.write(f"\n  {dim('↑/↓')} navigate  {dim('Enter')} select  {dim('⌫')} back  {dim('Esc')} cancel\n")
     sys.stdout.flush()
 
 
@@ -144,7 +144,7 @@ def _render_obfuscator(
         f"{dim('^R')} original  "
         f"{dim('paste')} replace  "
         f"{dim('⌫')} back  "
-        f"{dim('q')} quit & print\n"
+        f"{dim('Esc')} quit & print\n"
     )
     sys.stdout.flush()
 
@@ -186,7 +186,7 @@ def _run_obfuscator_loop(
             chain = []
         elif ch in (b'\x7f', b'\x08'):
             return None
-        elif ch in (b'q', b'Q', b'\x03', b'\x04'):
+        elif ch in (b'\x1b', b'\x03', b'\x04'):
             break
 
     return current, chain
@@ -236,7 +236,7 @@ def run_obfuscate_ui(iface: str | None, port: int) -> None:
                         selected_iface = iface_names[iface_cursor]
                         step = "platform"
                         break
-                    elif ch in (b'\x7f', b'\x08', b'q', b'Q', b'\x03'):
+                    elif ch in (b'\x7f', b'\x08', b'\x1b', b'\x03'):
                         raise _Cancelled
                 if step != "platform":
                     continue
@@ -260,7 +260,7 @@ def run_obfuscate_ui(iface: str | None, port: int) -> None:
                             raise _Cancelled
                         back = True
                         break
-                    elif ch in (b'q', b'Q', b'\x03'):
+                    elif ch in (b'\x1b', b'\x03'):
                         raise _Cancelled
                 if back:
                     continue

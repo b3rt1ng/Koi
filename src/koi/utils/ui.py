@@ -35,16 +35,18 @@ def accent(t): return colored_text(t, PUMPKIN)
 def muted(t):  return colored_text(t, SILVER)
 def cyan(t):   return colored_text(t, BLUE)
 
-MOTD = ["流れに逆らう鯉のように",
-        "The serene shell handler", 
-        "La root est longue mais la voie est libre ;)",
-        "¯＼(º_o)/¯",
-        "Do not download and run random modules...",
-        "AD is not that scary, I promise!",
-        "(⌐▨_▨)",
-        "don't forget to star the repo <3",
-        "Use koireview to see your shells history",
-        "You can use \"koifuscator\" to directly use the obfuscator"
+MOTD = [
+    "流れに逆らう鯉のように",
+    "The serene shell handler", 
+    "La root est longue mais la voie est libre ;)",
+    "¯＼(º_o)/¯",
+    "Do not download and run random modules...",
+    "AD is not that scary, I promise!",
+    "(⌐▨_▨)",
+    "don't forget to star the repo <3",
+    "Use koireview to see your shells history",
+    "You can use \"koifuscator\" to directly use the obfuscator",
+    "I'm building this tool alone, do not hesitate to contribute or report issues on GitHub !",
 ]
 
 def color_signal(signal):
@@ -189,6 +191,11 @@ def _wrap_ansi(text: str, width: int) -> list[str]:
     text = str(text)
     if width < 1:
         width = 1
+    if "\n" in text:
+        result = []
+        for segment in text.split("\n"):
+            result.extend(_wrap_ansi(segment, width))
+        return result
     if _vlen(text) <= width:
         return [text]
 

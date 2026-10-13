@@ -28,10 +28,10 @@ DEFAULTS = {
     },
 
     "timeouts": {
-        "exec_command":   30,
-        "exec_query":     10,
-        "upload":         30,
-        "download":       300,
+        "exec_command":   120,
+        "exec_query":     120,
+        "upload":         240,
+        "download":       360,
         "http_fetch":     60,
         "session_detect": 4.0,
     },

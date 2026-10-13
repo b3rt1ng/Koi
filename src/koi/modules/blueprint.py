@@ -157,6 +157,41 @@ class KoiModule(ABC):
         return cls.platform == os_type
 
     @classmethod
+    def help_detail(cls) -> dict[str, str]:
+        platform = cls.platform
+        if isinstance(platform, list):
+            targets = ", ".join(platform)
+        elif platform == "any":
+            targets = "all"
+        else:
+            targets = platform
+
+        detail: dict[str, str] = {
+            "Usage": f"run {cls.usage}" if cls.usage else f"run {cls.name} <id>",
+            "Description": cls.description,
+            "Platform": targets,
+        }
+        if cls.category:
+            detail["Category"] = cls.category
+
+        if cls.arguments:
+            lines = []
+            for spec in cls.arguments:
+                flags = spec.get("flags", [])
+                flag_str = ", ".join(flags)
+                help_text = spec.get("help", "")
+                default = spec.get("default")
+                parts = [flag_str]
+                if help_text:
+                    parts.append(help_text)
+                if default not in (None, ""):
+                    parts.append(f"(default: {default})")
+                lines.append("  ".join(parts))
+            detail["Arguments"] = "\n".join(lines)
+
+        return detail
+
+    @classmethod
     def resolve_external_resources(cls) -> list[dict]:
         """Return the resources ``--local-prepare`` should cache for this module.
 

@@ -34,6 +34,7 @@ ALIASES: dict[str, list[str]] = {
     "connect":    ["connect", "conn"],
     "tunnel":     ["tunnel", "tun"],
     "ifconfig":   ["ifconfig", "ipconfig"],
+    "settings":   ["settings", "tweaks"],
 }
 
 _ALIAS_TO_CANON: dict[str, str] = {
@@ -98,7 +99,7 @@ USAGE: dict[str, tuple[int, str]] = {
     "kill":     (1, f"Usage: kill {accent('<id|tag>')}"),
     "setshell": (2, f"Usage: setshell {accent('<id|tag>')} {accent('<linux|windows_ps|windows_cmd>')}"),
     "tag":      (1, f"Usage: tag {accent('<id|tag>')} {accent('[name]')}"),
-    "connect":  (2, f"Usage: connect {accent('|'.join(TRANSPORTS))} {accent('<target>')} {accent('[args...]')}"),
+    "connect":  (2, f"Usage: connect {accent('|'.join(TRANSPORTS))} {accent('<target>')} {accent('[args...]')}  (e.g. connect ssh user@10.10.10.5  or  connect ssh user:pass@10.10.10.5)"),
     "tunnel":   (2, f"Usage: tunnel {accent('<start|status|stop>')} {accent('<id>')}"),
 }
 
@@ -188,6 +189,17 @@ def completer(text: str, state: int):
         else:
             options = _match(text, COMMANDS)
 
+    elif parts[0] == "help" and (
+        len(parts) == 1 or (len(parts) == 2 and not line.endswith(" "))
+    ):
+        candidates = [c for c in COMMANDS if c != "modules"] + ["module"]
+        options = _match(text, candidates)
+
+    elif parts[0] == "help" and len(parts) >= 2 and parts[1].lower() == "module" and (
+        len(parts) == 2 or (len(parts) == 3 and not line.endswith(" "))
+    ):
+        options = _match(text, list(load_modules().keys()))
+
     elif parts[0] in _PAYLOAD_LIKE_CMDS and (
         len(parts) == 1 or (len(parts) == 2 and not line.endswith(" "))
     ):
@@ -254,7 +266,144 @@ def completer(text: str, state: int):
 readline.set_completer(completer)
 
 
-def print_help() -> None:
+COMMAND_HELP: dict[str, dict[str, str]] = {
+    "ls": {
+        "Usage": "ls",
+        "Description": "List all active sessions with their id, tag, address, OS type, PTY state and uptime.",
+        "Aliases": ", ".join(ALIASES["ls"]),
+    },
+    "go": {
+        "Usage": "go <id|tag>",
+        "Description": "Enter a session interactively. You get a live shell on the target. Ctrl+Z to background.",
+        "Aliases": ", ".join(ALIASES["go"]),
+        "Examples": "go 1\ngo webserver",
+    },
+    "upgrade": {
+        "Usage": "upgrade <id|tag>",
+        "Description": "Upgrade a raw session to a full PTY (tab completion, arrow keys, Ctrl+C forwarding). Uses script/bash on Linux, ConPtyShell on Windows.",
+        "Aliases": ", ".join(ALIASES["upgrade"]),
+        "Examples": "upgrade 1\nupgrade webserver",
+    },
+    "kill": {
+        "Usage": "kill <id|tag>",
+        "Description": "Terminate a session and remove it from the session table.",
+        "Aliases": ", ".join(ALIASES["kill"]),
+        "Examples": "kill 3\nkill old-box",
+    },
+    "tag": {
+        "Usage": "tag <id|tag> [name]",
+        "Description": "Assign a human-readable tag to a session. Omit the name to clear it. Tags can be used in place of session ids.",
+        "Examples": "tag 1 dc01\ntag 2 webserver\ntag dc01",
+    },
+    "connect": {
+        "Usage": "connect <transport> <[user[:pass]@]host> [transport args...]",
+        "Description": "Open a session on a remote host over the given transport. Koi delivers a callback payload, waits for the shell to land, and adds it to the session table. Extra arguments after the target are passed straight to the transport binary (e.g. ssh -J, -i, -p).",
+        "Transports": ", ".join(TRANSPORTS),
+        "Examples": "connect ssh root@10.10.10.5\nconnect ssh admin:Password1@dc01.corp.local\nconnect ssh user@box -J pivot@10.0.0.1\nconnect ssh user@box -i ~/.ssh/id_ed25519",
+    },
+    "payload": {
+        "Usage": "payload [iface]",
+        "Description": "Show copy-pasteable reverse shell payloads for Linux and Windows. If no interface is given, you pick one interactively.",
+        "Aliases": ", ".join(ALIASES["payload"]),
+        "Examples": "payload tun0\npayload eth0",
+    },
+    "obfuscator": {
+        "Usage": "obfuscator [iface]",
+        "Description": "Interactive payload obfuscator. Chain multiple obfuscation techniques (hex, syntax, format, xor, variable, bullshit, base64) on a payload. Also available as the standalone command 'koifuscator'.",
+        "Aliases": ", ".join(ALIASES["obfuscator"]),
+        "Examples": "obfuscator tun0\nobfuscator",
+    },
+    "modules": {
+        "Usage": "modules",
+        "Description": "List all available post-exploitation modules with their supported platforms.",
+        "Aliases": ", ".join(ALIASES["modules"]),
+    },
+    "run": {
+        "Usage": "run <module> <id|tag> [args...]",
+        "Description": "Run a post-exploitation module against a session. Use 'modules' to list available modules, 'run <module>' to see its usage.",
+        "Examples": "run sysinfo 1\nrun download 2 /etc/shadow\nrun secrets dc01",
+    },
+    "reload": {
+        "Usage": "reload",
+        "Description": "Reload all modules from disk without restarting the listener. Useful during module development.",
+        "Aliases": ", ".join(ALIASES["reload"]),
+    },
+    "setshell": {
+        "Usage": "setshell <id|tag> <linux|windows_ps|windows_cmd>",
+        "Description": "Manually override the detected OS type of a session. Useful when auto-detection fails or you want to force a specific shell type.",
+        "Aliases": ", ".join(ALIASES["setshell"]),
+        "Examples": "setshell 1 linux\nsetshell 2 windows_ps",
+    },
+    "tunnel": {
+        "Usage": "tunnel <start|status|stop> <id> [cidr ...]",
+        "Description": "Manage L3 pivot tunnels. 'start' creates a TUN device and deploys the tunel agent on the target, routing the given CIDRs through it. Requires root or cached sudo.",
+        "Examples": "tunnel start 1 10.0.0.0/24\ntunnel start 1 10.0.0.0/24 172.16.0.0/16\ntunnel status 1\ntunnel stop 1",
+    },
+    "ifconfig": {
+        "Usage": "ifconfig",
+        "Description": "Show local network interfaces and their IP addresses. Handy for picking the right callback interface.",
+        "Aliases": ", ".join(ALIASES["ifconfig"]),
+    },
+    "logs": {
+        "Usage": "logs",
+        "Description": "List recorded session logs. Logs are stored in ~/.koi/logs/ and can be reviewed with 'koireview'.",
+        "Aliases": ", ".join(ALIASES["logs"]),
+    },
+    "start": {
+        "Usage": "start",
+        "Description": "Resume accepting new connections after a 'stop'.",
+    },
+    "stop": {
+        "Usage": "stop",
+        "Description": "Pause the listener. Existing sessions stay alive but no new connections are accepted.",
+    },
+    "help": {
+        "Usage": "help [command]  or  help module <name>",
+        "Description": "Show the general help screen, detailed help for a command, or detailed help for a module (usage, arguments, platform).",
+        "Aliases": ", ".join(ALIASES["help"]),
+        "Examples": "help\nhelp connect\nhelp tunnel\nhelp module sysinfo\nhelp module download",
+    },
+    "settings": {
+        "Usage": "settings",
+        "Description": "Interactive configuration editor. Navigate with arrow keys, Enter to toggle booleans or edit values, Esc to save and quit. Changes apply immediately. Invalid values are shown in red and skipped on save.",
+        "Aliases": ", ".join(ALIASES["settings"]),
+    },
+    "exit": {
+        "Usage": "exit",
+        "Description": "Shut down the listener and close all sessions.",
+    },
+}
+
+
+def print_help(topic: Optional[str] = None, subtopic: Optional[str] = None) -> None:
+    from koi.utils.ui import muted, notify
+
+    if topic and topic.lower() == "module":
+        if subtopic is None:
+            notify('status', f"Usage: help module {accent('<name>')}")
+            notify('status', muted(f"Type {bold('modules')} to list available modules."))
+            return
+        from koi.modules.loader import get_module
+        mod_cls = get_module(subtopic)
+        if mod_cls is None:
+            notify('error', f"Unknown module {accent(subtopic)}. Type {bold('modules')} to list available modules.")
+            return
+        print_report_box(f"help: module {mod_cls.name}", mod_cls.help_detail())
+        return
+
+    if topic:
+        canon = resolve_command(topic)
+        entry = COMMAND_HELP.get(canon)
+        if entry is not None:
+            print_report_box(f"help: {canon}", {
+                k: (muted(v) if k == "Aliases" else v)
+                for k, v in entry.items()
+            })
+            return
+
+        notify('error', f"No help for {accent(topic)}. Type {bold('help')} or {bold('help module <name>')}.")
+        return
+
     data = {
         "Commands": {
             f"{accent('ls')}": "List all active sessions",
@@ -274,9 +423,10 @@ def print_help() -> None:
             f"{accent('setshell')} {bold('<id>')} {bold('<os_type>')}": "Manually set the OS type of a session",
             f"{accent('tunnel')} {bold('<start|status|stop>')} {bold('<id>')}": "Start, inspect or stop a background tunnel on a session",
             f"{accent('ifconfig')}": "Show local network interfaces",
+            f"{accent('settings')}": "Interactive configuration editor",
             f"{accent('logs')}": "List recorded session logs",
             f"{accent('start/stop')}": "Start or stop the listener",
-            f"{accent('help')}": "Show this message",
+            f"{accent('help')} {bold('[command|module <name>]')}": "Show this message, or help for a command or module",
             f"{accent('exit')}": "Shut down the listener",
         },
         "Session Signals": {
