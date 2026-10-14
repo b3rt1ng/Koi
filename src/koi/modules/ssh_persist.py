@@ -15,11 +15,11 @@ _VERIFY_TIMEOUT = 20.0
 
 
 class SshPersistModule(KoiModule):
-    name        = "ssh_persist"
+    name        = "sshpersist"
     description = "Install an ssh public key for the current user and verify it works."
     category    = "Persistence"
     platform    = "linux"
-    usage       = "ssh_persist <id> [-u USER] [-o DIR] [-p PORT] [--tag TAG] [--key PATH] [--remove] [--no-verify]"
+    usage       = "sshpersist <id> [-u USER] [-o DIR] [-p PORT] [-t TAG] [-k PATH] [-r] [-n]"
     arguments   = [
         {"flags": ["-u", "--user"], "default": None, "metavar": "USER",
          "help": "Target user (default: the user owning this session)."},
@@ -27,13 +27,13 @@ class SshPersistModule(KoiModule):
          "help": f"Local directory for the keypair (default: {_KEY_DIR})."},
         {"flags": ["-p", "--port"], "type": int, "default": 22, "metavar": "PORT",
          "help": "ssh port used for the verification (default: 22)."},
-        {"flags": ["--tag"], "default": None, "metavar": "TAG",
+        {"flags": ["-t", "--tag"], "default": None, "metavar": "TAG",
          "help": "Comment/tag embedded in the key (default: koi-<id>)."},
-        {"flags": ["--key"], "default": None, "metavar": "PATH",
+        {"flags": ["-k", "--key"], "default": None, "metavar": "PATH",
          "help": "Use an existing local private key instead of generating one."},
-        {"flags": ["--remove"], "action": "store_true", "default": False,
-         "help": "Revoke: remove the key matching --key/--tag from authorized_keys."},
-        {"flags": ["--no-verify"], "action": "store_true", "default": False,
+        {"flags": ["-r", "--remove"], "action": "store_true", "default": False,
+         "help": "Revoke: remove the key matching -k/-t from authorized_keys."},
+        {"flags": ["-n", "--no-verify"], "action": "store_true", "default": False,
          "help": "Skip the non-interactive ssh check after installing."},
     ]
 
