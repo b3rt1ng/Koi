@@ -103,7 +103,3 @@ METHODS: list[tuple[str, str, Callable[[str], str]]] = [
     ("ifs",         "store in variable and eval",                _bash_ifs),
     ("spoof_argv",  "exec -a to mask process name in ps/top",   _bash_spoof_argv),
 ]
-
-
-def _hex(s: str) -> str:
-    return "".join(f"\\x{ord(c):02x}" for c in s)

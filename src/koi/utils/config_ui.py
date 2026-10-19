@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-import os
-import select
 import sys
-import termios
-import tty
 from typing import Any
+
+from koi.utils.terminal import (
+    getch as _getch,
+    HIDE as _HIDE, SHOW as _SHOW,
+    ALT_ON as _ALT_ON, ALT_OFF as _ALT_OFF,
+    CLEAR as _CLEAR,
+)
 
 from koi.utils.config import CONFIG, TIMEOUTS, DEFAULTS, persist, _CONFIG_PATH
 from koi.utils.ui import (
@@ -15,11 +18,6 @@ from koi.utils.ui import (
     notify,
 )
 
-_HIDE       = "\033[?25l"
-_SHOW       = "\033[?25h"
-_ALT_ON     = "\033[?1049h"
-_ALT_OFF    = "\033[?1049l"
-_CLEAR      = "\033[2J\033[H"
 _RED        = "\033[38;2;255;80;80m"
 _RST        = "\033[0m"
 
@@ -55,34 +53,6 @@ def _set_value(key: str, value: Any) -> None:
         TIMEOUTS[key] = value
     else:
         CONFIG[key] = value
-
-
-def _getch() -> bytes:
-    fd = sys.stdin.fileno()
-    old = termios.tcgetattr(fd)
-    try:
-        tty.setraw(fd)
-        ch = os.read(fd, 1)
-        if ch == b'\x1b':
-            r, _, _ = select.select([sys.stdin], [], [], 0.05)
-            if r:
-                nxt = os.read(fd, 1)
-                if nxt == b'[':
-                    param = bytearray()
-                    while True:
-                        b = os.read(fd, 1)
-                        if not b:
-                            break
-                        param.extend(b)
-                        if 0x40 <= b[0] <= 0x7E:
-                            break
-                        if len(param) > 16:
-                            break
-                    return b'\x1b[' + bytes(param)
-                return b'\x1b' + nxt
-        return ch
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
 def _format_value(value: Any, vtype: type, error: bool = False) -> str:

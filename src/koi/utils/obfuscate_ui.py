@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-import os
-import select
 import sys
 import shutil
-import termios
-import tty
 from typing import Callable
+
+from koi.utils.terminal import (
+    getch as _getch,
+    HIDE as _HIDE, SHOW as _SHOW,
+    ALT_ON as _ALT_ON, ALT_OFF as _ALT_OFF,
+    CLEAR as _CLEAR,
+    BPASTE_ON as _BPASTE_ON, BPASTE_OFF as _BPASTE_OFF,
+)
 
 from koi.utils.bash_obfuscate import METHODS as LINUX_METHODS
 from koi.utils.payloads import get_interfaces, PayloadGenerator
@@ -35,54 +39,6 @@ WIN_METHODS: list[tuple[str, str, Callable[[str], str]]] = [
     ("base64", "UTF-16LE base64 -> powershell -enc  [FINAL]", ps_base64_encode),
     ("bullshit", "insert random no-op statements",            ps_bullshit_obfuscate),
 ]
-
-_HIDE       = "\033[?25l"
-_SHOW       = "\033[?25h"
-_ALT_ON     = "\033[?1049h"
-_ALT_OFF    = "\033[?1049l"
-_CLEAR      = "\033[2J\033[H"
-_BPASTE_ON  = "\033[?2004h"
-_BPASTE_OFF = "\033[?2004l"
-
-
-def _getch() -> bytes:
-    fd = sys.stdin.fileno()
-    old = termios.tcgetattr(fd)
-    try:
-        tty.setraw(fd)
-        ch = os.read(fd, 1)
-        if ch == b'\x1b':
-            r, _, _ = select.select([sys.stdin], [], [], 0.05)
-            if r:
-                nxt = os.read(fd, 1)
-                if nxt == b'[':
-                    param = bytearray()
-                    while True:
-                        b = os.read(fd, 1)
-                        if not b:
-                            break
-                        param.extend(b)
-                        if 0x40 <= b[0] <= 0x7E:
-                            break
-                        if len(param) > 16:
-                            break
-                    seq = b'[' + bytes(param)
-                    if seq == b'[200~':
-                        paste = bytearray()
-                        while len(paste) < 500_000:
-                            b = os.read(fd, 1)
-                            if not b:
-                                break
-                            paste.extend(b)
-                            if paste.endswith(b'\x1b[201~'):
-                                return b'\x1b[200~' + bytes(paste[:-6])
-                        return b'\x1b[200~' + bytes(paste)
-                    return b'\x1b' + seq
-                return b'\x1b' + nxt
-        return ch
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old)
-
 
 def _render_menu(title: str, options: list[str], cursor: int) -> None:
     sys.stdout.write(_CLEAR)

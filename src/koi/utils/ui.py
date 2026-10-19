@@ -24,7 +24,6 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "dev"
 
-_READLINE_HISTORY_LENGTH = 200
 _SPINNER_FRAME_DELAY = 0.08
 
 def bold(t):   return f"{BOLD}{t}{RST}"
