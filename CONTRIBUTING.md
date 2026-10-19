@@ -15,3 +15,9 @@ And on top of all, please make the code readable. I'm the one reviewing it and I
 #### Go check out the wiki
 
 I made a [wiki](https://b3rt1ng.github.io/koi-wiki/) and I try to keep it as updated as possible, you can check it out yourself!
+
+
+That's all for now and thanks for your contribution !
+<div align="center">
+  <img src="https://media1.tenor.com/m/pTHWYc7b8TsAAAAd/smiling-friends-dab.gif">
+</div>

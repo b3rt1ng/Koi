@@ -22,6 +22,7 @@ ALIASES: dict[str, list[str]] = {
     "ls":         ["ls", "l", "list"],
     "go":         ["go", "g", "interact"],
     "upgrade":    ["upgrade", "u"],
+    "encrypt":    ["encrypt", "tls"],
     "kill":       ["kill", "rm", "terminate"],
     "payload":    ["payload", "p"],
     "obfuscator": ["obfuscator", "obs", "cook"],
@@ -88,7 +89,7 @@ def resolve_os_type(os_arg: str) -> Optional[str]:
 
 _OS_TYPES = list(OS_ALIASES.keys())
 _SESSION_ARG1_CMDS = {
-    alias for canon in ("go", "upgrade", "kill", "tag") for alias in ALIASES[canon]
+    alias for canon in ("go", "upgrade", "encrypt", "kill", "tag") for alias in ALIASES[canon]
 }
 _PAYLOAD_LIKE_CMDS = set(ALIASES["payload"]) | set(ALIASES["obfuscator"])
 _TUNNEL_SUBCMDS = ("start", "status", "stop")
@@ -96,6 +97,7 @@ _TUNNEL_SUBCMDS = ("start", "status", "stop")
 USAGE: dict[str, tuple[int, str]] = {
     "go":       (1, f"Usage: go {accent('<id|tag>')}"),
     "upgrade":  (1, f"Usage: upgrade {accent('<id|tag>')}"),
+    "encrypt":  (1, f"Usage: encrypt {accent('<id|tag>')}"),
     "kill":     (1, f"Usage: kill {accent('<id|tag>')}"),
     "setshell": (2, f"Usage: setshell {accent('<id|tag>')} {accent('<linux|windows_ps|windows_cmd>')}"),
     "tag":      (1, f"Usage: tag {accent('<id|tag>')} {accent('[name]')}"),
@@ -284,6 +286,12 @@ COMMAND_HELP: dict[str, dict[str, str]] = {
         "Aliases": ", ".join(ALIASES["upgrade"]),
         "Examples": "upgrade 1\nupgrade webserver",
     },
+    "encrypt": {
+        "Usage": "encrypt <id|tag>",
+        "Description": "Upgrade a session to TLS-encrypted traffic. Sends a Python (Linux) or PowerShell (Windows) payload that reconnects over TLS on the same port. The cleartext session is replaced in place.",
+        "Aliases": ", ".join(ALIASES["encrypt"]),
+        "Examples": "encrypt 1\ntls webserver",
+    },
     "kill": {
         "Usage": "kill <id|tag>",
         "Description": "Terminate a session and remove it from the session table.",
@@ -409,6 +417,7 @@ def print_help(topic: Optional[str] = None, subtopic: Optional[str] = None) -> N
             f"{accent('ls')}": "List all active sessions",
             f"{accent('go')} {bold('<id|tag>')}": "Enter a session interactively",
             f"{accent('upgrade')} {bold('<id|tag>')}": "Upgrade session to a full PTY",
+            f"{accent('encrypt')} {bold('<id|tag>')}": "Encrypt session traffic with TLS",
             f"{accent('kill')} {bold('<id|tag>')}": "Terminate and remove a session",
             f"{accent('tag')} {bold('<id|tag>')} {bold('[name]')}": "Assign or clear a tag on a session",
             **{

