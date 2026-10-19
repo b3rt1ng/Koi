@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Callable, Iterator, List, Literal, Optional, U
 if TYPE_CHECKING:
     from koi.session import Session
 
+from koi.session import recv_ready
 from koi.utils.cache import cache_path, fetch_or_cache
 from koi.utils.config import TIMEOUTS
 from koi.utils.constants import ANSI_RE, SOCKET_BUFFER_SIZE
@@ -280,16 +281,13 @@ class KoiModule(ABC):
 
         buf = b""
         deadline = time.monotonic() + timeout
-        # Only the last line before the marker is the answer, so keep just that
-        # one rather than accumulating a whole (possibly huge) output in memory.
-        last_line = ""
+        collected: list[str] = []
 
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
-            r, _, _ = select.select([self.session.conn], [], [], min(remaining, _SELECT_TIMEOUT))
-            if not r:
+            if not recv_ready(self.session.conn, min(remaining, _SELECT_TIMEOUT)):
                 continue
             chunk = self.session.conn.recv(SOCKET_BUFFER_SIZE)
             if not chunk:
@@ -302,15 +300,14 @@ class KoiModule(ABC):
                 if not text or "Write-Host" in text:
                     continue
                 if marker in text:
-                    result = last_line
+                    result = "\n".join(collected)
                     if self._logger and result:
                         self._logger.log_event(f"exec  {ps_expr}")
                         self._logger.log_output(result.encode("utf-8", errors="replace"))
                     return result
-                last_line = text
+                collected.append(text)
 
-        # timeout path
-        result = last_line
+        result = "\n".join(collected)
         if self._logger and result:
             self._logger.log_event(f"exec  {ps_expr}")
             self._logger.log_output(result.encode("utf-8", errors="replace"))
@@ -376,8 +373,7 @@ class KoiModule(ABC):
         if self.session.upgraded:
             self.session.send((ps_cmd + "\r\n").encode(self.session.encoding))
             time.sleep(0.3)
-            r, _, _ = select.select([self.session.conn], [], [], 1.0)
-            if r:
+            if recv_ready(self.session.conn, 1.0):
                 self.session.conn.recv(SOCKET_BUFFER_SIZE)
         elif self.session.os_type == "windows_ps":
             self.sendline(ps_cmd)
@@ -560,8 +556,7 @@ class KoiModule(ABC):
             if remaining <= 0:
                 raise CommandTimeout(command, timeout)
 
-            ready, _, _ = select.select([self.session.conn], [], [], min(remaining, _SELECT_TIMEOUT))
-            if not ready:
+            if not recv_ready(self.session.conn, min(remaining, _SELECT_TIMEOUT)):
                 continue
 
             chunk = self.session.conn.recv(SOCKET_BUFFER_SIZE)
@@ -645,10 +640,7 @@ class KoiModule(ABC):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise CommandTimeout(command, timeout)
-            r, _, _ = select.select(
-                [self.session.conn], [], [], min(remaining, _SELECT_TIMEOUT),
-            )
-            if not r:
+            if not recv_ready(self.session.conn, min(remaining, _SELECT_TIMEOUT)):
                 continue
             chunk = self.session.conn.recv(SOCKET_BUFFER_SIZE)
             if not chunk:

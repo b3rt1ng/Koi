@@ -34,7 +34,7 @@ from koi.utils.tls import server_context, is_tls_client_hello, try_tls_handshake
 from koi.utils.interact import interact
 from koi.utils.tcp import get_local_ip
 from koi.modules.loader import load_modules, get_module
-from koi.session import Session, SessionBusy
+from koi.session import Session, SessionBusy, recv_ready
 from koi.tunnel.manager import TunnelManager
 from koi.utils.ui import (
     colored_text, display_art, print_report_box,
@@ -841,15 +841,9 @@ class Listener:
             tls_conn.close()
             return
 
-        sess = entry["session"]
-        try:
-            sess.conn.close()
-        except OSError:
-            pass
-        sess.conn = tls_conn
-        sess.addr = addr
-        sess.encrypted = True
         tls_conn.settimeout(None)
+        entry["tls_conn"] = tls_conn
+        entry["tls_addr"] = addr
 
     def _cmd_encrypt(self, ref: str) -> None:
         sess = self._require_alive_session(ref)
@@ -875,26 +869,34 @@ class Listener:
             notify('error', f"No TLS payload for this session type.")
             return
 
-        self._pending_encrypt[token] = {
+        entry = {
             "session": sess,
             "deadline": time.monotonic() + self._ENCRYPT_TIMEOUT,
         }
+        self._pending_encrypt[token] = entry
 
         with sess.io(holder="encrypt"):
             sess.send(payload.encode())
+            notify('info', f"TLS payload sent to {accent(f'#{sid}')}, waiting for callback...")
 
-        notify('info', f"TLS payload sent to {accent(f'#{sid}')}, waiting for callback...")
-
-        deadline = time.monotonic() + self._ENCRYPT_TIMEOUT
-        while time.monotonic() < deadline:
-            if sess.encrypted:
-                notify('success', f"Session {accent(f'#{sid}')} encrypted (TLS)")
-                return
-            time.sleep(0.3)
+            deadline = time.monotonic() + self._ENCRYPT_TIMEOUT
+            while time.monotonic() < deadline:
+                tls_conn = entry.get("tls_conn")
+                if tls_conn is not None:
+                    try:
+                        sess.conn.close()
+                    except OSError:
+                        pass
+                    sess.conn = tls_conn
+                    sess.addr = entry["tls_addr"]
+                    sess.encrypted = True
+                    self._pending_encrypt.pop(token, None)
+                    notify('success', f"Session {accent(f'#{sid}')} encrypted (TLS)")
+                    return
+                time.sleep(0.3)
 
         self._pending_encrypt.pop(token, None)
-        if not sess.encrypted:
-            notify('error', f"TLS callback from {accent(f'#{sid}')} timed out.")
+        notify('error', f"TLS callback from {accent(f'#{sid}')} timed out.")
 
     def _cmd_kill(self, ref: str) -> None:
         sess = self._resolve_session(ref)
@@ -1157,8 +1159,7 @@ class Listener:
                 if remaining <= 0:
                     break
                 try:
-                    r, _, _ = select.select([sess.conn], [], [], min(remaining, 0.05))
-                    if r:
+                    if recv_ready(sess.conn, min(remaining, 0.05)):
                         if sess.conn.recv(SOCKET_BUFFER_SIZE) == b"":
                             sess.alive = False
                             break

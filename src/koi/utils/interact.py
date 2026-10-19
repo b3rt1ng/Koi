@@ -8,7 +8,7 @@ import sys
 import threading
 import time
 
-from koi.session import Session, RawTerminal
+from koi.session import Session, RawTerminal, recv_ready
 from koi.utils.constants import SOCKET_BUFFER_SIZE
 
 CTRL_Z = b"\x1a"
@@ -35,10 +35,9 @@ def _interact_raw(sess: Session, logger=None, poll_resize=None) -> str:
     def _recv():
         while not stop_event.is_set() and sess.alive:
             try:
-                r, _, _ = select.select([sess.conn], [], [], 0.1)
-                if not r:
+                if not recv_ready(sess.conn, 0.1):
                     continue
-                data = sess.conn.recv(SOCKET_BUFFER_SIZE)
+                data = sess.recv(SOCKET_BUFFER_SIZE)
                 if not data:
                     sess.alive = False
                     result[0] = "disconnected"
@@ -96,10 +95,9 @@ def _interact_windows(sess: Session, logger=None) -> str:
         buf = b""
         while not stop_event.is_set() and sess.alive:
             try:
-                r, _, _ = select.select([sess.conn], [], [], 0.1)
-                if not r:
+                if not recv_ready(sess.conn, 0.1):
                     continue
-                data = sess.conn.recv(SOCKET_BUFFER_SIZE)
+                data = sess.recv(SOCKET_BUFFER_SIZE)
                 if not data:
                     sess.alive = False
                     result[0] = "disconnected"

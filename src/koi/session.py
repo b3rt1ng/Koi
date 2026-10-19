@@ -17,6 +17,13 @@ from koi.utils.ui import muted, accent, alert, cyan
 OsType = Literal["linux", "windows_cmd", "windows_ps"] | None
 
 
+def recv_ready(conn, timeout: float) -> bool:
+    if hasattr(conn, 'pending') and conn.pending() > 0:
+        return True
+    r, _, _ = select.select([conn], [], [], timeout)
+    return bool(r)
+
+
 class SessionBusy(RuntimeError):
     """Raised when a session's socket is already owned by another operation."""
 
@@ -144,15 +151,22 @@ class Session:
             poller.register(self.conn, _POLL_HUP)
             return bool(poller.poll(0))
 
-        # A readable socket yielding nothing has been closed. Misses a peer that
-        # died leaving output unread; that death surfaces on the next write.
         try:
-            ready, _, _ = select.select([self.conn], [], [], 0)
-            return bool(ready) and self.conn.recv(1, socket.MSG_PEEK) == b""
+            if not recv_ready(self.conn, 0):
+                return False
+            if self.encrypted:
+                return False
+            return self.conn.recv(1, socket.MSG_PEEK) == b""
         except BlockingIOError:
             return False
-        except OSError:
+        except (OSError, ValueError):
             return True
+
+    def recv(self, bufsize: int) -> bytes:
+        if self.encrypted:
+            with self._lock:
+                return self.conn.recv(bufsize)
+        return self.conn.recv(bufsize)
 
     def send(self, data: bytes) -> bool:
         try:
