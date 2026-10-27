@@ -121,12 +121,20 @@ def _interact_windows(sess: Session, logger=None) -> str:
     time.sleep(_INITIAL_SLEEP)
 
     old_sigtstp = signal.getsignal(signal.SIGTSTP)
+    old_sigint = signal.getsignal(signal.SIGINT)
 
     def _handle_sigtstp(signum, frame):
         result[0] = "backgrounded"
         stop_event.set()
 
+    def _handle_sigint(signum, frame):
+        try:
+            sess.send(CTRL_C)
+        except OSError:
+            pass
+
     signal.signal(signal.SIGTSTP, _handle_sigtstp)
+    signal.signal(signal.SIGINT, _handle_sigint)
 
     input_queue: queue.Queue = queue.Queue()
 
@@ -177,6 +185,7 @@ def _interact_windows(sess: Session, logger=None) -> str:
         pass
     finally:
         signal.signal(signal.SIGTSTP, old_sigtstp)
+        signal.signal(signal.SIGINT, old_sigint)
 
     stop_event.set()
     recv_thread.join(timeout=_RECV_TIMEOUT)

