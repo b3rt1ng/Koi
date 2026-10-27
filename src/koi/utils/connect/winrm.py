@@ -89,6 +89,28 @@ class WinrmTransport(Transport):
         self._listener_port = port
         return ''
 
+    def help_detail(self) -> dict[str, str]:
+        return {
+            "Usage": f"connect {self.name} {self.syntax}",
+            "Description": (
+                "Open an interactive PowerShell session over WinRM (WS-Man).\n"
+                "Authentication uses NTLMv2 (pure Python, no external deps).\n"
+                "Port 5986 auto-enables HTTPS/TLS."
+            ),
+            "Auth modes": (
+                "user:password@host        plaintext password\n"
+                "DOMAIN\\user:password@host  domain account\n"
+                "user%NTHASH@host           pass-the-hash (32 hex chars)\n"
+                "user@host                  prompts for password"
+            ),
+            "Examples": (
+                "connect winrm admin:P@ss@10.0.0.5\n"
+                "connect winrm CORP\\svc_sql:Summer2024@dc01\n"
+                "connect winrm admin%aad3b435b51404eeaad3b435b51404ee@10.0.0.5\n"
+                "connect winrm admin@host:5986"
+            ),
+        }
+
     def execute(self, target: Target, remote_script: str) -> int:
         t: WinrmTarget = target  # type: ignore[assignment]
         nt_h = t.nt_hash_bytes or ntlm.nt_hash(t.password)
@@ -104,10 +126,9 @@ class WinrmTransport(Transport):
         except OSError as exc:
             raise TransportError(f'Cannot reach {t.host}:{t.port} ({exc})') from exc
 
-        command_id = client.run_command(shell_id, 'powershell -NoProfile -NoLogo')
-
-        client.send_input(shell_id, command_id,
-                          b'$OutputEncoding=[Console]::OutputEncoding=[Text.Encoding]::UTF8\r\n')
+        command_id = client.run_command(
+            shell_id, 'powershell', '-NoProfile -NoLogo',
+        )
 
         # Connect back to Koi's own listener to register as a session.
         bridge = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

@@ -66,6 +66,12 @@ class Transport:
     def explain_exit(self, target: Target, code: int) -> str:
         return f"exit code {code}"
 
+    def help_detail(self) -> dict[str, str]:
+        return {
+            "Usage": f"connect {self.name} {self.syntax}",
+            "Description": self.summary,
+        }
+
     def completions(self) -> list[str]:
         """Known destinations, tab-completed after the transport name."""
         return []

@@ -202,6 +202,11 @@ def completer(text: str, state: int):
     ):
         options = _match(text, list(load_modules().keys()))
 
+    elif parts[0] == "help" and len(parts) >= 2 and parts[1].lower() in ALIASES["connect"] and (
+        len(parts) == 2 or (len(parts) == 3 and not line.endswith(" "))
+    ):
+        options = _match(text, list(TRANSPORTS))
+
     elif parts[0] in _PAYLOAD_LIKE_CMDS and (
         len(parts) == 1 or (len(parts) == 2 and not line.endswith(" "))
     ):
@@ -305,18 +310,11 @@ COMMAND_HELP: dict[str, dict[str, str]] = {
     },
     "connect": {
         "Usage": "connect <transport> <target> [transport args...]",
-        "Description": "Open a session on a remote host over the given transport.\n\nSSH delivers a callback payload and waits for the shell to land.\nWinRM opens a bidirectional shell over WS-Man (NTLMv2, pure Python, no deps). Supports password auth, interactive prompt, and pass-the-hash.",
+        "Description": "Open a session on a remote host over the given transport.\nUse help connect <transport> for transport-specific details.",
         "Transports": ", ".join(TRANSPORTS),
         "Examples": (
             "connect ssh root@10.10.10.5\n"
-            "connect ssh admin:Password1@dc01.corp.local\n"
-            "connect ssh user@box -J pivot@10.0.0.1\n"
-            "connect ssh user@box -i ~/.ssh/id_ed25519\n"
-            "connect winrm user:password@host\n"
-            "connect winrm DOMAIN\\user:password@host\n"
-            "connect winrm user%HASH@host              (pass-the-hash)\n"
-            "connect winrm user@host              (prompts for password)\n"
-            "connect winrm user@host:5986          (HTTPS auto-detected on port 5986)"
+            "connect winrm admin:P@ss@10.0.0.5"
         ),
     },
     "payload": {
@@ -411,6 +409,15 @@ def print_help(topic: Optional[str] = None, subtopic: Optional[str] = None) -> N
 
     if topic:
         canon = resolve_command(topic)
+
+        if canon == "connect" and subtopic:
+            transport = get_transport(subtopic)
+            if transport is not None:
+                print_report_box(f"help: connect {transport.name}", transport.help_detail())
+                return
+            notify('error', f"Unknown transport {accent(subtopic)}. Available: {', '.join(TRANSPORTS)}.")
+            return
+
         entry = COMMAND_HELP.get(canon)
         if entry is not None:
             print_report_box(f"help: {canon}", {

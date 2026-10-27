@@ -84,6 +84,22 @@ class SshTransport(Transport):
             return _SSHPASS_EXIT[code]
         return f"exit code {code}"
 
+    def help_detail(self) -> dict[str, str]:
+        return {
+            "Usage": f"connect {self.name} {self.syntax} [ssh args...]",
+            "Description": (
+                "Deliver a reverse shell payload over SSH.\n"
+                "Extra arguments are forwarded to the ssh binary.\n"
+                "Inline passwords require sshpass."
+            ),
+            "Examples": (
+                "connect ssh root@10.10.10.5\n"
+                "connect ssh admin:Password1@dc01.corp.local\n"
+                "connect ssh user@box -J pivot@10.0.0.1\n"
+                "connect ssh user@box -i ~/.ssh/id_ed25519"
+            ),
+        }
+
     def completions(self) -> list[str]:
         hosts: list[str] = []
         try:
