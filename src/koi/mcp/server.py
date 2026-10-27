@@ -42,7 +42,6 @@ _MAX_OUTPUT_BYTES = 256 * 1024
 
 # MCP file transfers are confined here; a CLI operator stays unrestricted.
 _DOWNLOAD_ROOT = Path.home() / ".koi" / "downloads"
-_UPLOAD_ROOT = Path.home() / ".koi" / "uploads"
 
 # Tools that mutate state or run code: never offered on a read-only connection.
 _EXEC_ONLY_TOOLS = {"koi_exec", "koi_tag", "koi_tunnel_start", "koi_tunnel_stop"}
@@ -114,17 +113,6 @@ def _confine_download_output(client_value, remote_path: str) -> str:
         base = ntpath.basename(stripped) or posixpath.basename(stripped)
     return str(_DOWNLOAD_ROOT / (base or "download"))
 
-
-def _confine_upload_source(client_value) -> str:
-    _UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
-    root = _UPLOAD_ROOT.resolve()
-    candidate = Path(str(client_value or ""))
-    if not candidate.is_absolute():
-        candidate = root / candidate
-    candidate = candidate.resolve()
-    if candidate != root and root not in candidate.parents:
-        raise ValueError(f"upload local_path must stay under {root}")
-    return str(candidate)
 
 
 def _uptime(since: Optional[float]) -> Optional[str]:
@@ -606,8 +594,6 @@ class KoiMCPServer:
             remote = safe_args.get("remote_path")
             remote_str = " ".join(remote) if isinstance(remote, list) else str(remote or "")
             safe_args["output"] = _confine_download_output(safe_args.get("output"), remote_str)
-        elif mod_name == "upload":
-            safe_args["local_path"] = _confine_upload_source(safe_args.get("local_path"))
         argv = schema_to_argv(mod_cls, safe_args)
 
         error: Optional[str] = None
