@@ -776,6 +776,10 @@ class Listener:
                 return
 
         if sess.os_type in ("windows_cmd", "windows_ps"):
+            if sess.encrypted:
+                notify('warning', f"Upgrading a Windows session replaces the connection. TLS encryption will be lost.")
+                if not yesno("Proceed anyway?"):
+                    return
             upgrade_windows_conptyshell(
                 sess, self._sessions, self.port,
                 self._pending_conpty, self._conpty_staging, self._conpty_lock,
@@ -852,6 +856,11 @@ class Listener:
         sid = sess.id
         if sess.encrypted:
             notify('warning', f"Session {accent(f'#{sid}')} is already encrypted.")
+            if not yesno("Do you want to try encrypting again?"):
+                return
+
+        if sess.os_type in ("windows_cmd", "windows_ps") and sess.upgraded:
+            notify('error', f"Cannot encrypt an upgraded Windows session (ConPtyShell uses its own connection).")
             return
 
         if self._ssl_ctx is None:

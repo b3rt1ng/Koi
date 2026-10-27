@@ -40,7 +40,8 @@ Full documentation lives in the [wiki](https://b3rt1ng.github.io/koi-wiki/).
 > Read more [here](https://b3rt1ng.github.io/koi-wiki/go-online/)
 
 ## 🚧 WIP
-* **EDR evasion**: Koi bypasses casual and mid-tier EDR solutions, but more aggressive environments (expensive commercial EDR, heavily monitored networks) may still flag activity. Further improvements (TLS transport, HTTP C2) are under consideration.
+* **OPSEC / sneakiness**: I recently made TLS encryption doable in koi automatically but it raises one issue. On windows, upgrading a shell with conpty after a tls encryption, kills the encryption, i'm considering, a PR to enable tls wrapping or implement my own version for koi.
+* **EZ comunity module sharing**: a way to share modules or easily download/share them. something like "import module \*_url_\*", would be nice but would also open to dangerous behaviours for the user.
 ---
 
 ## 🚀 Installation

