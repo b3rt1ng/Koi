@@ -167,14 +167,16 @@ def _fuzzy_match(text: str, candidates: list[str], cutoff: float = 0.35) -> list
 
 
 def _match(text: str, candidates: list[str]) -> list[str]:
-    """Prefix matches first, then substring, then typo-tolerant fuzzy fallback."""
+    """Prefix matches first; only fall back to substring/fuzzy when no prefix hits."""
     if not text:
         return list(candidates)
     t = text.lower()
     prefix = [c for c in candidates if c.lower().startswith(t)]
-    substr = [c for c in candidates if t in c.lower() and not c.lower().startswith(t)]
-    if prefix or substr:
-        return prefix + substr
+    if prefix:
+        return prefix
+    substr = [c for c in candidates if t in c.lower()]
+    if substr:
+        return substr
     return _fuzzy_match(text, candidates)
 
 
@@ -437,10 +439,7 @@ def print_help(topic: Optional[str] = None, subtopic: Optional[str] = None) -> N
             f"{accent('encrypt')} {bold('<id|tag>')}": "Encrypt session traffic with TLS",
             f"{accent('kill')} {bold('<id|tag>')}": "Terminate and remove a session",
             f"{accent('tag')} {bold('<id|tag>')} {bold('[name]')}": "Assign or clear a tag on a session",
-            **{
-                f"{accent('connect')} {bold(t.name)} {bold(t.syntax)}": t.summary
-                for t in TRANSPORTS.values()
-            },
+            f"{accent('connect')} {bold('<transport>')} {bold('<target>')}": f"Open a session via {', '.join(TRANSPORTS)} (help connect <transport> for details)",
             f"{accent('payload')} {bold('[iface]')}": "Show reverse shell payloads",
             f"{accent('obfuscator')} {bold('[iface]')}": "Interactive payload obfuscator",
             f"{accent('modules')}": "List available modules",
