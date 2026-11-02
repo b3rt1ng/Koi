@@ -712,6 +712,8 @@ class Listener:
             "logs":       (self._cmd_logs, 0),
             "modules":    (self._cmd_modules, 0),
             "reload":     (self._cmd_reload, 0),
+            "import":     (self._cmd_import, 1),
+            "unimport":   (self._cmd_unimport, 1),
             "go":         (self._cmd_go, 1),
             "upgrade":    (self._cmd_upgrade, 1),
             "encrypt":    (self._cmd_encrypt, 1),
@@ -767,6 +769,28 @@ class Listener:
         with Spinner("Reloading modules..."):
             modules = load_modules(reload=True)
         notify('info', f"Loaded {accent(str(len(modules)))} modules.")
+
+    def _cmd_import(self, path: Optional[str]) -> None:
+        if path is None:
+            notify('status', f"Usage: import {accent('<path>')}")
+            return
+        from koi.modules.loader import import_module
+        ok, msg = import_module(path)
+        if ok:
+            notify('success', f"Module {accent(msg)} imported.")
+        else:
+            notify('error', msg)
+
+    def _cmd_unimport(self, name: Optional[str]) -> None:
+        if name is None:
+            notify('status', f"Usage: unimport {accent('<name>')}")
+            return
+        from koi.modules.loader import unimport_module
+        ok, msg = unimport_module(name)
+        if ok:
+            notify('success', f"Module {accent(msg)} removed.")
+        else:
+            notify('error', msg)
 
     def _cmd_upgrade(self, ref: str) -> None:
         sess = self._require_alive_session(ref)

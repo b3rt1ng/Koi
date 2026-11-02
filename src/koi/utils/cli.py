@@ -36,6 +36,8 @@ ALIASES: dict[str, list[str]] = {
     "tunnel":     ["tunnel", "tun"],
     "ifconfig":   ["ifconfig", "ipconfig"],
     "settings":   ["settings", "tweaks"],
+    "import":     ["import"],
+    "unimport":   ["unimport"],
 }
 
 _ALIAS_TO_CANON: dict[str, str] = {
@@ -219,6 +221,11 @@ def completer(text: str, state: int):
     ):
         options = _match(text, list(load_modules().keys()))
 
+    elif parts[0] == "unimport" and (
+        len(parts) == 1 or (len(parts) == 2 and not line.endswith(" "))
+    ):
+        options = _match(text, list(load_modules().keys()))
+
     elif parts[0] == "run" and (
         (len(parts) == 2 and line.endswith(" ")) or
         (len(parts) == 3 and not line.endswith(" "))
@@ -346,6 +353,16 @@ COMMAND_HELP: dict[str, dict[str, str]] = {
         "Description": "Reload all modules from disk without restarting the listener. Useful during module development.",
         "Aliases": ", ".join(ALIASES["reload"]),
     },
+    "import": {
+        "Usage": "import <path>",
+        "Description": "Import an external module from a .py file. The file must define a KoiModule subclass. The module becomes immediately available and persists across restarts.",
+        "Examples": "import /home/user/tools/my_module.py\nimport ./privesc.py",
+    },
+    "unimport": {
+        "Usage": "unimport <name>",
+        "Description": "Remove a previously imported external module. Built-in modules cannot be removed.",
+        "Examples": "unimport my_module",
+    },
     "setshell": {
         "Usage": "setshell <id|tag> <linux|windows_ps|windows_cmd>",
         "Description": "Manually override the detected OS type of a session. Useful when auto-detection fails or you want to force a specific shell type.",
@@ -444,6 +461,8 @@ def print_help(topic: Optional[str] = None, subtopic: Optional[str] = None) -> N
             f"{accent('obfuscator')} {bold('[iface]')}": "Interactive payload obfuscator",
             f"{accent('modules')}": "List available modules",
             f"{accent('reload')}": "Reload modules from disk (useful during development)",
+            f"{accent('import')} {bold('<path>')}": "Import an external module",
+            f"{accent('unimport')} {bold('<name>')}": "Remove an imported module",
             f"{accent('run')} {bold('<module>')} {bold('<id>')} {bold('[args...]')}": "Run a module against a session",
             f"{accent('setshell')} {bold('<id>')} {bold('<os_type>')}": "Manually set the OS type of a session",
             f"{accent('tunnel')} {bold('<start|status|stop>')} {bold('<id>')}": "Start, inspect or stop a background tunnel on a session",
