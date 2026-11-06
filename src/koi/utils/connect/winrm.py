@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import getpass
+import http.client
 import select
 import socket
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -144,12 +146,18 @@ class WinrmTransport(Transport):
 
         def _recv_loop():
             """WS-Man -> bridge socket: poll output and forward."""
+            errors = 0
             try:
                 while not stop.is_set():
                     try:
                         data, done = client.receive_output(shell_id, command_id)
-                    except (TransportError, OSError):
-                        break
+                    except (TransportError, OSError, http.client.HTTPException):
+                        errors += 1
+                        if errors > 3:
+                            break
+                        time.sleep(1)
+                        continue
+                    errors = 0
                     if data:
                         try:
                             bridge.sendall(data)
@@ -187,7 +195,7 @@ class WinrmTransport(Transport):
                                     client.signal_ctrl_c(shell_id, command_id)
                         else:
                             client.send_input(shell_id, command_id, chunk)
-                    except (TransportError, OSError):
+                    except (TransportError, OSError, http.client.HTTPException):
                         break
             finally:
                 stop.set()
@@ -214,6 +222,7 @@ class WinrmTransport(Transport):
                 bridge.close()
             except Exception:
                 pass
+            client.close()
 
         threading.Thread(target=_cleanup, daemon=True).start()
 

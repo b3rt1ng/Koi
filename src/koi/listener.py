@@ -615,6 +615,8 @@ class Listener:
 
         expect_ip = None if (host is None or transport.direct) else target_ip
         landed = self._wait_for_callback(known, expect_ip)
+        if landed and transport.direct:
+            landed.addr = (target_ip, landed.addr[1])
         if not landed:
             notify('warning', f"No callback after {int(_CONNECT_WAIT)}s.")
             notify('status', muted(
@@ -647,6 +649,16 @@ class Listener:
             readline.remove_history_item(readline.get_current_history_length() - 1)
         except Exception:
             pass
+
+    def _cmd_self(self) -> None:
+        from koi.utils.payloads import linux_callback_script
+        script = linux_callback_script('127.0.0.1', self.port)
+        subprocess.Popen(
+            ['sh', '-c', script],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
     def _cmd_stop_accepting(self) -> None:
         if not self._accepting:
@@ -698,6 +710,10 @@ class Listener:
 
         if cmd == "connect":
             self._cmd_connect(parts[1:])
+            return True
+
+        if cmd == "self":
+            self._cmd_self()
             return True
 
         if cmd == "tunnel":

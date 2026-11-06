@@ -40,8 +40,6 @@ _MAX_EXEC_TIMEOUT = 600.0
 _MAX_TAG_LEN = 64
 _MAX_OUTPUT_BYTES = 256 * 1024
 
-# MCP file transfers are confined here; a CLI operator stays unrestricted.
-_DOWNLOAD_ROOT = Path.home() / ".koi" / "downloads"
 
 # Tools that mutate state or run code: never offered on a read-only connection.
 _EXEC_ONLY_TOOLS = {"koi_exec", "koi_tag", "koi_tunnel_start", "koi_tunnel_stop"}
@@ -104,14 +102,12 @@ def _exec_timeout(value) -> float:
     return min(timeout, _MAX_EXEC_TIMEOUT)
 
 
-def _confine_download_output(client_value, remote_path: str) -> str:
-    _DOWNLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+def _resolve_download_output(client_value, remote_path: str) -> str:
     if client_value:
-        base = Path(str(client_value)).name  # drop any directory component
-    else:
-        stripped = remote_path.rstrip("/\\")
-        base = ntpath.basename(stripped) or posixpath.basename(stripped)
-    return str(_DOWNLOAD_ROOT / (base or "download"))
+        return str(Path(str(client_value)).resolve())
+    stripped = remote_path.rstrip("/\\")
+    base = ntpath.basename(stripped) or posixpath.basename(stripped)
+    return str(Path.cwd() / (base or "download"))
 
 
 
@@ -588,12 +584,11 @@ class KoiMCPServer:
         ts = time.strftime("%H:%M:%S")
         self.listener._announce('status', f"{accent(ts)} {plain('MCP: module')} {muted(mod_name)} {plain(f'on session #{sess.id}')}")
 
-        # Local paths from an MCP client stay confined to ~/.koi, never the operator's disk at large.
         safe_args = {k: v for k, v in arguments.items() if k != "session"}
         if mod_name == "download":
             remote = safe_args.get("remote_path")
             remote_str = " ".join(remote) if isinstance(remote, list) else str(remote or "")
-            safe_args["output"] = _confine_download_output(safe_args.get("output"), remote_str)
+            safe_args["output"] = _resolve_download_output(safe_args.get("output"), remote_str)
         argv = schema_to_argv(mod_cls, safe_args)
 
         error: Optional[str] = None

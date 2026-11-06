@@ -9,7 +9,7 @@ class NetworkEnumModule(KoiModule):
     name        = "netscan"
     description = "Enumerate interfaces, routes, connections, open ports, and discover live hosts."
     category    = "Enumeration"
-    platform    = "linux"
+    platform    = ["linux", "windows_ps"]
     usage       = "netscan <id> [--no-scan] [-s CIDR] [-t N]"
     arguments   = [
         {"flags": ["--no-scan"], "action": "store_true", "default": False,
@@ -357,6 +357,12 @@ cat /etc/resolv.conf 2>/dev/null
                 self.warn(f"No live hosts found on {network}.")
 
     def run(self) -> None:
+        if self.session.os_type == "linux":
+            self._run_linux()
+        else:
+            self._run_windows()
+
+    def _run_linux(self) -> None:
         no_scan = getattr(self.args, "no_scan", False)
         subnet  = getattr(self.args, "subnet", None)
         t       = getattr(self.args, "timeout", 1)
@@ -384,3 +390,231 @@ cat /etc/resolv.conf 2>/dev/null
             self.warn("No interfaces detected, skipping host discovery.")
         else:
             self._discover_hosts(ifaces, subnet, t)
+
+    # ---------------------------------------------------------------- windows
+
+    def _run_windows(self) -> None:
+        no_scan = getattr(self.args, "no_scan", False)
+        subnet  = getattr(self.args, "subnet", None)
+        t       = getattr(self.args, "timeout", 1)
+
+        with self.spinner("Enumerating interfaces..."):
+            iface_box, cidrs = self._win_interfaces()
+        if iface_box:
+            self.box("Interfaces", iface_box)
+
+        for spinner_msg, box_title, fn in [
+            ("Fetching routing table...",          "Routes",                 self._win_routes),
+            ("Reading ARP neighbors...",           "ARP neighbors",          self._win_neighbors),
+            ("Listing listening ports...",         "Listening ports",        self._win_listening),
+            ("Listing established connections...", "Established connections", self._win_connections),
+            ("Reading DNS config...",              "DNS servers",            self._win_dns),
+        ]:
+            with self.spinner(spinner_msg):
+                data = fn()
+            if data:
+                self.box(box_title, data)
+
+        if no_scan:
+            self.status("Skipping live host discovery (--no-scan).")
+        elif not cidrs and not subnet:
+            self.warn("No interfaces detected, skipping host discovery.")
+        else:
+            self._win_discover_hosts(cidrs, subnet, t)
+
+    def _win_interfaces(self) -> tuple[dict[str, str], list[str]]:
+        raw = self._win_query(
+            "&{"
+            "(Get-NetIPAddress -EA SilentlyContinue|"
+            "Where-Object{$_.IPAddress -ne '127.0.0.1' -and $_.IPAddress -ne '::1'}|"
+            "ForEach-Object{"
+            f"$_.InterfaceAlias+'{self.FIELD_SEP}'+$_.IPAddress+'/'+$_.PrefixLength"
+            f"}})-join '{self.REC_SEP}'"
+            "}",
+            timeout=TIMEOUTS["exec_query"],
+        )
+        grouped: dict[str, list[str]] = {}
+        cidrs: list[str] = []
+        for entry in raw.split(self.REC_SEP):
+            entry = entry.strip()
+            if self.FIELD_SEP not in entry:
+                continue
+            iface, addr = entry.split(self.FIELD_SEP, 1)
+            iface, addr = iface.strip(), addr.strip()
+            if not iface or not addr:
+                continue
+            grouped.setdefault(iface, []).append(addr)
+            if '.' in addr and '/' in addr:
+                cidrs.append(addr)
+        return {i: "  ".join(a) for i, a in grouped.items()}, cidrs
+
+    def _win_routes(self) -> dict[str, str]:
+        raw = self._win_query(
+            "&{"
+            "(Get-NetRoute -AddressFamily IPv4 -EA SilentlyContinue|"
+            "Where-Object{$_.NextHop -ne '0.0.0.0'}|"
+            "Sort-Object DestinationPrefix|"
+            "ForEach-Object{"
+            f"$_.DestinationPrefix+'{self.FIELD_SEP}'+'via '+$_.NextHop+'  iface='+$_.InterfaceAlias"
+            f"}})-join '{self.REC_SEP}'"
+            "}",
+            timeout=TIMEOUTS["exec_query"],
+        )
+        box: dict[str, str] = {}
+        for entry in raw.split(self.REC_SEP):
+            entry = entry.strip()
+            if self.FIELD_SEP not in entry:
+                continue
+            dest, detail = entry.split(self.FIELD_SEP, 1)
+            if dest.strip():
+                box[dest.strip()] = detail.strip()
+        return box
+
+    def _win_neighbors(self) -> dict[str, str]:
+        raw = self._win_query(
+            "&{"
+            "(Get-NetNeighbor -EA SilentlyContinue|"
+            "Where-Object{$_.State -ne 'Unreachable' -and $_.State -ne 'Permanent'"
+            " -and $_.IPAddress -notlike 'ff0*' -and $_.IPAddress -notlike '224.*'}|"
+            "ForEach-Object{"
+            f"$_.IPAddress+'{self.FIELD_SEP}'+$_.LinkLayerAddress+"
+            f"'{self.FIELD_SEP}'+$_.State+'{self.FIELD_SEP}'+$_.InterfaceAlias"
+            f"}})-join '{self.REC_SEP}'"
+            "}",
+            timeout=TIMEOUTS["exec_query"],
+        )
+        box: dict[str, str] = {}
+        for entry in raw.split(self.REC_SEP):
+            entry = entry.strip()
+            parts = entry.split(self.FIELD_SEP)
+            if len(parts) < 4:
+                continue
+            ip, mac, state, iface = [p.strip() for p in parts[:4]]
+            if ip and mac:
+                box[ip] = f"{mac}  [{state}]  iface={iface}"
+        return box
+
+    def _win_listening(self) -> dict[str, str]:
+        raw = self._win_query(
+            "&{"
+            "$c=Get-NetTCPConnection -State Listen -EA SilentlyContinue;"
+            "if(!$c){return};"
+            "$pids=@($c|ForEach-Object{[int]$_.OwningProcess}|Sort-Object -Unique);"
+            "$pm=@{};"
+            "Get-Process -Id $pids -EA SilentlyContinue|"
+            "ForEach-Object{$pm[$_.Id]=$_.ProcessName};"
+            "($c|ForEach-Object{"
+            f"$_.LocalAddress+':'+$_.LocalPort+'{self.FIELD_SEP}'+"
+            f"$pm[[int]$_.OwningProcess]+'{self.FIELD_SEP}'+$_.OwningProcess"
+            f"}})-join '{self.REC_SEP}'"
+            "}",
+            timeout=TIMEOUTS["exec_query"],
+        )
+        box: dict[str, str] = {}
+        for entry in raw.split(self.REC_SEP):
+            entry = entry.strip()
+            parts = entry.split(self.FIELD_SEP)
+            if len(parts) < 3:
+                continue
+            addr, proc, pid = [p.strip() for p in parts[:3]]
+            if addr:
+                box[addr] = f"{proc}  pid={pid}" if proc else f"pid={pid}"
+        return box
+
+    def _win_connections(self) -> dict[str, str]:
+        raw = self._win_query(
+            "&{"
+            "$c=Get-NetTCPConnection -State Established -EA SilentlyContinue;"
+            "if(!$c){return};"
+            "$pids=@($c|ForEach-Object{[int]$_.OwningProcess}|Sort-Object -Unique);"
+            "$pm=@{};"
+            "Get-Process -Id $pids -EA SilentlyContinue|"
+            "ForEach-Object{$pm[$_.Id]=$_.ProcessName};"
+            "($c|ForEach-Object{"
+            "$_.LocalAddress+':'+$_.LocalPort+' -> '+"
+            f"$_.RemoteAddress+':'+$_.RemotePort+'{self.FIELD_SEP}'+"
+            f"$pm[[int]$_.OwningProcess]+'{self.FIELD_SEP}'+$_.OwningProcess"
+            f"}})-join '{self.REC_SEP}'"
+            "}",
+            timeout=TIMEOUTS["exec_query"],
+        )
+        box: dict[str, str] = {}
+        for entry in raw.split(self.REC_SEP):
+            entry = entry.strip()
+            parts = entry.split(self.FIELD_SEP)
+            if len(parts) < 3:
+                continue
+            addr, proc, pid = [p.strip() for p in parts[:3]]
+            if addr:
+                box[addr] = f"{proc}  pid={pid}" if proc else f"pid={pid}"
+        return box
+
+    def _win_dns(self) -> dict[str, str]:
+        raw = self._win_query(
+            "&{"
+            "(Get-DnsClientServerAddress -AddressFamily IPv4 -EA SilentlyContinue|"
+            "Where-Object{$_.ServerAddresses}|"
+            "ForEach-Object{"
+            f"$_.InterfaceAlias+'{self.FIELD_SEP}'+($_.ServerAddresses -join ', ')"
+            f"}})-join '{self.REC_SEP}'"
+            "}",
+            timeout=TIMEOUTS["exec_query"],
+        )
+        box: dict[str, str] = {}
+        for entry in raw.split(self.REC_SEP):
+            entry = entry.strip()
+            if self.FIELD_SEP not in entry:
+                continue
+            iface, servers = entry.split(self.FIELD_SEP, 1)
+            if iface.strip() and servers.strip():
+                box[iface.strip()] = servers.strip()
+        return box
+
+    def _win_discover_hosts(
+        self, cidrs: list[str], subnet_override: str | None, t: int,
+    ) -> None:
+        targets = [subnet_override] if subnet_override else cidrs
+        for cidr in targets:
+            net, prefix = self._cidr_to_network(cidr)
+            network = f"{net}/{prefix}"
+            host_count = max(2 ** (32 - prefix) - 2, 1)
+            self.status(f"Host discovery on {network} ({host_count} hosts)...")
+            if host_count > 2048:
+                self.warn(f"Large subnet ({host_count} hosts), skipping. Use -s to narrow.")
+                continue
+
+            net_int = self._ip_to_int(net)
+            ips = [
+                ".".join(str(((net_int + i) >> s) & 0xFF) for s in (24, 16, 8, 0))
+                for i in range(1, host_count + 1)
+            ]
+            ps_array = ",".join(f"'{ip}'" for ip in ips)
+            timeout_ms = t * 1000
+
+            with self.spinner(f"Ping sweeping {network} ({host_count} hosts)..."):
+                raw = self._win_query(
+                    "&{"
+                    f"$ips=@({ps_array});"
+                    "$tasks=@($ips|ForEach-Object{"
+                    f"[Net.NetworkInformation.Ping]::new().SendPingAsync($_,{timeout_ms})"
+                    "});"
+                    "[Threading.Tasks.Task]::WaitAll($tasks);"
+                    "($tasks|Where-Object{$_.Result.Status -eq 'Success'}|"
+                    f"ForEach-Object{{$_.Result.Address.ToString()}})-join '{self.REC_SEP}'"
+                    "}",
+                    timeout=t * 3 + 30,
+                )
+
+            live: dict[str, str] = {}
+            for ip in raw.split(self.REC_SEP):
+                ip = ip.strip()
+                if re.match(r'^\d+\.\d+\.\d+\.\d+$', ip):
+                    live[ip] = "ICMP reply"
+
+            if live:
+                self.box(
+                    f"Live hosts {network}  ({len(live)} up)",
+                    dict(sorted(live.items())),
+                )
+            else:
+                self.warn(f"No live hosts found on {network}.")
