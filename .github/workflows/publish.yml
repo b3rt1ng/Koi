@@ -56,8 +56,6 @@ jobs:
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
-      # Trusted publishing only. No contents:write: GitHub releases are cut by
-      # hand, so nothing here needs to write to the repo.
       id-token: write
     steps:
       - uses: actions/download-artifact@v4

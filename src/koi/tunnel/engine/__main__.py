@@ -23,9 +23,6 @@ def _psk(args) -> str:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    # -v must work before AND after the subcommand, hence the shared parent.
-    # SUPPRESS is essential: without it the subparser re-injects its
-    # False default and overrides a -v placed before the subcommand.
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
         "-v", "--verbose", action="store_true",
@@ -67,7 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    _setup_logging(getattr(args, "verbose", False))   # SUPPRESS: absent when not passed
+    _setup_logging(getattr(args, "verbose", False))
     psk = _psk(args)
 
     if args.role == "proxy":

@@ -13,7 +13,7 @@ _DIR_TIMEOUT = max(TIMEOUTS.get("download", 300) * 2, 600)
 
 class UploadModule(KoiModule):
     name = "upload"
-    description = "Upload a file or directory to the target."
+    description = "Upload a file or directory to the target, chunked over a side channel and size-verified."
     usage = "upload <id> <local_path> [-o <remote_path>]"
     category = "File transfer"
     platform = ["linux", "windows_ps"]

@@ -46,6 +46,8 @@ MOTD = [
     "Use koireview to see your shells history",
     "You can use \"koifuscator\" to directly use the obfuscator",
     "I'm building this tool alone, do not hesitate to contribute or report issues on GitHub !",
+    "Also try Penelope!",
+    "No rust rewrite is planned •`_´•",
 ]
 
 def color_signal(signal):

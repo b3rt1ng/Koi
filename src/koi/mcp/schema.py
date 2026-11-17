@@ -10,8 +10,6 @@ from typing import Any, Dict, List, Optional, Tuple, Type
 
 _ARRAY_NARGS = ("+", "*")
 
-# argparse `type=` callables we can express in JSON Schema. Anything else is
-# passed through as a string and left for argparse to coerce on the way back in.
 _SCALAR_TYPES: Dict[Any, str] = {
     int: "integer",
     float: "number",
@@ -74,7 +72,6 @@ def argument_schema(spec: Dict[str, Any]) -> Tuple[str, Dict[str, Any], bool]:
     if default is not None:
         schema["default"] = default
 
-    # Only a positional with no default is truly required; nargs='*' tolerates empty.
     required = (
         _is_positional(flags)
         and default is None
@@ -129,7 +126,6 @@ def schema_to_argv(mod_cls: Type, values: Optional[Dict[str, Any]]) -> List[str]
 
         action = spec.get("action")
         if action in ("store_true", "store_false"):
-            # Presence is the signal; store_false inverts it.
             wants_flag = bool(value) if action == "store_true" else not bool(value)
             if wants_flag:
                 optionals.append(_primary_flag(flags))

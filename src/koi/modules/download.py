@@ -21,7 +21,7 @@ def _remote_basename(path: str) -> str:
 
 class DownloadModule(KoiModule):
     name = "download"
-    description = "Download a file or directory from the target."
+    description = "Download a file or directory from the target, chunked over a side channel and size-verified."
     usage = "download <id> <remote_path> [-o <local_path>]"
     category = "File transfer"
     platform = ["linux", "windows_ps"]

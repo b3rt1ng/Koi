@@ -1231,11 +1231,5 @@ class Listener:
             return
         self._winch_pending = False
         if sess.os_type in ("windows_cmd", "windows_ps"):
-            if sess.is_conptyshell:
-                try:
-                    cols, rows = shutil.get_terminal_size()
-                    sess.send(f"\x08{cols}x{rows}".encode())
-                except Exception:
-                    pass
             return
         self._sync_winsize(sess)

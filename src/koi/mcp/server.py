@@ -19,8 +19,8 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from koi.mcp.schema import module_input_schema, schema_to_argv
 from koi.modules.blueprint import KoiModule
-from koi.session import SessionBusy
-from koi.utils.constants import ANSI_RE
+from koi.session import SessionBusy, recv_ready
+from koi.utils.constants import ANSI_RE, SOCKET_BUFFER_SIZE
 from koi.utils.logger import list_logs, log_dir
 from koi.utils.ui import accent, muted, plain
 
@@ -40,9 +40,27 @@ _MAX_EXEC_TIMEOUT = 600.0
 _MAX_TAG_LEN = 64
 _MAX_OUTPUT_BYTES = 256 * 1024
 
+_INTERACTIVE_MAX_WAIT = 30.0
+_INTERACTIVE_IDLE_GRACE = 0.3
+_INTERACTIVE_MAX_BYTES = 8 * 1024
+_INTERACTIVE_DRAIN_CAP = 256 * 1024
 
-# Tools that mutate state or run code: never offered on a read-only connection.
-_EXEC_ONLY_TOOLS = {"koi_exec", "koi_tag", "koi_tunnel_start", "koi_tunnel_stop"}
+_SIGNAL_KEYS: Dict[str, bytes] = {
+    "ctrl_c": b"\x03",
+    "ctrl_d": b"\x04",
+    "ctrl_l": b"\x0c",
+    "enter":  b"\r",
+    "tab":    b"\t",
+    "esc":    b"\x1b",
+    "up":     b"\x1b[A",
+    "down":   b"\x1b[B",
+}
+
+
+_EXEC_ONLY_TOOLS = {
+    "koi_exec", "koi_tag", "koi_tunnel_start", "koi_tunnel_stop",
+    "koi_session_write", "koi_session_read", "koi_session_signal",
+}
 
 _REQUIRED_PACKAGES = ("mcp", "uvicorn", "starlette")
 
@@ -97,7 +115,7 @@ def _exec_timeout(value) -> float:
         timeout = float(value)
     except ValueError:
         raise ValueError(f"timeout must be a number, got {value!r}") from None
-    if timeout <= 0 or timeout != timeout:  # NaN compares unequal to itself
+    if timeout <= 0 or timeout != timeout:
         raise ValueError(f"timeout must be greater than 0, got {value!r}")
     return min(timeout, _MAX_EXEC_TIMEOUT)
 
@@ -361,8 +379,13 @@ class KoiMCPServer:
             ),
             _tool(
                 "koi_exec",
-                "Run a shell command on a session (Linux or Windows) and return "
-                "its stdout and exit code.",
+                "Run one shell command on a session (Linux or Windows) and "
+                "return its stdout and exit code. One-shot and non-interactive. "
+                "If a koi_module_* tool covers the task use it instead; in "
+                "particular move files with koi_module_upload / "
+                "koi_module_download, not by echoing bytes here. For a program "
+                "that prompts or stays interactive, use "
+                "koi_session_write/read/signal.",
                 {
                     "session": session,
                     "command": {"type": "string", "description": "Command to run."},
@@ -419,6 +442,52 @@ class KoiMCPServer:
                 {"session": session},
                 ["session"],
             ),
+            _tool(
+                "koi_session_write",
+                "Interactive mode: write raw text to a session's shell, no newline "
+                "added (include \\n yourself to submit a line). Use this with "
+                "koi_session_read to drive interactive programs koi_exec cannot "
+                "handle (sudo/password prompts, REPLs, ssh). Does not wait for or "
+                "return output; call koi_session_read after. Not for file "
+                "transfer: use koi_module_upload / koi_module_download.",
+                {
+                    "session": session,
+                    "data": {"type": "string", "description": "Raw text to send as-is."},
+                },
+                ["session", "data"],
+            ),
+            _tool(
+                "koi_session_read",
+                "Interactive mode: drain and return output waiting on a session "
+                "since the last read. Non-blocking beyond 'wait'. The result is "
+                "tail-capped, so it stays cheap. 'producing' true means output was "
+                "still flowing (call again); false means it settled or nothing came.",
+                {
+                    "session": session,
+                    "wait": {
+                        "type": "number",
+                        "description": "Max seconds to wait for output (0-30).",
+                        "default": 1,
+                    },
+                },
+                ["session"],
+            ),
+            _tool(
+                "koi_session_signal",
+                "Interactive mode: send a control key to a session. One of: "
+                "ctrl_c, ctrl_d, ctrl_l, enter, tab, esc, up, down. Ctrl+C "
+                "reliably interrupts a running process only on an upgraded (PTY) "
+                "session; on a raw shell it just sends the byte.",
+                {
+                    "session": session,
+                    "key": {
+                        "type": "string",
+                        "description": "Control key name.",
+                        "enum": sorted(_SIGNAL_KEYS),
+                    },
+                },
+                ["session", "key"],
+            ),
         ]
 
     def _module_tools(self) -> List[Dict[str, Any]]:
@@ -442,7 +511,6 @@ class KoiMCPServer:
                     f"{(cls.description or '').strip()} (targets: {targets})",
                     schema["properties"],
                     schema["required"],
-                    # camelCase: ToolAnnotations fields carry no alias in mcp 2.x.
                     annotations={"destructiveHint": True},
                 )
             )
@@ -512,6 +580,15 @@ class KoiMCPServer:
         if name == "koi_exec":
             return self._do_exec(arguments)
 
+        if name == "koi_session_write":
+            return self._do_session_write(arguments)
+
+        if name == "koi_session_read":
+            return self._do_session_read(arguments)
+
+        if name == "koi_session_signal":
+            return self._do_session_signal(arguments)
+
         if name.startswith(_MODULE_TOOL_PREFIX):
             return self._do_run_module(name[len(_MODULE_TOOL_PREFIX):], arguments)
 
@@ -565,6 +642,111 @@ class KoiMCPServer:
         if truncated:
             payload["truncated"] = True
         return json.dumps(payload, indent=2)
+
+    def _drain_session(self, sess: "Session", wait: float) -> tuple[str, bool, bool]:
+        """Drain pending socket output for up to *wait* seconds.
+
+        No sentinel: there is no notion of a command finishing here, so the read
+        settles on an idle grace instead. Returns (text, producing, truncated).
+        """
+        wait = max(0.0, min(float(wait), _INTERACTIVE_MAX_WAIT))
+        hard_cap = _INTERACTIVE_DRAIN_CAP
+
+        buf = b""
+        producing = False
+        try:
+            with sess.io(holder="mcp:interactive", timeout=_IO_TIMEOUT):
+                deadline = time.monotonic() + wait
+                last_data = None
+                while True:
+                    now = time.monotonic()
+                    if now >= deadline:
+                        producing = last_data is not None
+                        break
+                    if last_data is not None and (now - last_data) >= _INTERACTIVE_IDLE_GRACE:
+                        break
+                    slice_timeout = min(deadline - now, _INTERACTIVE_IDLE_GRACE)
+                    if not recv_ready(sess.conn, slice_timeout):
+                        continue
+                    chunk = sess.recv(SOCKET_BUFFER_SIZE)
+                    if not chunk:
+                        sess.alive = False
+                        break
+                    buf += chunk
+                    last_data = time.monotonic()
+                    if len(buf) >= hard_cap:
+                        producing = True
+                        break
+        except SessionBusy as exc:
+            raise RuntimeError(str(exc)) from exc
+
+        if sess._logger and buf:
+            sess._logger.log_output(buf)
+
+        text = _strip_ansi(buf.decode(sess.encoding or "utf-8", errors="replace"))
+        truncated = False
+        if len(text) > _INTERACTIVE_MAX_BYTES:
+            text = "[... earlier output truncated ...]\n" + text[-_INTERACTIVE_MAX_BYTES:]
+            truncated = True
+        return text, producing, truncated
+
+    def _do_session_write(self, arguments: Dict[str, Any]) -> str:
+        self._require_exec()
+        sess = self._resolve(arguments["session"])
+        data = arguments.get("data")
+        if not isinstance(data, str) or data == "":
+            raise ValueError("data must be a non-empty string")
+
+        ts = time.strftime("%H:%M:%S")
+        self.listener._announce('status', f"{accent(ts)} {plain('MCP: write')} {muted(data.strip() or data)} {plain(f'on session #{sess.id}')}")
+        with _capture_output():
+            logger_obj = self.listener._ensure_logger(sess)
+        sess.attach_logger(logger_obj)
+
+        raw = data.encode(sess.encoding, errors="replace")
+        if not sess.send(raw):
+            raise RuntimeError(f"Session #{sess.id} is no longer alive")
+        return json.dumps({"session": sess.id, "sent": len(raw)})
+
+    def _do_session_read(self, arguments: Dict[str, Any]) -> str:
+        self._require_exec()
+        sess = self._resolve(arguments["session"])
+        wait = arguments.get("wait", 1)
+        if isinstance(wait, bool) or not isinstance(wait, (int, float)):
+            raise ValueError("wait must be a number")
+
+        with _capture_output():
+            logger_obj = self.listener._ensure_logger(sess)
+        sess.attach_logger(logger_obj)
+
+        text, producing, truncated = self._drain_session(sess, wait)
+        payload = {
+            "session": sess.id,
+            "output": text,
+            "producing": producing,
+        }
+        if truncated:
+            payload["truncated"] = True
+        return json.dumps(payload, indent=2)
+
+    def _do_session_signal(self, arguments: Dict[str, Any]) -> str:
+        self._require_exec()
+        sess = self._resolve(arguments["session"])
+        key = arguments.get("key")
+        seq = _SIGNAL_KEYS.get(key) if isinstance(key, str) else None
+        if seq is None:
+            valid = ", ".join(sorted(_SIGNAL_KEYS))
+            raise ValueError(f"Unknown key {key!r}; valid keys: {valid}")
+
+        ts = time.strftime("%H:%M:%S")
+        self.listener._announce('status', f"{accent(ts)} {plain('MCP: signal')} {muted(key)} {plain(f'on session #{sess.id}')}")
+        with _capture_output():
+            logger_obj = self.listener._ensure_logger(sess)
+        sess.attach_logger(logger_obj)
+
+        if not sess.send(seq):
+            raise RuntimeError(f"Session #{sess.id} is no longer alive")
+        return json.dumps({"session": sess.id, "sent_key": key})
 
     def _do_run_module(self, mod_name: str, arguments: Dict[str, Any]) -> str:
         self._require_exec()
@@ -700,9 +882,18 @@ class KoiMCPServer:
             "session ids are reused across tools and a tag can replace an id.\n\n"
             "One command runs on a session at a time. A tool call fails fast "
             "with a busy error when the operator is interacting with that shell, "
-            "which is expected: retry later rather than escalating. Prefer a "
-            "module over a hand-written command when one covers the task, since "
-            "modules handle the per-OS quirks and the PTY protocol already."
+            "which is expected: retry later rather than escalating.\n\n"
+            "Pick a tool in this order. First, if a koi_module_* tool covers the "
+            "task, prefer it: modules handle the per-OS quirks, chunking and "
+            "integrity checks a hand-written command does not. In particular, "
+            "move files with koi_module_upload / koi_module_download, never by "
+            "echoing base64 through koi_exec. Second, for a simple one-shot "
+            "command no module covers, use koi_exec. Third, for a program "
+            "koi_exec cannot handle because it prompts or stays interactive "
+            "(sudo/password prompts, a REPL, ssh to another host), drive the "
+            "shell with koi_session_write / koi_session_read / koi_session_signal: "
+            "write input, then read until 'producing' is false, and send control "
+            "keys (e.g. ctrl_c) with koi_session_signal."
         )
 
     def _build_app(self):
@@ -762,7 +953,6 @@ class KoiMCPServer:
                     )
                     return
             elif scope_type != "lifespan":
-                # Fail closed: any other transport (e.g. websocket) must not bypass the token.
                 return
             await inner(scope, receive, send)
 

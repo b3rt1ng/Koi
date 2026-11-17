@@ -11,7 +11,7 @@ _DEFAULT_CHUNK = 49152
 
 class Upload64Module(KoiModule):
     name = "upload64"
-    description = "Upload a file via base64 chunks (for restricted shells)."
+    description = "Upload a file via base64 chunks, for restricted shells with no side-channel egress."
     usage = "upload64 <id> <local_path> [-o <remote_path>] [-c <chunk_size>]"
     category = "File transfer"
     platform = ["linux", "windows_ps", "windows_cmd"]
